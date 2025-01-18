@@ -1,11 +1,13 @@
-1	japanese	x-vnd.Haiku-WebPositive	2942427387
+1	japanese	x-vnd.Haiku-WebPositive	2670512085
 Authentication required	Authentication Panel		認証が必要です
 Previous	WebPositive Window		前へ
 Copy	Console Window		コピー
 (Finish: %date)	Download Window		(完了: %date)
 Open bookmarks confirmation	WebPositive Window		ブックマーク表示確認を開く
+Delete	BookmarkBar		削除
 Download folder:	Settings Window		ダウンロードフォルダー:
 Close window	WebPositive Window		ウィンドウを閉じる
+Rename	BookmarkBar		名前の変更
 Find:	WebPositive Window		検索:
 Script console	WebPositive Window		スクリプトコンソール
 There was an error setting up the bookmark.	WebPositive Window		ブックマークの設定時にエラーが発生しました。
@@ -15,8 +17,8 @@ Bookmarks	WebPositive Window		ブックマーク
 Use proxy server to connect to the internet	Settings Window		インターネット接続にプロキシサーバーを使用
 %url finished	WebPositive Window	Loading URL finished. Don't translate variable %url.	%url の読み込み完了
 Auto-hide interface in full screen mode	Settings Window		全画面表示で自動的にインターフェースを隠す
-There was an error retrieving the bookmark folder.\n\nError: %error	WebPositive Window	Don't translate the variable %error	ブックマークフォルダーの取得時にエラーが発生しました。\n\nエラー: %error
 Delete	Cookie Manager		削除
+There was an error retrieving the bookmark folder.\n\nError: %error	WebPositive Window	Don't translate the variable %error	ブックマークフォルダーの取得時にエラーが発生しました。\n\nエラー: %error
 (Finish: %date - Over %duration left)	Download Window		(完了: %date - 残り %duration以上)
 Open containing folder	Download Window		フォルダーを開く
 Find previous	WebPositive Window		前を検索
@@ -56,14 +58,15 @@ Cookies for %s	Cookie Manager		%s 用の Cookie
 Close	Download Window		閉じる
 WebPositive	System name		WebPositive
 %s - Search term	Settings Window		%s - 検索語
-Reload	WebPositive Window		再読み込み
+Old name: %s	BookmarkBar		以前の名前: %s
 Expiration	Cookie Manager		有効期限
+Reload	WebPositive Window		再読み込み
 Your CPU is too old and does not support the SSE2 extensions, without which WebPositive cannot run. We recommend installing NetSurf instead.	WebPositive		CPUが古く、SSE2拡張をサポートしていません。そのためWebPositiveを動作できません。代わりにNetSurfのインストールをお勧めします。
 Download finished	Download Window		ダウンロードが完了しました
 Cookie manager	WebPositive Window		Cookie マネージャー
-OK	Authentication Panel		OK
-Hide password text	Authentication Panel		パスワードを隠す
 Username:	Authentication Panel		ユーザー名:
+Hide password text	Authentication Panel		パスワードを隠す
+OK	Authentication Panel		OK
 Name	Cookie Manager		名前
 Remove finished	Download Window		ダウンロード済の削除
 Earlier	WebPositive Window		前
@@ -81,8 +84,8 @@ View	WebPositive Window		表示
 Paste	URL Bar		貼り付け
 Find next	WebPositive Window		次を検索
 Open search page	Settings Window		検索ページを開く
-Increase size	WebPositive Window		拡大
 New tab	WebPositive Window		新しいタブ
+Increase size	WebPositive Window		拡大
 Today	WebPositive Window		今日
 Open location	WebPositive Window		場所を開く
 New browser window	Download Window		新しいブラウザーウィンドウ
@@ -95,6 +98,7 @@ Style:	Font Selection view		スタイル:
 There was an error creating the bookmark file.\n\nError: %error	WebPositive Window	Don't translate variable %error	ブックマークファイルの作成時にエラーが発生しました。\n\nエラー: %error
 OK	Download Window		OK
 Proxy username:	Settings Window		ユーザー名:
+Rename bookmark	BookmarkBar		ブックマークの名前を変更
 Manage bookmarks	WebPositive Window		ブックマークの管理
 /s)	Download Window	...as in 'per second'	/s)
 Restart	Download Window		再開
@@ -108,11 +112,11 @@ Default standard font size:	Settings Window		標準フォントサイズ:
 Custom	Settings Window		ユーザー設定
 Bookmark this page	WebPositive Window		このページをブックマーク
 Show tabs if only one page is open	Settings Window		ページがひとつだけでもタブを表示
-Close tab	WebPositive Window		タブを閉じる
 Remove	Download Window		除去
+Close tab	WebPositive Window		タブを閉じる
 About	WebPositive Window		このソフトウェアについて
-There are still downloads in progress, do you really want to quit WebPositive now?	WebPositive		まだダウンロードが進行中です。本当に WebPositive をすぐに終了しますか?
 Continue downloads	WebPositive		ダウンロードを続ける
+There are still downloads in progress, do you really want to quit WebPositive now?	WebPositive		まだダウンロードが進行中です。本当に WebPositive をすぐに終了しますか?
 Proxy server requires authentication	Settings Window		プロキシサーバーが認証を要求する
 Cancel	Settings Window		中止
 Reset size	WebPositive Window		リセット
@@ -137,8 +141,8 @@ Bookmark error	WebPositive Window		ブックマークエラー
 OK	WebPositive Window		OK
 (%currentSize% of %expectedSize%, %rate%/s)	Download Window		(%currentSize% / %expectedSize%, %rate%/s)
 WebPositive	Download Window		WebPositive
-Zoom text only	WebPositive Window		文字サイズのみ変更
 Save page as…	WebPositive Window		名前を付けてページを保存...
+Zoom text only	WebPositive Window		文字サイズのみ変更
 Page source error	WebPositive Window		ページソースエラー
 Auto-hide mouse pointer	Settings Window		マウスポインターを自動的に隠す
 Requesting %url	WebPositive Window		%url の要求中
@@ -150,9 +154,11 @@ Settings	WebPositive Window		設定
 Clear	URL Bar		クリア
 Loading %url	WebPositive Window		%url の読み込み中
 The quick brown fox jumps over the lazy dog.	Font Selection view	Don't translate this literally ! Use a phrase showing all chars from A to Z.	The quick brown fox jumps over the lazy dog.
+OK	BookmarkBar		OK
 Start up:	Settings Window		スタートアップ:
 Confirmation	WebPositive Window		確認
 Session cookie	Cookie Manager		セッション cookie
+New name:	BookmarkBar		新しい名前:
 No SSE2 support	WebPositive		SSE2 のサポートがありません
 Open all	WebPositive Window		すべてを開く
 Cut	WebPositive Window		切り取り

@@ -146,21 +146,25 @@ init_hardware_pci(driver_t* drivers[])
 		int best = 0;
 		driver_t* driver = NULL;
 
-		for (int index = 0; drivers[index] != NULL; index++) {
-			int result;
-			device_t device = NULL;
-			status = add_child_device(drivers[index], root, &device);
-			if (status < B_OK)
-				break;
+		struct device device = {};
+		device.parent = root;
+		device.root = root;
 
-			result = device->methods.probe(device);
+		for (int index = 0; drivers[index] != NULL; index++) {
+			// Skip allocating the device softc and just call probe() directly.
+			// (Any drivers which don't support this should be patched.)
+			device.methods.device_register
+				= resolve_device_method(drivers[index], ID_device_register);
+			device.methods.device_probe
+				= resolve_device_method(drivers[index], ID_device_probe);
+
+			int result = device.methods.device_probe(&device);
 			if (result >= 0 && (driver == NULL || result > best)) {
 				TRACE(("%s, found %s at %d (%d)\n", gDriverName,
 					device_get_desc(device), i, result));
 				driver = drivers[index];
 				best = result;
 			}
-			device_delete_child(root, device);
 		}
 
 		if (driver == NULL)
@@ -221,23 +225,24 @@ init_hardware_uhub(driver_t* drivers[])
 		if (status != B_OK)
 			continue;
 
+		struct device device = {};
+		device.parent = root;
+		device.root = root;
+		device_set_ivars(&device, &uaa);
+
 		for (int index = 0; drivers[index] != NULL; index++) {
-			int result;
-			device_t device = NULL;
-			status = add_child_device(drivers[index], root, &device);
-			if (status < B_OK)
-				break;
+			device.methods.device_register
+				= resolve_device_method(drivers[index], ID_device_register);
+			device.methods.device_probe
+				= resolve_device_method(drivers[index], ID_device_probe);
 
-			device_set_ivars(device, &uaa);
-
-			result = device->methods.probe(device);
+			int result = device.methods.device_probe(&device);
 			if (result >= 0 && (driver == NULL || result > best)) {
 				TRACE(("%s, found %s at %d (%d)\n", gDriverName,
 					device_get_desc(device), i, result));
 				driver = drivers[index];
 				best = result;
 			}
-			device_delete_child(root, device);
 		}
 
 		if (driver == NULL)
@@ -336,7 +341,7 @@ _fbsd_init_drivers()
 
 		// some drivers expect probe() to be called before attach()
 		// (i.e. they set driver softc in probe(), etc.)
-		if (device->methods.probe(device) >= 0
+		if (device->methods.device_probe(device) >= 0
 				&& device_attach(device) == 0) {
 			dprintf("%s: init_driver(%p)\n", gDriverName,
 				sProbedDevices[p].driver);

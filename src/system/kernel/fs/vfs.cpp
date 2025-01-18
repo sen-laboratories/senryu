@@ -1331,12 +1331,13 @@ free_unused_vnodes(int32 level)
 
 	for (uint32 i = 0; i < count; i++) {
 		ReadLocker vnodesReadLocker(sVnodeLock);
-		ReadLocker hotVnodesReadLocker(sHotVnodesLock);
 
 		// get the first node
+		rw_lock_read_lock(&sHotVnodesLock);
 		InterruptsSpinLocker unusedVnodesLocker(sUnusedVnodesLock);
 		struct vnode* vnode = sUnusedVnodeList.First();
 		unusedVnodesLocker.Unlock();
+		rw_lock_read_unlock(&sHotVnodesLock);
 
 		if (vnode == NULL)
 			break;
@@ -1346,16 +1347,16 @@ free_unused_vnodes(int32 level)
 
 		// Check whether the node is still unused -- since we only append to the
 		// tail of the unused queue, the vnode should still be at its head.
+		//
 		// Alternatively we could check its ref count for 0 and its busy flag,
 		// but if the node is no longer at the head of the queue, it means it
 		// has been touched in the meantime, i.e. it is no longer the least
 		// recently used unused vnode and we rather don't free it.
-		unusedVnodesLocker.Lock();
-		if (vnode != sUnusedVnodeList.First()) {
-			unusedVnodesLocker.Unlock();
+		//
+		// (We skip acquiring the unused lock here, since the vnode can't be
+		// removed from the unused list without its lock being held.)
+		if (vnode != sUnusedVnodeList.First())
 			continue;
-		}
-		unusedVnodesLocker.Unlock();
 
 		ASSERT(!vnode->IsBusy());
 
@@ -1365,7 +1366,6 @@ free_unused_vnodes(int32 level)
 
 		// write back changes and free the node
 		nodeLocker.Unlock();
-		hotVnodesReadLocker.Unlock();
 		vnodesReadLocker.Unlock();
 
 		if (vnode->cache != NULL)
@@ -3657,6 +3657,9 @@ free_io_context(io_context* context)
 	rw_lock_destroy(&context->lock);
 
 	remove_node_monitors(context);
+
+	free(context->fds_close_on_exec);
+	free(context->select_infos);
 	free(context->fds);
 	free(context);
 
@@ -4934,6 +4937,7 @@ vfs_new_io_context(const io_context* parentContext, bool purgeCloseOnExec)
 
 	memset(context, 0, sizeof(io_context));
 	context->ref_count = 1;
+	rw_lock_init(&context->lock, "I/O context");
 
 	ReadLocker parentLocker;
 
@@ -4944,59 +4948,44 @@ vfs_new_io_context(const io_context* parentContext, bool purgeCloseOnExec)
 	} else
 		tableSize = DEFAULT_FD_TABLE_SIZE;
 
-	// allocate space for FDs and their close-on-exec flag
-	context->fds = (file_descriptor**)malloc(
-		sizeof(struct file_descriptor*) * tableSize
-		+ sizeof(struct select_info**) * tableSize
-		+ (tableSize + 7) / 8);
-	if (context->fds == NULL) {
+	if (vfs_resize_fd_table(context, tableSize) != B_OK) {
 		free(context);
 		return NULL;
 	}
-
-	context->select_infos = (select_info**)(context->fds + tableSize);
-	context->fds_close_on_exec = (uint8*)(context->select_infos + tableSize);
-
-	memset(context->fds, 0, sizeof(struct file_descriptor*) * tableSize
-		+ sizeof(struct select_info**) * tableSize
-		+ (tableSize + 7) / 8);
-
-	rw_lock_init(&context->lock, "I/O context");
 
 	// Copy all parent file descriptors
 
 	if (parentContext != NULL) {
 		mutex_lock(&sIOContextRootLock);
 		context->root = parentContext->root;
-		if (context->root)
+		if (context->root != NULL)
 			inc_vnode_ref_count(context->root);
 		mutex_unlock(&sIOContextRootLock);
 
 		context->cwd = parentContext->cwd;
-		if (context->cwd)
+		if (context->cwd != NULL)
 			inc_vnode_ref_count(context->cwd);
 
-		if (parentContext->inherit_fds) {
-			for (size_t i = 0; i < tableSize; i++) {
-				struct file_descriptor* descriptor = parentContext->fds[i];
-
-				if (descriptor != NULL
-						&& (descriptor->open_mode & O_DISCONNECTED) == 0) {
-					const bool closeOnExec = fd_close_on_exec(parentContext, i);
-					if (closeOnExec && purgeCloseOnExec)
-						continue;
-
-					TFD(InheritFD(context, i, descriptor, parentContext));
-
-					context->fds[i] = descriptor;
-					context->num_used_fds++;
-					atomic_add(&descriptor->ref_count, 1);
-					atomic_add(&descriptor->open_count, 1);
-
-					if (closeOnExec)
-						fd_set_close_on_exec(context, i, true);
-				}
+		for (size_t i = 0; i < tableSize; i++) {
+			struct file_descriptor* descriptor = parentContext->fds[i];
+			if (descriptor == NULL
+					|| (descriptor->open_mode & O_DISCONNECTED) != 0) {
+				continue;
 			}
+
+			const bool closeOnExec = fd_close_on_exec(parentContext, i);
+			if (closeOnExec && purgeCloseOnExec)
+				continue;
+
+			TFD(InheritFD(context, i, descriptor, parentContext));
+
+			context->fds[i] = descriptor;
+			context->num_used_fds++;
+			atomic_add(&descriptor->ref_count, 1);
+			atomic_add(&descriptor->open_count, 1);
+
+			if (closeOnExec)
+				fd_set_close_on_exec(context, i, true);
 		}
 
 		parentLocker.Unlock();
@@ -5010,9 +4999,6 @@ vfs_new_io_context(const io_context* parentContext, bool purgeCloseOnExec)
 		if (context->cwd)
 			inc_vnode_ref_count(context->cwd);
 	}
-
-	context->table_size = tableSize;
-	context->inherit_fds = parentContext != NULL;
 
 	list_init(&context->node_monitors);
 	context->max_monitors = DEFAULT_NODE_MONITORS;
@@ -5053,7 +5039,7 @@ vfs_resize_fd_table(struct io_context* context, uint32 newSize)
 	// If the tables shrink, make sure none of the fds being dropped are in use.
 	if (newSize < oldSize) {
 		for (uint32 i = oldSize; i-- > newSize;) {
-			if (context->fds[i])
+			if (context->fds[i] != NULL)
 				return B_BUSY;
 		}
 	}
@@ -5063,26 +5049,33 @@ vfs_resize_fd_table(struct io_context* context, uint32 newSize)
 	select_info** oldSelectInfos = context->select_infos;
 	uint8* oldCloseOnExecTable = context->fds_close_on_exec;
 
-	// allocate new tables
+	// allocate new tables (separately to reduce the chances of needing a raw allocation)
 	file_descriptor** newFDs = (file_descriptor**)malloc(
-		sizeof(struct file_descriptor*) * newSize
-		+ sizeof(struct select_infos**) * newSize
-		+ newCloseOnExitBitmapSize);
-	if (newFDs == NULL)
+		sizeof(struct file_descriptor*) * newSize);
+	select_info** newSelectInfos = (select_info**)malloc(
+		+ sizeof(select_info**) * newSize);
+	uint8* newCloseOnExecTable = (uint8*)malloc(newCloseOnExitBitmapSize);
+	if (newFDs == NULL || newSelectInfos == NULL || newCloseOnExecTable == NULL) {
+		free(newFDs);
+		free(newSelectInfos);
+		free(newCloseOnExecTable);
 		return B_NO_MEMORY;
+	}
 
 	context->fds = newFDs;
-	context->select_infos = (select_info**)(context->fds + newSize);
-	context->fds_close_on_exec = (uint8*)(context->select_infos + newSize);
+	context->select_infos = newSelectInfos;
+	context->fds_close_on_exec = newCloseOnExecTable;
 	context->table_size = newSize;
 
-	// copy entries from old tables
-	uint32 toCopy = min_c(oldSize, newSize);
+	if (oldSize != 0) {
+		// copy entries from old tables
+		uint32 toCopy = min_c(oldSize, newSize);
 
-	memcpy(context->fds, oldFDs, sizeof(void*) * toCopy);
-	memcpy(context->select_infos, oldSelectInfos, sizeof(void*) * toCopy);
-	memcpy(context->fds_close_on_exec, oldCloseOnExecTable,
-		min_c(oldCloseOnExitBitmapSize, newCloseOnExitBitmapSize));
+		memcpy(context->fds, oldFDs, sizeof(void*) * toCopy);
+		memcpy(context->select_infos, oldSelectInfos, sizeof(void*) * toCopy);
+		memcpy(context->fds_close_on_exec, oldCloseOnExecTable,
+			min_c(oldCloseOnExitBitmapSize, newCloseOnExitBitmapSize));
+	}
 
 	// clear additional entries, if the tables grow
 	if (newSize > oldSize) {
@@ -5094,6 +5087,8 @@ vfs_resize_fd_table(struct io_context* context, uint32 newSize)
 	}
 
 	free(oldFDs);
+	free(oldSelectInfos);
+	free(oldCloseOnExecTable);
 
 	return B_OK;
 }

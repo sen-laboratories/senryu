@@ -36,6 +36,7 @@
 #include <fs_interface.h>
 #include <fs_query.h>
 #include <fs_volume.h>
+#include <fs_ops_support.h>
 #include <vfs.h>
 #include <KernelExport.h>
 #include <NodeMonitor.h>
@@ -58,6 +59,7 @@
 #include "Node.h"
 #include "Query.h"
 #include "ramfs_ioctl.h"
+#include "SpecialNode.h"
 #include "SymLink.h"
 #include "Volume.h"
 
@@ -419,7 +421,7 @@ ramfs_create_symlink(fs_volume* _volume, fs_vnode* _dir, const char *name,
 	}
 
 	// check directory write permissions
-	error = dir->CheckPermissions(ACCESS_W);
+	error = dir->CheckPermissions(W_OK);
 	Node *node = NULL;
 	if (error == B_OK) {
 		// check if entry does already exist
@@ -476,7 +478,7 @@ ramfs_link(fs_volume* _volume, fs_vnode* _dir, const char *name,
 		SET_ERROR(error, B_NOT_ALLOWED);
 	}
 	// check directory write permissions
-	error = dir->CheckPermissions(ACCESS_W);
+	error = dir->CheckPermissions(W_OK);
 	Entry *entry = NULL;
 	if (error == B_OK) {
 		// check if entry does already exist
@@ -516,7 +518,7 @@ ramfs_unlink(fs_volume* _volume, fs_vnode* _dir, const char *name)
 
 	NodeMTimeUpdater mTimeUpdater(dir);
 	// check directory write permissions
-	error = dir->CheckPermissions(ACCESS_W);
+	error = dir->CheckPermissions(W_OK);
 	ino_t nodeID = -1;
 	if (error == B_OK) {
 		// check if entry exists
@@ -572,9 +574,9 @@ ramfs_rename(fs_volume* _volume, fs_vnode* _oldDir, const char *oldName,
 
 	// check directory write permissions
 	if (error == B_OK)
-		error = oldDir->CheckPermissions(ACCESS_W);
+		error = oldDir->CheckPermissions(W_OK);
 	if (error == B_OK)
-		error = newDir->CheckPermissions(ACCESS_W);
+		error = newDir->CheckPermissions(W_OK);
 
 	Node *node = NULL;
 	Entry *entry = NULL;
@@ -723,7 +725,7 @@ ramfs_write_stat(fs_volume* _volume, fs_vnode* _node, const struct stat *st,
 	status_t error = B_OK;
 	NodeMTimeUpdater mTimeUpdater(node);
 	// check permissions
-	error = node->CheckPermissions(ACCESS_W);
+	error = node->CheckPermissions(W_OK);
 	// size
 	if (error == B_OK && (mask & B_STAT_SIZE))
 		error = node->SetSize(st->st_size);
@@ -830,7 +832,7 @@ ramfs_create(fs_volume* _volume, fs_vnode* _dir, const char *name, int openMode,
 			} else if (!node->IsFile()) {
 				SET_ERROR(error, B_NOT_ALLOWED);
 			// the user must have write permission for an existing entry
-			} else if ((error = node->CheckPermissions(ACCESS_W)) == B_OK) {
+			} else if ((error = node->CheckPermissions(W_OK)) == B_OK) {
 				// truncate, if requested
 				if (openMode & O_TRUNC)
 					error = node->SetSize(0);
@@ -842,7 +844,7 @@ ramfs_create(fs_volume* _volume, fs_vnode* _dir, const char *name, int openMode,
 				}
 			}
 		// the user must have dir write permission to create a new entry
-		} else if ((error = dir->CheckPermissions(ACCESS_W)) == B_OK) {
+		} else if ((error = dir->CheckPermissions(W_OK)) == B_OK) {
 			// entry doesn't exist: create a file
 			File *file = NULL;
 			error = dir->CreateFile(name, &file);
@@ -877,6 +879,71 @@ ramfs_create(fs_volume* _volume, fs_vnode* _dir, const char *name, int openMode,
 
 
 static status_t
+ramfs_create_special_node(fs_volume *_volume, fs_vnode *_dir, const char *name,
+	fs_vnode *subVnode, mode_t mode, uint32 flags, fs_vnode *_superVnode,
+	ino_t *vnid)
+{
+	FUNCTION(("name: `%s', mode: %x\n", name, mode));
+	Volume* volume = (Volume*)_volume->private_volume;
+	Directory* dir = dynamic_cast<Directory*>((Node*)_dir->private_node);
+
+	if (name == NULL || subVnode != NULL)
+		RETURN_ERROR(B_UNSUPPORTED);
+	if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
+		RETURN_ERROR(B_FILE_EXISTS);
+
+	VolumeWriteLocker locker(volume);
+	if (!locker.IsLocked())
+		RETURN_ERROR(B_ERROR);
+
+	NodeMTimeUpdater mTimeUpdater(dir);
+	status_t error = B_OK;
+
+	// directory deleted?
+	bool removed;
+	if (get_vnode_removed(volume->FSVolume(), dir->GetID(), &removed)
+			!= B_OK || removed) {
+		SET_ERROR(error, B_NOT_ALLOWED);
+	}
+
+	Node *existingNode = NULL;
+	if (dir->FindNode(name, &existingNode) == B_OK)
+		RETURN_ERROR(B_FILE_EXISTS);
+
+	error = dir->CheckPermissions(W_OK);
+	if (error != B_OK)
+		RETURN_ERROR(error);
+
+	SpecialNode* node = new(std::nothrow) SpecialNode(volume, mode);
+	if (node == NULL)
+		RETURN_ERROR(B_NO_MEMORY);
+
+	*vnid = node->GetID();
+
+	node->SetUID(geteuid());
+	node->SetGID(getegid());
+
+	Entry* entry;
+	error = node->InitCheck();
+	if (error == B_OK) {
+		// add node to directory
+		error = dir->CreateEntry(node, name, &entry);
+	}
+	if (error != B_OK) {
+		delete node;
+		RETURN_ERROR(error);
+	}
+
+	NodeMTimeUpdater mTimeUpdater2(node);
+
+	// notify listeners
+	notify_entry_created(volume->GetID(), dir->GetID(), name, *vnid);
+
+	return B_OK;
+}
+
+
+static status_t
 ramfs_open(fs_volume* _volume, fs_vnode* _node, int openMode, void** _cookie)
 {
 //	FUNCTION_START();
@@ -885,8 +952,8 @@ ramfs_open(fs_volume* _volume, fs_vnode* _node, int openMode, void** _cookie)
 
 	FUNCTION(("node: %lld\n", node->GetID()));
 
-	VolumeReadLocker locker(volume);
-	if (!locker.IsLocked())
+	VolumeReadLocker readLocker(volume);
+	if (!readLocker.IsLocked())
 		RETURN_ERROR(B_ERROR);
 
 	status_t error = B_OK;
@@ -897,9 +964,6 @@ ramfs_open(fs_volume* _volume, fs_vnode* _node, int openMode, void** _cookie)
 		error = B_NOT_A_DIRECTORY;
 
 	int accessMode = open_mode_to_access(openMode);
-	// truncating requires write permission
-	if (error == B_OK && (openMode & O_TRUNC))
-		accessMode |= ACCESS_W;
 	// check open mode against permissions
 	if (error == B_OK)
 		error = node->CheckPermissions(accessMode);
@@ -910,10 +974,16 @@ ramfs_open(fs_volume* _volume, fs_vnode* _node, int openMode, void** _cookie)
 		if (!cookie)
 			SET_ERROR(error, B_NO_MEMORY);
 	}
+	readLocker.Unlock();
+
 	// truncate if requested
-	if (error == B_OK && (openMode & O_TRUNC))
+	if (error == B_OK && (openMode & O_TRUNC)) {
+		VolumeWriteLocker writeLocker(volume);
+
 		error = node->SetSize(0);
-	NodeMTimeUpdater mTimeUpdater(node);
+		NodeMTimeUpdater mTimeUpdater(node);
+	}
+
 	// set result / cleanup on failure
 	if (error == B_OK)
 		*_cookie = cookie;
@@ -1052,27 +1122,32 @@ public:
 	DirectoryCookie(Directory *directory = NULL)
 		:
 		fIterator(directory),
-		fDotIndex(DOT_INDEX),
-		// debugging
-		fIteratorID(atomic_add(&fNextIteratorID, 1)),
-		fGetNextCounter(0)
+		fDotIndex(DOT_INDEX)
 	{
 	}
 
 	void Unset() { fIterator.Unset(); }
 
-//	EntryIterator *GetIterator() const { return &fIterator; }
-
-	status_t GetNext(ino_t *nodeID, const char **entryName)
+	status_t Next()
 	{
-fGetNextCounter++;
+		status_t error = B_OK;
+		if (fDotIndex < ENTRY_INDEX)
+			fDotIndex++;
+		if (fDotIndex == ENTRY_INDEX) {
+			Entry* entry = NULL;
+			error = fIterator.GetNext(&entry);
+		}
+		return error;
+	}
+
+	status_t GetCurrent(ino_t *nodeID, const char **entryName)
+	{
 		status_t error = B_OK;
 		if (fDotIndex == DOT_INDEX) {
 			// "."
 			Node *entry = fIterator.GetDirectory();
 			*nodeID = entry->GetID();
 			*entryName = ".";
-			fDotIndex++;
 		} else if (fDotIndex == DOT_DOT_INDEX) {
 			// ".."
 			Directory *dir = fIterator.GetDirectory();
@@ -1081,19 +1156,20 @@ fGetNextCounter++;
 			else
 				*nodeID = dir->GetID();
 			*entryName = "..";
-			fDotIndex++;
 		} else {
 			// ordinary entries
-			Entry *entry = NULL;
-			error = fIterator.GetNext(&entry);
+			Entry *entry = fIterator.GetCurrent();
+			if (entry == NULL)
+				error = B_ENTRY_NOT_FOUND;
 			if (error == B_OK) {
 				*nodeID = entry->GetNode()->GetID();
 				*entryName = entry->GetName();
 			}
 		}
-		PRINT("EntryIterator %" B_PRId32 ", GetNext() counter: %" B_PRId32 ", entry: %p (%lld)\n",
-		fIteratorID, fGetNextCounter, fIterator.GetCurrent(),
-			(fIterator.GetCurrent()
+
+		PRINT("EntryIterator<%p>::GetNext(): entry: %p (%" B_PRIdINO ")\n",
+			this, fIterator.GetCurrent(),
+			(fIterator.GetCurrent() != NULL
 				? fIterator.GetCurrent()->GetNode()->GetID() : -1));
 		return error;
 	}
@@ -1117,15 +1193,7 @@ private:
 private:
 	EntryIterator	fIterator;
 	uint32			fDotIndex;
-
-	// debugging
-	int32			fIteratorID;
-	int32			fGetNextCounter;
-	static int32	fNextIteratorID;
 };
-
-
-int32 DirectoryCookie::fNextIteratorID = 0;
 
 
 static status_t
@@ -1156,7 +1224,7 @@ ramfs_create_dir(fs_volume* _volume, fs_vnode* _dir, const char *name, int mode)
 	}
 
 	// check directory write permissions
-	error = dir->CheckPermissions(ACCESS_W);
+	error = dir->CheckPermissions(W_OK);
 	Node *node = NULL;
 	if (error == B_OK) {
 		// check if entry does already exist
@@ -1206,7 +1274,7 @@ ramfs_remove_dir(fs_volume* _volume, fs_vnode* _dir, const char *name)
 
 	NodeMTimeUpdater mTimeUpdater(dir);
 	// check directory write permissions
-	status_t error = dir->CheckPermissions(ACCESS_W);
+	status_t error = dir->CheckPermissions(W_OK);
 	ino_t nodeID = -1;
 	if (error == B_OK) {
 		// check if entry exists
@@ -1295,7 +1363,7 @@ ramfs_free_dir_cookie(fs_volume* /*fs*/, fs_vnode* /*_node*/, void* _cookie)
 
 static status_t
 ramfs_read_dir(fs_volume* _volume, fs_vnode* DARG(_node), void* _cookie,
-	struct dirent *buffer, size_t bufferSize, uint32 *count)
+	struct dirent *dirent, size_t bufferSize, uint32 *_num)
 {
 	FUNCTION_START();
 	Volume* volume = (Volume*)_volume->private_volume;
@@ -1308,34 +1376,48 @@ ramfs_read_dir(fs_volume* _volume, fs_vnode* DARG(_node), void* _cookie,
 	if (!locker.IsLocked())
 		RETURN_ERROR(B_ERROR);
 
-	status_t error = cookie->Resume();
-	if (error == B_OK) {
-		// read one entry
+	status_t status = cookie->Resume();
+	if (status != B_OK)
+		RETURN_ERROR(status);
+
+	uint32 maxCount = *_num;
+	uint32 count = 0;
+
+	while (count < maxCount && bufferSize > sizeof(struct dirent)) {
+		size_t length = bufferSize - offsetof(struct dirent, d_name);
+
 		ino_t nodeID = -1;
 		const char *name = NULL;
-		if (cookie->GetNext(&nodeID, &name) == B_OK) {
-			PRINT("  entry: `%s'\n", name);
-			size_t nameLen = strlen(name);
-			// check, whether the entry fits into the buffer,
-			// and fill it in
-			size_t length = (buffer->d_name + nameLen + 1) - (char*)buffer;
-			if (length <= bufferSize) {
-				buffer->d_dev = volume->GetID();
-				buffer->d_ino = nodeID;
-				memcpy(buffer->d_name, name, nameLen);
-				buffer->d_name[nameLen] = '\0';
-				buffer->d_reclen = length;
-				*count = 1;
-			} else {
-				SET_ERROR(error, B_BUFFER_OVERFLOW);
-			}
-		} else
-			*count = 0;
+		if (cookie->GetCurrent(&nodeID, &name) != B_OK)
+			break;
 
-		cookie->Suspend();
+		PRINT("  entry: `%s'\n", name);
+
+		size_t nameLength = strlen(name);
+		if (length < (nameLength + 1)) {
+			// the remaining name buffer length is too small
+			if (count == 0)
+				RETURN_ERROR(B_BUFFER_OVERFLOW);
+			break;
+		}
+		length = nameLength;
+
+		dirent->d_dev = volume->GetID();
+		dirent->d_ino = nodeID;
+		memcpy(dirent->d_name, name, nameLength);
+		dirent->d_name[nameLength] = '\0';
+
+		dirent = next_dirent(dirent, length, bufferSize);
+		count++;
+
+		if (cookie->Next() != B_OK)
+			break;
 	}
 
-	RETURN_ERROR(error);
+	cookie->Suspend();
+
+	*_num = count;
+	return B_OK;
 }
 
 
@@ -1368,7 +1450,7 @@ ramfs_open_attr_dir(fs_volume* _volume, fs_vnode* _node, void** _cookie)
 
 	status_t error = B_OK;
 	// check permissions
-	error = node->CheckPermissions(ACCESS_R);
+	error = node->CheckPermissions(R_OK);
 	// create iterator
 	AttributeIterator *iterator = NULL;
 	if (error == B_OK) {
@@ -1529,8 +1611,6 @@ ramfs_create_attr(fs_volume* _volume, fs_vnode* _node, const char *name,
 
 	// creating and truncating require write permission
 	int accessMode = open_mode_to_access(openMode);
-	if (!attribute || (openMode & O_TRUNC))
-		accessMode |= ACCESS_W;
 
 	// check required permissions against node permissions
 	status_t error = node->CheckPermissions(accessMode);
@@ -1600,8 +1680,6 @@ ramfs_open_attr(fs_volume* _volume, fs_vnode* _node, const char *name,
 
 	// truncating requires write permission
 	int accessMode = open_mode_to_access(openMode);
-	if (error == B_OK && (openMode & O_TRUNC))
-		accessMode |= ACCESS_W;
 
 	// check open mode against permissions
 	if (error == B_OK)
@@ -1691,7 +1769,7 @@ ramfs_read_attr(fs_volume* _volume, fs_vnode* _node, void* _cookie, off_t pos,
 
 	// check permissions
 	int accessMode = open_mode_to_access(cookie->GetOpenMode());
-	if (error == B_OK && !(accessMode & ACCESS_R))
+	if (error == B_OK && !(accessMode & R_OK))
 		SET_ERROR(error, B_NOT_ALLOWED);
 
 	// read
@@ -1735,7 +1813,7 @@ ramfs_write_attr(fs_volume* _volume, fs_vnode* _node, void* _cookie,
 
 	// check permissions
 	int accessMode = open_mode_to_access(cookie->GetOpenMode());
-	if (error == B_OK && !(accessMode & ACCESS_W))
+	if (error == B_OK && !(accessMode & W_OK))
 		SET_ERROR(error, B_NOT_ALLOWED);
 
 	// write the data
@@ -1774,7 +1852,7 @@ ramfs_read_attr_stat(fs_volume* _volume, fs_vnode* _node, void* _cookie,
 
 	// check permissions
 	int accessMode = open_mode_to_access(cookie->GetOpenMode());
-	if (error == B_OK && !(accessMode & ACCESS_R))
+	if (error == B_OK && !(accessMode & R_OK))
 		SET_ERROR(error, B_NOT_ALLOWED);
 
 	// read
@@ -1811,7 +1889,7 @@ ramfs_remove_attr(fs_volume* _volume, fs_vnode* _node, const char *name)
 	NodeMTimeUpdater mTimeUpdater(node);
 
 	// check permissions
-	error = node->CheckPermissions(ACCESS_W);
+	error = node->CheckPermissions(W_OK);
 
 	// find the attribute
 	Attribute *attribute = NULL;
@@ -2248,7 +2326,7 @@ fs_vnode_ops gRamFSVnodeOps = {
 	&ramfs_remove_attr,
 
 	/* special nodes */
-	NULL	// create_special_node
+	&ramfs_create_special_node,
 };
 
 static file_system_module_info sRamFSModuleInfo = {

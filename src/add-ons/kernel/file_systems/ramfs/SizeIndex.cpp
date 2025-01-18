@@ -13,6 +13,9 @@
 #include "SizeIndex.h"
 #include "Volume.h"
 
+#include <util/AutoLock.h>
+
+
 // SizeIndexPrimaryKey
 class SizeIndexPrimaryKey {
 public:
@@ -145,6 +148,8 @@ SizeIndex::CountEntries() const
 status_t
 SizeIndex::Changed(Node *node, off_t oldSize)
 {
+	fVolume->AssertWriteLocked();
+
 	status_t error = B_BAD_VALUE;
 	if (node) {
 		NodeTree::Iterator it;
@@ -223,6 +228,7 @@ SizeIndex::InternalFind(const uint8 *key, size_t length)
 void
 SizeIndex::_AddIterator(Iterator *iterator)
 {
+	RecursiveLocker locker(fVolume->GetAttributeIteratorLock());
 	fIterators->Insert(iterator);
 }
 
@@ -230,6 +236,7 @@ SizeIndex::_AddIterator(Iterator *iterator)
 void
 SizeIndex::_RemoveIterator(Iterator *iterator)
 {
+	RecursiveLocker locker(fVolume->GetAttributeIteratorLock());
 	fIterators->Remove(iterator);
 }
 

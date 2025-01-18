@@ -347,10 +347,13 @@ map_image(int fd, char const* path, image_t* image, bool fixed)
 		return B_NO_MEMORY;
 
 	for (uint32 i = 0; i < image->num_regions; i++) {
-		char regionName[B_OS_NAME_LENGTH];
+		elf_region_t& region = image->regions[i];
 
+		char regionName[B_OS_NAME_LENGTH];
 		snprintf(regionName, sizeof(regionName), "%s_seg%" B_PRIu32 "%s",
-			baseName, i, (image->regions[i].flags & RFLAG_RW) ? "rw" : "ro");
+			baseName, i, (region.flags & RFLAG_EXECUTABLE) ?
+				((region.flags & RFLAG_WRITABLE) ? "rwx" : "rx")
+				: (region.flags & RFLAG_WRITABLE) ? "rw" : "ro");
 
 		get_image_region_load_address(image, i,
 			i > 0 ? image->regions[i - 1].delta : 0, fixed, loadAddress,
@@ -361,15 +364,15 @@ map_image(int fd, char const* path, image_t* image, bool fixed)
 		if (addressSpecifier != B_EXACT_ADDRESS)
 			loadAddress = reservedAddress;
 
-		if ((image->regions[i].flags & RFLAG_ANON) != 0) {
-			image->regions[i].id = _kern_create_area(regionName,
+		if ((region.flags & RFLAG_ANON) != 0) {
+			region.id = _kern_create_area(regionName,
 				(void**)&loadAddress, B_EXACT_ADDRESS,
-				image->regions[i].vmsize, B_NO_LOCK,
+				region.vmsize, B_NO_LOCK,
 				B_READ_AREA | B_WRITE_AREA);
 
-			if (image->regions[i].id < 0) {
+			if (region.id < 0) {
 				_kern_unreserve_address_range(reservedAddress, reservedSize);
-				return image->regions[i].id;
+				return region.id;
 			}
 		} else {
 			// Map all segments r/w first -- write access might be needed for
@@ -380,30 +383,30 @@ map_image(int fd, char const* path, image_t* image, bool fixed)
 			// of memory to be committed for them temporarily, just because we
 			// have to write map them.
 			uint32 protection = B_READ_AREA | B_WRITE_AREA
-				| ((image->regions[i].flags & RFLAG_RW) != 0
+				| ((region.flags & RFLAG_WRITABLE) != 0
 					? 0 : B_OVERCOMMITTING_AREA);
-			image->regions[i].id = _kern_map_file(regionName,
+			region.id = _kern_map_file(regionName,
 				(void**)&loadAddress, B_EXACT_ADDRESS,
-				image->regions[i].vmsize, protection, REGION_PRIVATE_MAP, false,
-				fd, PAGE_BASE(image->regions[i].fdstart));
+				region.vmsize, protection, REGION_PRIVATE_MAP, false,
+				fd, PAGE_BASE(region.fdstart));
 
-			if (image->regions[i].id < 0) {
+			if (region.id < 0) {
 				_kern_unreserve_address_range(reservedAddress, reservedSize);
-				return image->regions[i].id;
+				return region.id;
 			}
 
 			TRACE(("\"%s\" at %p, 0x%lx bytes (%s)\n", path,
-				(void *)loadAddress, image->regions[i].vmsize,
-				image->regions[i].flags & RFLAG_RW ? "rw" : "read-only"));
+				(void *)loadAddress, region.vmsize,
+				region.flags & RFLAG_WRITABLE ? "rw" : "read-only"));
 
 			// handle trailer bits in data segment
-			if (image->regions[i].flags & RFLAG_RW) {
+			if (region.flags & RFLAG_WRITABLE) {
 				addr_t startClearing = loadAddress
-					+ PAGE_OFFSET(image->regions[i].start)
-					+ image->regions[i].size;
-				addr_t toClear = image->regions[i].vmsize
-					- PAGE_OFFSET(image->regions[i].start)
-					- image->regions[i].size;
+					+ PAGE_OFFSET(region.start)
+					+ region.size;
+				addr_t toClear = region.vmsize
+					- PAGE_OFFSET(region.start)
+					- region.size;
 
 				TRACE(("cleared 0x%lx and the following 0x%lx bytes\n",
 					startClearing, toClear));
@@ -411,8 +414,8 @@ map_image(int fd, char const* path, image_t* image, bool fixed)
 			}
 		}
 
-		image->regions[i].delta = loadAddress - image->regions[i].vmstart;
-		image->regions[i].vmstart = loadAddress;
+		region.delta = loadAddress - region.vmstart;
+		region.vmstart = loadAddress;
 		if (i == 0) {
 			TLSBlockTemplates::Get().SetBaseAddress(image->dso_tls_id,
 				loadAddress);
@@ -437,10 +440,11 @@ unmap_image(image_t* image)
 }
 
 
-/*!	This function will change the protection of all read-only segments to really
-	be read-only (and executable).
+/*!	This function will change the protection of all segments to what they're
+	supposed to be.
+
 	The areas have to be read/write first, so that they can be relocated.
-	If at least one image is in compatibility mode then we allow execution of
+	If at least one image is in compatibility mode then we allow write/execute of
 	all areas.
 */
 void
@@ -449,22 +453,24 @@ remap_images()
 	for (image_t* image = sLoadedImages.head; image != NULL;
 			image = image->next) {
 		for (uint32 i = 0; i < image->num_regions; i++) {
-			// we only need to do this once, so we remember those we've already
-			// mapped
-			if ((image->regions[i].flags & RFLAG_REMAPPED) != 0)
+			// we only need to do this once, so we remember those we've already mapped
+			elf_region_t& region = image->regions[i];
+			if ((region.flags & RFLAG_REMAPPED) != 0)
 				continue;
 
-			status_t result = B_OK;
-			if ((image->regions[i].flags & RFLAG_RW) == 0) {
-				result = _kern_set_area_protection(image->regions[i].id,
-						B_READ_AREA | B_EXECUTE_AREA);
-			} else if (image->abi < B_HAIKU_ABI_GCC_2_HAIKU) {
-				result = _kern_set_area_protection(image->regions[i].id,
-						B_READ_AREA | B_WRITE_AREA | B_EXECUTE_AREA);
+			uint32 protection = B_READ_AREA;
+			if (image->abi < B_HAIKU_ABI_GCC_2_HAIKU) {
+				protection |= B_WRITE_AREA | B_EXECUTE_AREA;
+			} else {
+				if ((region.flags & RFLAG_WRITABLE) != 0)
+					protection |= B_WRITE_AREA;
+				if ((region.flags & RFLAG_EXECUTABLE) != 0)
+					protection |= B_EXECUTE_AREA;
 			}
 
+			status_t result = _kern_set_area_protection(region.id, protection);
 			if (result == B_OK)
-				image->regions[i].flags |= RFLAG_REMAPPED;
+				region.flags |= RFLAG_REMAPPED;
 		}
 	}
 }
@@ -501,7 +507,7 @@ register_image(image_t* image, int fd, const char* path)
 	for (uint32 i= 0; i < image->num_regions; i++) {
 		addr_t base = image->regions[i].vmstart;
 		addr_t end = base + image->regions[i].vmsize;
-		if (image->regions[i].flags & RFLAG_RW) {
+		if (image->regions[i].flags & RFLAG_WRITABLE) {
 			// data
 			if (dataBase == 0) {
 				dataBase = base;

@@ -65,7 +65,6 @@
 #include "ServerPicture.h"
 #include "ServerTokenSpace.h"
 #include "ServerWindow.h"
-#include "SystemPalette.h"
 #include "Window.h"
 
 
@@ -676,7 +675,7 @@ ServerApp::_DispatchMessage(int32 code, BPrivate::LinkReceiver& link)
 
 			status_t error = gDecorManager.SetDecorator(path, fDesktop);
 
-			fLink.Attach<status_t>(error);
+			fLink.StartMessage(error);
 			fLink.Flush();
 
 			if (error == B_OK)
@@ -3170,24 +3169,6 @@ ServerApp::_DispatchMessage(int32 code, BPrivate::LinkReceiver& link)
 			fLink.StartMessage(status);
 			if (status == B_OK)
 				fLink.Attach<BRect>(frame);
-
-			fLink.Flush();
-			break;
-		}
-
-		case AS_SCREEN_GET_COLORMAP:
-		{
-			STRACE(("ServerApp %s: AS_SCREEN_GET_COLORMAP\n", Signature()));
-
-			int32 id;
-			link.Read<int32>(&id);
-
-			const color_map* colorMap = SystemColorMap();
-			if (colorMap != NULL) {
-				fLink.StartMessage(B_OK);
-				fLink.Attach<color_map>(*colorMap);
-			} else
-				fLink.StartMessage(B_ERROR);
 
 			fLink.Flush();
 			break;

@@ -289,6 +289,12 @@ Thread::Create(const char* name, Thread*& _thread)
 /*static*/ Thread*
 Thread::Get(thread_id id)
 {
+	if (id == thread_get_current_thread_id()) {
+		Thread* thread = thread_get_current_thread();
+		thread->AcquireReference();
+		return thread;
+	}
+
 	InterruptsReadSpinLocker threadHashLocker(sThreadHashLock);
 	Thread* thread = sThreadHash.Lookup(id);
 	if (thread != NULL)
@@ -300,6 +306,13 @@ Thread::Get(thread_id id)
 /*static*/ Thread*
 Thread::GetAndLock(thread_id id)
 {
+	if (id == thread_get_current_thread_id()) {
+		Thread* thread = thread_get_current_thread();
+		thread->AcquireReference();
+		thread->Lock();
+		return thread;
+	}
+
 	// look it up and acquire a reference
 	InterruptsReadSpinLocker threadHashLocker(sThreadHashLock);
 	Thread* thread = sThreadHash.Lookup(id);
@@ -2591,7 +2604,7 @@ wait_for_thread_etc(thread_id id, uint32 flags, bigtime_t timeout,
 		// remove our death entry now.
 		thread = Thread::GetAndLock(id);
 		if (thread != NULL) {
-			list_remove_link(&death);
+			list_remove_link(&death.link);
 			thread->UnlockAndReleaseReference();
 		} else {
 			// The thread is already gone, so we need to wait uninterruptibly
@@ -3701,26 +3714,6 @@ _user_find_thread(const char *userName)
 		return B_BAD_ADDRESS;
 
 	return find_thread(name);
-}
-
-
-status_t
-_user_wait_for_thread(thread_id id, status_t *userReturnCode)
-{
-	status_t returnCode;
-	status_t status;
-
-	if (userReturnCode != NULL && !IS_USER_ADDRESS(userReturnCode))
-		return B_BAD_ADDRESS;
-
-	status = wait_for_thread_etc(id, B_CAN_INTERRUPT, 0, &returnCode);
-
-	if (status == B_OK && userReturnCode != NULL
-		&& user_memcpy(userReturnCode, &returnCode, sizeof(status_t)) < B_OK) {
-		return B_BAD_ADDRESS;
-	}
-
-	return syscall_restart_handle_post(status);
 }
 
 

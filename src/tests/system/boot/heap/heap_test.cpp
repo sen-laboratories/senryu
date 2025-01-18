@@ -4,46 +4,17 @@
  */
 
 
-#include <boot/platform.h>
-#include <boot/heap.h>
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
 
-
-extern "C" void* heap_malloc(size_t size);
-extern "C" void* heap_realloc(void* oldBuffer, size_t size);
-extern "C" void heap_free(void* buffer);
-extern void dump_chunks(void);
-extern uint32 heap_available(void);
+#include <util/SimpleAllocator.h>
 
 
+static SimpleAllocator<> sAllocator;
 const int32	kHeapSize = 32 * 1024;
-
 int32 gVerbosity = 1;
-
-
-void
-platform_release_heap(struct stage2_args* args, void* base)
-{
-	free(base);
-}
-
-
-status_t
-platform_init_heap(struct stage2_args* args, void** _base, void** _top)
-{
-	void* base = malloc(kHeapSize);
-	if (base == NULL)
-		return B_NO_MEMORY;
-
-	*_base = base;
-	*_top = (void*)((uint8*)base + kHeapSize);
-
-	return B_OK;
-}
 
 
 void
@@ -56,17 +27,6 @@ panic(const char* format, ...)
 	va_end(args);
 
 	exit(-1);
-}
-
-
-void
-dprintf(const char* format, ...)
-{
-	va_list args;
-
-	va_start(args, format);
-	vfprintf(stdout, format, args);
-	va_end(args);
 }
 
 
@@ -84,21 +44,21 @@ dump_allocated_chunk(int32 index, void* buffer)
 		size, *size);
 
 	if (gVerbosity > 3)
-		dump_chunks();
+		sAllocator.DumpChunks();
 }
 
 
 static void*
 test_malloc(size_t bytes)
 {
-	return heap_malloc(bytes);
+	return sAllocator.Allocate(bytes);
 }
 
 
 static void*
 test_realloc(void* oldBuffer, size_t size)
 {
-	return heap_realloc(oldBuffer, size);
+	return sAllocator.Reallocate(oldBuffer, size);
 }
 
 
@@ -110,11 +70,11 @@ test_free(void* buffer)
 		dump_allocated_chunk(-1, buffer);
 	}
 
-	heap_free(buffer);
+	sAllocator.Free(buffer);
 
 	if (gVerbosity > 4) {
 		puts("\t- after:");
-		dump_chunks();
+		sAllocator.DumpChunks();
 	}
 }
 
@@ -131,12 +91,12 @@ random_allocations(void* array[], size_t maxSize)
 		size_t size = size_t(rand() * 1. * maxSize / RAND_MAX);
 		array[i] = test_malloc(size);
 		if (array[i] == NULL) {
-			if ((size > heap_available() || size == 0) && gVerbosity < 2)
+			if ((size > sAllocator.Available() || size == 0) && gVerbosity < 2)
 				continue;
 
 			printf(	"%ld. allocating %ld bytes failed (%ld bytes total allocated, "
 					"%ld free (%ld))\n",
-					i, size, total, heap_available(), kHeapSize - total);
+					i, size, total, sAllocator.Available(), kHeapSize - total);
 		} else {
 			dump_allocated_chunk(i, array[i]);
 
@@ -147,7 +107,7 @@ random_allocations(void* array[], size_t maxSize)
 
 	printf("\t%ld bytes allocated\n", total);
 	if (gVerbosity > 3)
-		dump_chunks();
+		sAllocator.DumpChunks();
 
 	return count;
 }
@@ -159,18 +119,16 @@ main(int argc, char** argv)
 	if (argc > 1)
 		gVerbosity = atoi(argv[1]);
 
-	stage2_args args;
-	memset(&args, 0, sizeof(args));
-	args.heap_size = kHeapSize;
-
-	if (heap_init(&args) < B_OK) {
+	void* base = malloc(kHeapSize);
+	if (base == NULL) {
 		fprintf(stderr, "Could not initialize heap.\n");
 		return -1;
 	}
+	sAllocator.AddChunk(base, kHeapSize);
 
-	printf("heap size == %ld\n", kHeapSize);
+	printf("heap size == %" B_PRId32 "\n", kHeapSize);
 	if (gVerbosity > 2)
-		dump_chunks();
+		sAllocator.DumpChunks();
 
 	puts("* simple allocation of 100 * 128 bytes");
 	void* array[100];
@@ -180,7 +138,7 @@ main(int argc, char** argv)
 	}
 
 	if (gVerbosity > 2)
-		dump_chunks();
+		sAllocator.DumpChunks();
 
 	puts("* testing different deleting order");
 	if (gVerbosity > 2)
@@ -192,7 +150,7 @@ main(int argc, char** argv)
 	}
 
 	if (gVerbosity > 2) {
-		dump_chunks();
+		sAllocator.DumpChunks();
 		puts("- free 40 from the middle (ascending):");
 	}
 
@@ -202,7 +160,7 @@ main(int argc, char** argv)
 	}
 
 	if (gVerbosity > 2) {
-		dump_chunks();
+		sAllocator.DumpChunks();
 		puts("- free 30 from the start (ascending):");
 	}
 
@@ -212,17 +170,17 @@ main(int argc, char** argv)
 	}
 
 	if (gVerbosity > 2)
-		dump_chunks();
+		sAllocator.DumpChunks();
 
 	puts("* allocate until it fails");
 	int32 i = 0;
 	for (i = 0; i < 100; i++) {
 		array[i] = test_malloc(kHeapSize / 64);
 		if (array[i] == NULL) {
-			printf("\tallocation %ld failed - could allocate %ld bytes (64th should fail).\n", i + 1, (kHeapSize / 64) * (i + 1));
+			printf("\tallocation %ld failed - could allocate %" B_PRId32 " bytes (64th should fail).\n", i + 1, (kHeapSize / 64) * (i + 1));
 
 			if (gVerbosity > 2)
-				dump_chunks();
+				sAllocator.DumpChunks();
 
 			while (i-- > 0) {
 				test_free(array[i]);
@@ -259,7 +217,7 @@ main(int argc, char** argv)
 
 			if (gVerbosity > 2) {
 				puts("- freed one");
-				dump_chunks();
+				sAllocator.DumpChunks();
 			}
 		}
 	}
@@ -288,7 +246,6 @@ main(int argc, char** argv)
 	if (memcmp(newBuffer, "haiku", 5))
 		panic("  contents differ!");
 
-	heap_release(&args);
+	free(base);
 	return 0;
 }
-

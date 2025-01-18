@@ -5,6 +5,7 @@
 #ifndef _KERNEL_IMAGE_H
 #define _KERNEL_IMAGE_H
 
+
 #include <image.h>
 
 #include <image_defs.h>
@@ -21,11 +22,10 @@ using BKernel::Team;
 
 #ifdef __cplusplus
 
+#include <util/DoublyLinkedList.h>
 #include <util/OpenHashTable.h>
 
-struct image {
-	struct image*			next;
-	struct image*			prev;
+struct image : public DoublyLinkedListLinkImpl<struct image> {
 	struct image*			hash_link;
 	extended_image_info		info;
 	team_id					team;
@@ -56,9 +56,6 @@ struct image* image_iterate_through_images(image_iterator_callback callback,
 struct image* image_iterate_through_team_images(team_id teamID,
 					image_iterator_callback callback, void* cookie);
 
-extern status_t image_debug_lookup_user_symbol_address(Team *team,
-					addr_t address, addr_t *_baseAddress, const char **_symbolName,
-					const char **_imageName, bool *_exactMatch);
 extern status_t image_init(void);
 
 // user-space exported calls

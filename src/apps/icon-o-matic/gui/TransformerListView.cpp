@@ -104,6 +104,7 @@ class TransformerItem : public SimpleItem,
 enum {
 	MSG_DRAG_TRANSFORMER			= 'drgt',
 	MSG_ADD_TRANSFORMER				= 'adtr',
+	MSG_REMOVE_TRANSFORMER			= 'retr',
 };
 
 
@@ -216,6 +217,11 @@ TransformerListView::MessageReceived(BMessage* message)
 			fCommandStack->Perform(command);
 			break;
 		}
+		case MSG_REMOVE_TRANSFORMER: {
+			RemoveSelected();
+			break;
+		}
+
 		default:
 			SimpleListView::MessageReceived(message);
 			break;
@@ -442,28 +448,35 @@ TransformerListView::SetMenu(BMenu* menu)
 #define B_TRANSLATION_CONTEXT "Transformation"
 	BMessage* message = new BMessage(MSG_ADD_TRANSFORMER);
 	message->AddInt32("type", CONTOUR_TRANSFORMER);
-	fContourMI = new BMenuItem(B_TRANSLATE("Contour"), message);
+	fContourItem = new BMenuItem(B_TRANSLATE("Contour"), message);
 
 	message = new BMessage(MSG_ADD_TRANSFORMER);
 	message->AddInt32("type", STROKE_TRANSFORMER);
-	fStrokeMI = new BMenuItem(B_TRANSLATE("Stroke"), message);
+	fStrokeItem = new BMenuItem(B_TRANSLATE("Stroke"), message);
 
 	message = new BMessage(MSG_ADD_TRANSFORMER);
 	message->AddInt32("type", PERSPECTIVE_TRANSFORMER);
-	fPerspectiveMI = new BMenuItem(B_TRANSLATE("Perspective"), message);
+	fPerspectiveItem = new BMenuItem(B_TRANSLATE("Perspective"), message);
 
 	// message = new BMessage(MSG_ADD_TRANSFORMER);
 	// message->AddInt32("type", AFFINE_TRANSFORMER);
-	// fTransformationMI = new BMenuItem(B_TRANSLATE("Transformation"), message);
+	// fTransformationItem = new BMenuItem(B_TRANSLATE("Transformation"), message);
 #undef B_TRANSLATION_CONTEXT
 #define B_TRANSLATION_CONTEXT "Icon-O-Matic-TransformersList"
 
-	addMenu->AddItem(fContourMI);
-	addMenu->AddItem(fStrokeMI);
-	addMenu->AddItem(fPerspectiveMI);
+	addMenu->AddItem(fContourItem);
+	addMenu->AddItem(fStrokeItem);
+	addMenu->AddItem(fPerspectiveItem);
 
 	addMenu->SetTargetForItems(this);
 	fMenu->AddItem(addMenu);
+
+	fMenu->AddSeparatorItem();
+
+	fRemoveItem = new BMenuItem(B_TRANSLATE("Remove"), new BMessage(MSG_REMOVE_TRANSFORMER));
+	fMenu->AddItem(fRemoveItem);
+
+	fMenu->SetTargetForItems(this);
 
 	_UpdateMenu();
 }
@@ -545,6 +558,6 @@ TransformerListView::_UpdateMenu()
 	fMenu->SetEnabled(fShape != NULL);
 
 	bool isReferenceImage = dynamic_cast<ReferenceImage*>(fShape) != NULL;
-	fContourMI->SetEnabled(!isReferenceImage);
-	fStrokeMI->SetEnabled(!isReferenceImage);
+	fContourItem->SetEnabled(!isReferenceImage);
+	fStrokeItem->SetEnabled(!isReferenceImage);
 }

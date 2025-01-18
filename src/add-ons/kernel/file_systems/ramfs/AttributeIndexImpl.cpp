@@ -17,6 +17,9 @@
 #include "TwoKeyAVLTree.h"
 #include "Volume.h"
 
+#include <util/AutoLock.h>
+
+
 // compare_integral
 template<typename Key>
 static inline
@@ -237,6 +240,8 @@ status_t
 AttributeIndexImpl::Changed(Attribute *attribute, const uint8 *oldKey,
 							size_t oldLength)
 {
+	fVolume->AssertWriteLocked();
+
 	status_t error = B_BAD_VALUE;
 	if (attribute && attribute->GetIndex() == this) {
 		// update the iterators and remove the attribute from the tree
@@ -339,6 +344,7 @@ AttributeIndexImpl::InternalFind(const uint8 *key, size_t length)
 void
 AttributeIndexImpl::_AddIterator(Iterator *iterator)
 {
+	RecursiveLocker locker(fVolume->GetAttributeIteratorLock());
 	fIterators->Insert(iterator);
 }
 
@@ -346,6 +352,7 @@ AttributeIndexImpl::_AddIterator(Iterator *iterator)
 void
 AttributeIndexImpl::_RemoveIterator(Iterator *iterator)
 {
+	RecursiveLocker locker(fVolume->GetAttributeIteratorLock());
 	fIterators->Remove(iterator);
 }
 

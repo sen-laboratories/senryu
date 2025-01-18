@@ -12,6 +12,7 @@
 
 #include <new>
 
+#include <debug_support.h>
 #include <runtime_loader.h>
 #include <syscalls.h>
 
@@ -30,28 +31,16 @@
 using namespace BPrivate::Debug;
 
 
-// PrepareAddress
 const void *
-Area::PrepareAddress(const void *address)
+Area::TranslateAddress(const void *address)
 {
-	TRACE(("Area::PrepareAddress(%p): area: %" B_PRId32 "\n", address, fRemoteID));
-
-	// clone the area, if not done already
-	if (fLocalID < 0) {
-		fLocalID = clone_area("cloned area", &fLocalAddress, B_ANY_ADDRESS,
-			B_READ_AREA, fRemoteID);
-		if (fLocalID < 0) {
-			TRACE(("Area::PrepareAddress(): Failed to clone area %" B_PRId32
-				": %s\n", fRemoteID, strerror(fLocalID)));
-			throw Exception(fLocalID);
-		}
-	}
+	TRACE(("Area::TranslateAddress(%p): area: %" B_PRId32 "\n", address, fLocalID));
 
 	// translate the address
 	const void *result = (const void*)((addr_t)address - (addr_t)fRemoteAddress
 		+ (addr_t)fLocalAddress);
 
-	TRACE(("Area::PrepareAddress(%p) done: %p\n", address, result));
+	TRACE(("Area::TranslateAddress(%p) done: %p\n", address, result));
 
 	return result;
 }
@@ -59,14 +48,13 @@ Area::PrepareAddress(const void *address)
 
 // #pragma mark -
 
-// constructor
-RemoteMemoryAccessor::RemoteMemoryAccessor(team_id team)
-	: fTeam(team),
+
+RemoteMemoryAccessor::RemoteMemoryAccessor(debug_context* debugContext)
+	: fDebugContext(debugContext),
 	  fAreas()
 {
 }
 
-// destructor
 RemoteMemoryAccessor::~RemoteMemoryAccessor()
 {
 	// delete the areas
@@ -76,70 +64,51 @@ RemoteMemoryAccessor::~RemoteMemoryAccessor()
 	}
 }
 
-// Init
+
 status_t
-RemoteMemoryAccessor::Init()
+RemoteMemoryAccessor::InitCheck() const
 {
-	// If the team is the kernel team, we don't try to clone the areas. Only
-	// SymbolLookup's image file functionality will be available.
-	if (fTeam == B_SYSTEM_TEAM)
-		return B_OK;
-
-	// get a list of the team's areas
-	area_info areaInfo;
-	ssize_t cookie = 0;
-	status_t error;
-	while ((error = get_next_area_info(fTeam, &cookie, &areaInfo)) == B_OK) {
-		TRACE(("area %" B_PRId32 ": address: %p, size: %ld, name: %s\n",
-			areaInfo.area, areaInfo.address, areaInfo.size, areaInfo.name));
-
-		Area *area = new(std::nothrow) Area(areaInfo.area, areaInfo.address,
-			areaInfo.size);
-		if (!area)
-			return B_NO_MEMORY;
-
-		fAreas.Add(area);
-	}
-
-	if (fAreas.IsEmpty())
-		return error;
+	// If we don't have a debug context, then there's nothing we can do.
+	// SymbolLookup's image file functionality will still be available, though.
+	if (fDebugContext == NULL || fDebugContext->nub_port < 0)
+		return B_NO_INIT;
 
 	return B_OK;
 }
 
-// PrepareAddress
+
 const void *
 RemoteMemoryAccessor::PrepareAddress(const void *remoteAddress,
-	int32 size) const
+	int32 size)
 {
 	TRACE(("RemoteMemoryAccessor::PrepareAddress(%p, %" B_PRId32 ")\n",
 		remoteAddress, size));
 
-	if (!remoteAddress) {
+	if (remoteAddress == NULL) {
 		TRACE(("RemoteMemoryAccessor::PrepareAddress(): Got null address!\n"));
 		throw Exception(B_BAD_VALUE);
 	}
 
-	return _FindArea(remoteAddress, size).PrepareAddress(remoteAddress);
+	return _GetArea(remoteAddress, size).TranslateAddress(remoteAddress);
 }
 
 
 const void *
 RemoteMemoryAccessor::PrepareAddressNoThrow(const void *remoteAddress,
-	int32 size) const
+	int32 size)
 {
 	if (remoteAddress == NULL)
 		return NULL;
 
-	Area* area = _FindAreaNoThrow(remoteAddress, size);
-	if (area == NULL)
+	Area* area;
+	status_t status = _GetAreaNoThrow(remoteAddress, size, area);
+	if (status != B_OK)
 		return NULL;
 
-	return area->PrepareAddress(remoteAddress);
+	return area->TranslateAddress(remoteAddress);
 }
 
 
-// AreaForLocalAddress
 Area*
 RemoteMemoryAccessor::AreaForLocalAddress(const void* address) const
 {
@@ -156,36 +125,76 @@ RemoteMemoryAccessor::AreaForLocalAddress(const void* address) const
 }
 
 
-// _FindArea
 Area &
-RemoteMemoryAccessor::_FindArea(const void *address, int32 size) const
+RemoteMemoryAccessor::_GetArea(const void *address, int32 size)
 {
-	TRACE(("RemoteMemoryAccessor::_FindArea(%p, %" B_PRId32 ")\n", address,
+	TRACE(("RemoteMemoryAccessor::_GetArea(%p, %" B_PRId32 ")\n", address,
 		size));
 
-	for (AreaList::ConstIterator it = fAreas.GetIterator(); it.HasNext();) {
-		Area *area = it.Next();
-		if (area->ContainsAddress(address, size))
-			return *area;
+	Area* area;
+	status_t status = _GetAreaNoThrow(address, size, area);
+	if (status != B_OK) {
+		TRACE(("RemoteMemoryAccessor::_GetArea(): Failed to get address %p\n",
+			address));
+		throw Exception(status);
 	}
 
-	TRACE(("RemoteMemoryAccessor::_FindArea(): No area found for address %p\n",
-		address));
-	throw Exception(B_ENTRY_NOT_FOUND);
+	return *area;
 }
 
 
-// _FindAreaNoThrow
-Area*
-RemoteMemoryAccessor::_FindAreaNoThrow(const void *address, int32 size) const
+status_t
+RemoteMemoryAccessor::_GetAreaNoThrow(const void *address, int32 size, Area *&_area)
 {
-	for (AreaList::ConstIterator it = fAreas.GetIterator(); it.HasNext();) {
+	for (AreaList::Iterator it = fAreas.GetIterator(); it.HasNext();) {
 		Area *area = it.Next();
-		if (area->ContainsAddress(address, size))
-			return area;
+		if (area->ContainsAddress(address, size)) {
+			_area = area;
+			return B_OK;
+		}
 	}
 
-	return NULL;
+	if (InitCheck() != B_OK)
+		return B_NO_INIT;
+
+	// we need to clone a new area
+	debug_nub_clone_area message;
+	message.reply_port = fDebugContext->reply_port;
+	message.address = address;
+
+	debug_nub_clone_area_reply reply;
+	status_t error = send_debug_message(fDebugContext, B_DEBUG_MESSAGE_CLONE_AREA,
+		&message, sizeof(message), &reply, sizeof(reply));
+	if (error != B_OK)
+		return error;
+
+	area_id localID = reply.area;
+	if (localID < 0) {
+		TRACE(("RemoteMemoryAccessor: Failed to clone area for %p: %s\n",
+			address, strerror(localID)));
+		return localID;
+	}
+
+	area_info areaInfo;
+	error = get_area_info(localID, &areaInfo);
+	if (error < 0) {
+		TRACE(("RemoteMemoryAccessor: Failed to get info for %" B_PRId32
+			": %s\n", localID, strerror(error)));
+		return error;
+	}
+
+	const addr_t remoteBaseAddress = (addr_t)address
+		- ((addr_t)reply.address - (addr_t)areaInfo.address);
+
+	Area *area = new(std::nothrow) Area(localID,
+		remoteBaseAddress, areaInfo.address, areaInfo.size);
+	if (area == NULL)
+		return B_NO_MEMORY;
+
+	fAreas.Add(area);
+
+	_area = area;
+	return B_OK;
 }
 
 
@@ -195,6 +204,7 @@ RemoteMemoryAccessor::_FindAreaNoThrow(const void *address, int32 size) const
 class SymbolLookup::LoadedImage : public Image {
 public:
 								LoadedImage(SymbolLookup* symbolLookup,
+									const image_info& info,
 									const image_t* image, int32 symbolCount);
 	virtual						~LoadedImage();
 
@@ -213,17 +223,16 @@ private:
 			SymbolLookup*			fSymbolLookup;
 			const image_t*			fImage;
 			int32					fSymbolCount;
-			size_t					fTextDelta;
+			size_t					fLoadDelta;
 };
 
 
 // #pragma mark -
 
 
-// constructor
-SymbolLookup::SymbolLookup(team_id team, image_id image)
+SymbolLookup::SymbolLookup(debug_context* debugContext, image_id image)
 	:
-	RemoteMemoryAccessor(team),
+	RemoteMemoryAccessor(debugContext),
 	fDebugArea(NULL),
 	fImages(),
 	fImageID(image)
@@ -231,7 +240,6 @@ SymbolLookup::SymbolLookup(team_id team, image_id image)
 }
 
 
-// destructor
 SymbolLookup::~SymbolLookup()
 {
 	while (Image* image = fImages.RemoveHead())
@@ -239,24 +247,21 @@ SymbolLookup::~SymbolLookup()
 }
 
 
-// Init
 status_t
 SymbolLookup::Init()
 {
 	TRACE(("SymbolLookup::Init()\n"));
 
-	status_t error = RemoteMemoryAccessor::Init();
-	if (error != B_OK)
-		return error;
+	status_t error = 0;
 
-	if (fTeam != B_SYSTEM_TEAM) {
+	if (RemoteMemoryAccessor::InitCheck() == B_OK) {
 		TRACE(("SymbolLookup::Init(): searching debug area...\n"));
 
 		// find the runtime loader debug area
 		runtime_loader_debug_area *remoteDebugArea = NULL;
 		ssize_t cookie = 0;
 		area_info areaInfo;
-		while (get_next_area_info(fTeam, &cookie, &areaInfo) == B_OK) {
+		while (get_next_area_info(fDebugContext->team, &cookie, &areaInfo) == B_OK) {
 			if (strcmp(areaInfo.name, RUNTIME_LOADER_DEBUG_AREA_NAME) == 0) {
 				remoteDebugArea = (runtime_loader_debug_area*)areaInfo.address;
 				break;
@@ -287,7 +292,7 @@ SymbolLookup::Init()
 	if (fImageID < 0) {
 		// create a list of the team's images
 		int32 cookie = 0;
-		while (get_next_image_info(fTeam, &cookie, &imageInfo) == B_OK) {
+		while (get_next_image_info(fDebugContext->team, &cookie, &imageInfo) == B_OK) {
 			error = _LoadImageInfo(imageInfo);
 			if (error != B_OK)
 				return error;
@@ -306,7 +311,6 @@ SymbolLookup::Init()
 }
 
 
-// LookupSymbolAddress
 status_t
 SymbolLookup::LookupSymbolAddress(addr_t address, addr_t *_baseAddress,
 	const char **_symbolName, size_t *_symbolNameLen, const char **_imageName,
@@ -325,7 +329,7 @@ SymbolLookup::LookupSymbolAddress(addr_t address, addr_t *_baseAddress,
 		_symbolName, _symbolNameLen, _exactMatch);
 
 	TRACE(("SymbolLookup::LookupSymbolAddress(): done: symbol: %p, image name: "
-		"%s, exact match: %d\n", symbolFound, image->name, exactMatch));
+		"%s, exact match: %d\n", symbolFound, image->Name(), _exactMatch ? *_exactMatch : -1));
 
 	if (symbolFound != NULL)
 		return B_OK;
@@ -351,7 +355,6 @@ SymbolLookup::LookupSymbolAddress(addr_t address, addr_t *_baseAddress,
 }
 
 
-// InitSymbolIterator
 status_t
 SymbolLookup::InitSymbolIterator(image_id imageID,
 	SymbolIterator& iterator) const
@@ -375,7 +378,6 @@ SymbolLookup::InitSymbolIterator(image_id imageID,
 }
 
 
-// InitSymbolIterator
 status_t
 SymbolLookup::InitSymbolIteratorByAddress(addr_t address,
 	SymbolIterator& iterator) const
@@ -397,7 +399,6 @@ SymbolLookup::InitSymbolIteratorByAddress(addr_t address,
 }
 
 
-// NextSymbol
 status_t
 SymbolLookup::NextSymbol(SymbolIterator& iterator, const char** _symbolName,
 	size_t* _symbolNameLen, addr_t* _symbolAddress, size_t* _symbolSize,
@@ -408,7 +409,6 @@ SymbolLookup::NextSymbol(SymbolIterator& iterator, const char** _symbolName,
 }
 
 
-// GetSymbol
 status_t
 SymbolLookup::GetSymbol(image_id imageID, const char* name, int32 symbolType,
 	void** _symbolLocation, size_t* _symbolSize, int32* _symbolType) const
@@ -422,9 +422,8 @@ SymbolLookup::GetSymbol(image_id imageID, const char* name, int32 symbolType,
 }
 
 
-// _FindLoadedImageAtAddress
 const image_t *
-SymbolLookup::_FindLoadedImageAtAddress(addr_t address) const
+SymbolLookup::_FindLoadedImageAtAddress(addr_t address)
 {
 	TRACE(("SymbolLookup::_FindLoadedImageAtAddress(%p)\n", (void*)address));
 
@@ -432,9 +431,11 @@ SymbolLookup::_FindLoadedImageAtAddress(addr_t address) const
 		return NULL;
 
 	// iterate through the loaded images
-	for (const image_t *image = &Read(*Read(fDebugArea->loaded_images->head));
-		 image;
-		 image = &Read(*image->next)) {
+	const image_t *_image = Read(fDebugArea->loaded_images->head);
+	while (_image != NULL) {
+		const image_t *image = &Read(*_image);
+		_image = image->next;
+
 		if (image->regions[0].vmstart <= address
 			&& address < image->regions[0].vmstart + image->regions[0].size) {
 			return image;
@@ -445,17 +446,20 @@ SymbolLookup::_FindLoadedImageAtAddress(addr_t address) const
 }
 
 
-// _FindLoadedImageByID
 const image_t*
-SymbolLookup::_FindLoadedImageByID(image_id id) const
+SymbolLookup::_FindLoadedImageByID(image_id id)
 {
+	TRACE(("SymbolLookup::_FindLoadedImageByID(%" B_PRId32 ")\n", id));
+
 	if (fDebugArea == NULL)
 		return NULL;
 
-	// iterate through the images
-	for (const image_t *image = &Read(*Read(fDebugArea->loaded_images->head));
-		 image;
-		 image = &Read(*image->next)) {
+	// iterate through the loaded images
+	const image_t *_image = Read(fDebugArea->loaded_images->head);
+	while (_image != NULL) {
+		const image_t *image = &Read(*_image);
+		_image = image->next;
+
 		if (image->id == id)
 			return image;
 	}
@@ -464,7 +468,6 @@ SymbolLookup::_FindLoadedImageByID(image_id id) const
 }
 
 
-// _FindImageAtAddress
 Image*
 SymbolLookup::_FindImageAtAddress(addr_t address) const
 {
@@ -479,7 +482,6 @@ SymbolLookup::_FindImageAtAddress(addr_t address) const
 }
 
 
-// _FindImageByID
 Image*
 SymbolLookup::_FindImageByID(image_id id) const
 {
@@ -493,7 +495,6 @@ SymbolLookup::_FindImageByID(image_id id) const
 }
 
 
-// _SymbolNameLen
 size_t
 SymbolLookup::_SymbolNameLen(const char* address) const
 {
@@ -512,7 +513,7 @@ SymbolLookup::_LoadImageInfo(const image_info& imageInfo)
 	status_t error = B_OK;
 
 	Image* image;
-	if (fTeam == B_SYSTEM_TEAM) {
+	if (fDebugContext->team == B_SYSTEM_TEAM) {
 		// kernel image
 		KernelImage* kernelImage = new(std::nothrow) KernelImage;
 		if (kernelImage == NULL)
@@ -546,8 +547,8 @@ SymbolLookup::_LoadImageInfo(const image_info& imageInfo)
 		if (loadedImage == NULL)
 			return B_OK;
 
-		image = new(std::nothrow) LoadedImage(this, loadedImage,
-			Read(loadedImage->symhash[1]));
+		image = new(std::nothrow) LoadedImage(this, imageInfo,
+			loadedImage, Read(loadedImage->symhash[1]));
 		if (image == NULL)
 			return B_NO_MEMORY;
 
@@ -562,27 +563,14 @@ SymbolLookup::_LoadImageInfo(const image_info& imageInfo)
 
 
 SymbolLookup::LoadedImage::LoadedImage(SymbolLookup* symbolLookup,
-	const image_t* image, int32 symbolCount)
+	const image_info& info, const image_t* image, int32 symbolCount)
 	:
 	fSymbolLookup(symbolLookup),
 	fImage(image),
 	fSymbolCount(symbolCount),
-	fTextDelta(image->regions[0].delta)
+	fLoadDelta(image->regions[0].delta)
 {
-	// init info
-	fInfo.id = fImage->id;
-	fInfo.type = fImage->type;
-	fInfo.sequence = 0;
-	fInfo.init_order = 0;
-	fInfo.init_routine = (void (*)())fImage->init_routine;
-	fInfo.term_routine = (void (*)())fImage->term_routine;
-	fInfo.device = -1;
-	fInfo.node = -1;
-	strlcpy(fInfo.name, fImage->path, sizeof(fInfo.name));
-	fInfo.text = (void*)fImage->regions[0].vmstart;
-	fInfo.data = (void*)fImage->regions[1].vmstart;
-	fInfo.text_size = fImage->regions[0].vmsize;
-	fInfo.data_size = fImage->regions[1].vmsize;
+	fInfo = info;
 }
 
 
@@ -605,10 +593,7 @@ SymbolLookup::LoadedImage::LookupSymbol(addr_t address, addr_t* _baseAddress,
 	bool exactMatch = false;
 	const char *symbolName = NULL;
 
-	int32 symbolCount = fSymbolLookup->Read(fImage->symhash[1]);
-	const elf_region_t *textRegion = fImage->regions;				// local
-
-	for (int32 i = 0; i < symbolCount; i++) {
+	for (int32 i = 0; i < fSymbolCount; i++) {
 		const elf_sym *symbol = &fSymbolLookup->Read(fImage->syms[i]);
 
 		// The symbol table contains not only symbols referring to functions
@@ -620,13 +605,12 @@ SymbolLookup::LoadedImage::LookupSymbol(addr_t address, addr_t* _baseAddress,
 		// though).
 		if ((symbol->Type() != STT_FUNC && symbol->Type() != STT_OBJECT)
 			|| symbol->st_value == 0
-			|| symbol->st_value + symbol->st_size + textRegion->delta
-				> textRegion->vmstart + textRegion->size) {
+			|| (symbol->st_value + symbol->st_size) > (size_t)fInfo.text_size) {
 			continue;
 		}
 
 		// skip symbols starting after the given address
-		addr_t symbolAddress = symbol->st_value + textRegion->delta;
+		addr_t symbolAddress = symbol->st_value + fLoadDelta;
 
 		if (symbolAddress > address)
 			continue;
@@ -654,7 +638,7 @@ SymbolLookup::LoadedImage::LookupSymbol(addr_t address, addr_t* _baseAddress,
 
 	if (symbolFound != NULL) {
 		if (_baseAddress)
-			*_baseAddress = symbolFound->st_value + textRegion->delta;
+			*_baseAddress = symbolFound->st_value + fLoadDelta;
 		if (_symbolName)
 			*_symbolName = symbolName;
 		if (_exactMatch)
@@ -686,7 +670,7 @@ SymbolLookup::LoadedImage::NextSymbol(int32& iterator, const char** _symbolName,
 		*_symbolName = (const char*)fSymbolLookup->PrepareAddressNoThrow(
 			SYMNAME(fImage, symbol), 1);
 		*_symbolNameLen = fSymbolLookup->_SymbolNameLen(*_symbolName);
-		*_symbolAddress = symbol->st_value + fTextDelta;
+		*_symbolAddress = symbol->st_value + fLoadDelta;
 		*_symbolSize = symbol->st_size;
 		*_symbolType = symbol->Type() == STT_FUNC ? B_SYMBOL_TYPE_TEXT
 			: B_SYMBOL_TYPE_DATA;

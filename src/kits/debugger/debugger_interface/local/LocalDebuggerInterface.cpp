@@ -606,10 +606,12 @@ status_t
 LocalDebuggerInterface::GetSymbolInfos(team_id team, image_id image,
 	BObjectList<SymbolInfo>& infos)
 {
+	DebugContextGetter contextGetter(fDebugContextPool);
+
 	// create a lookup context
 	debug_symbol_lookup_context* lookupContext;
-	status_t error = debug_create_symbol_lookup_context(team, image,
-		&lookupContext);
+	status_t error = debug_create_symbol_lookup_context(contextGetter.Context(),
+		image, &lookupContext);
 	if (error != B_OK)
 		return error;
 
@@ -651,10 +653,12 @@ status_t
 LocalDebuggerInterface::GetSymbolInfo(team_id team, image_id image, const char* name,
 	int32 symbolType, SymbolInfo& info)
 {
+	DebugContextGetter contextGetter(fDebugContextPool);
+
 	// create a lookup context
 	debug_symbol_lookup_context* lookupContext;
-	status_t error = debug_create_symbol_lookup_context(team, image,
-		&lookupContext);
+	status_t error = debug_create_symbol_lookup_context(contextGetter.Context(),
+		image, &lookupContext);
 	if (error != B_OK)
 		return error;
 
@@ -745,7 +749,7 @@ LocalDebuggerInterface::WriteCoreFile(const char* path)
 	strlcpy(message.path, path, sizeof(message.path));
 
 	status_t error = send_debug_message(contextGetter.Context(),
-		B_DEBUG_WRITE_CORE_FILE, &message, sizeof(message), &reply,
+		B_DEBUG_MESSAGE_WRITE_CORE_FILE, &message, sizeof(message), &reply,
 		sizeof(reply));
 	if (error == B_OK)
 		error = reply.error;

@@ -1752,6 +1752,7 @@ debug_nub_thread(void *)
 		union {
 			debug_nub_read_memory_reply			read_memory;
 			debug_nub_write_memory_reply		write_memory;
+			debug_nub_clone_area_reply			clone_area;
 			debug_nub_get_cpu_state_reply		get_cpu_state;
 			debug_nub_set_breakpoint_reply		set_breakpoint;
 			debug_nub_set_watchpoint_reply		set_watchpoint;
@@ -1832,6 +1833,51 @@ debug_nub_thread(void *)
 				reply.write_memory.size = bytesWritten;
 				sendReply = true;
 				replySize = sizeof(debug_nub_write_memory_reply);
+				break;
+			}
+
+			case B_DEBUG_MESSAGE_CLONE_AREA:
+			{
+				// get the parameters
+				replyPort = message.clone_area.reply_port;
+				const void *address = message.clone_area.address;
+				area_id result = 0;
+
+				// check the parameters
+				if (!IS_USER_ADDRESS(address))
+					result = B_NOT_ALLOWED;
+
+				// find the area
+				area_id sourceArea;
+				addr_t addressOffset;
+				if (result == B_OK) {
+					sourceArea = _user_area_for((void*)address);
+					if (sourceArea < 0) {
+						result = sourceArea;
+					} else {
+						area_info info;
+						result = get_area_info(sourceArea, &info);
+						addressOffset = (addr_t)address - (addr_t)info.address;
+					}
+				}
+
+				// clone it
+				if (result == B_OK) {
+					void* newAddress = NULL;
+					result = vm_clone_area(nubThread->team->debug_info.debugger_team,
+						"debugger-cloned area", &newAddress, B_ANY_ADDRESS, B_READ_AREA,
+						REGION_NO_PRIVATE_MAP, sourceArea, true);
+					reply.clone_area.address = (void*)((addr_t)newAddress + addressOffset);
+				}
+
+				reply.clone_area.area = result;
+
+				TRACE(("nub thread %" B_PRId32 ": B_DEBUG_MESSAGE_CLONE_AREA: "
+					"reply port: %" B_PRId32 ", address: %p, result: %" B_PRIx32 "\n",
+					nubThread->id, replyPort, address, result));
+
+				sendReply = true;
+				replySize = sizeof(debug_nub_clone_area_reply);
 				break;
 			}
 
@@ -2299,7 +2345,7 @@ debug_nub_thread(void *)
 				break;
 			}
 
-			case B_DEBUG_START_PROFILER:
+			case B_DEBUG_MESSAGE_START_PROFILER:
 			{
 				// get the parameters
 				thread_id threadID = message.start_profiler.thread;
@@ -2411,7 +2457,7 @@ debug_nub_thread(void *)
 				break;
 			}
 
-			case B_DEBUG_STOP_PROFILER:
+			case B_DEBUG_MESSAGE_STOP_PROFILER:
 			{
 				// get the parameters
 				thread_id threadID = message.stop_profiler.thread;
@@ -2493,7 +2539,7 @@ debug_nub_thread(void *)
 				break;
 			}
 
-			case B_DEBUG_WRITE_CORE_FILE:
+			case B_DEBUG_MESSAGE_WRITE_CORE_FILE:
 			{
 				// get the parameters
 				replyPort = message.write_core_file.reply_port;
@@ -2943,23 +2989,31 @@ _user_remove_team_debugger(team_id teamID)
 	Team* team;
 	ConditionVariable debugChangeCondition;
 	debugChangeCondition.Init(NULL, "debug change condition");
-	status_t error = prepare_debugger_change(teamID, debugChangeCondition,
+	status_t status = prepare_debugger_change(teamID, debugChangeCondition,
 		team);
-	if (error != B_OK)
-		return error;
+	if (status != B_OK)
+		return status;
 
 	InterruptsSpinLocker debugInfoLocker(team->debug_info.lock);
 
 	thread_id nubThread = -1;
 	port_id nubPort = -1;
 
-	if (team->debug_info.flags & B_TEAM_DEBUG_DEBUGGER_INSTALLED) {
-		// there's a debugger installed
+	if ((team->debug_info.flags & B_TEAM_DEBUG_DEBUGGER_INSTALLED) == 0) {
+		// no debugger installed
+		status = B_BAD_VALUE;
+	}
+
+	if (status == B_OK) {
+		if (geteuid() != 0 && team->effective_uid != geteuid()
+				&& team->debug_info.debugger_team != team_get_current_team_id())
+			status = B_PERMISSION_DENIED;
+	}
+
+	if (status == B_OK) {
+		// there's a debugger installed, and we're allowed to remove it
 		nubThread = team->debug_info.nub_thread;
 		nubPort = team->debug_info.nub_port;
-	} else {
-		// no debugger installed
-		error = B_BAD_VALUE;
 	}
 
 	debugInfoLocker.Unlock();
@@ -2975,7 +3029,7 @@ _user_remove_team_debugger(team_id teamID)
 	if (nubThread >= 0)
 		wait_for_thread(nubThread, NULL);
 
-	return error;
+	return status;
 }
 
 
@@ -2995,6 +3049,10 @@ _user_debug_thread(thread_id threadID)
 	// we can't debug the kernel team
 	if (thread->team == team_get_kernel_team())
 		return B_NOT_ALLOWED;
+
+	if (geteuid() != 0 && thread->team->effective_uid != geteuid()
+			&& thread->team->debug_info.debugger_team != team_get_current_team_id())
+		return B_PERMISSION_DENIED;
 
 	InterruptsLocker interruptsLocker;
 	SpinLocker threadDebugInfoLocker(thread->debug_info.lock);

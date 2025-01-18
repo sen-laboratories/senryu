@@ -249,11 +249,11 @@ static uint32 sPageMappingsMask;
 
 static rw_lock sAreaCacheLock = RW_LOCK_INITIALIZER("area->cache");
 
+static rw_spinlock sAvailableMemoryLock = B_RW_SPINLOCK_INITIALIZER;
 static off_t sAvailableMemory;
 static off_t sNeededMemory;
-static mutex sAvailableMemoryLock = MUTEX_INITIALIZER("available memory lock");
-static uint32 sPageFaults;
 
+static uint32 sPageFaults;
 static VMPhysicalPageMapper* sPhysicalPageMapper;
 
 
@@ -1510,9 +1510,6 @@ vm_set_kernel_area_debug_protection(void* cookie, void* _address, size_t size,
 status_t
 vm_block_address_range(const char* name, void* address, addr_t size)
 {
-	if (!arch_vm_supports_protection(0))
-		return B_NOT_SUPPORTED;
-
 	AddressSpaceWriteLocker locker;
 	status_t status = locker.SetTo(VMAddressSpace::KernelID());
 	if (status != B_OK)
@@ -1520,10 +1517,8 @@ vm_block_address_range(const char* name, void* address, addr_t size)
 
 	VMAddressSpace* addressSpace = locker.AddressSpace();
 
-	// create an anonymous cache
 	VMCache* cache;
-	status = VMCacheFactory::CreateAnonymousCache(cache, false, 0, 0, false,
-		VM_PRIORITY_SYSTEM);
+	status = VMCacheFactory::CreateNullCache(VM_PRIORITY_SYSTEM, cache);
 	if (status != B_OK)
 		return status;
 
@@ -1536,15 +1531,15 @@ vm_block_address_range(const char* name, void* address, addr_t size)
 	addressRestrictions.address = address;
 	addressRestrictions.address_specification = B_EXACT_ADDRESS;
 	status = map_backing_store(addressSpace, cache, 0, name, size,
-		B_ALREADY_WIRED, 0, REGION_NO_PRIVATE_MAP, 0, 0, &addressRestrictions,
-		true, &area, NULL);
+		B_NO_LOCK, 0, REGION_NO_PRIVATE_MAP, 0, CREATE_AREA_DONT_COMMIT_MEMORY,
+		&addressRestrictions, true, &area, NULL);
 	if (status != B_OK) {
 		cache->ReleaseRefAndUnlock();
 		return status;
 	}
 
 	cache->Unlock();
-	area->cache_type = CACHE_TYPE_RAM;
+	area->cache_type = CACHE_TYPE_NULL;
 	return area->id;
 }
 
@@ -2545,14 +2540,30 @@ vm_clone_area(team_id team, const char* name, void** address,
 	AreaCacheLocker cacheLocker(sourceArea);
 	VMCache* cache = cacheLocker.Get();
 
-	if (!kernel && sourceAddressSpace != targetAddressSpace
-			&& (sourceArea->protection & B_CLONEABLE_AREA) == 0) {
+	int protectionMax = sourceArea->protection_max;
+	if (!kernel && sourceAddressSpace != targetAddressSpace) {
+		if ((sourceArea->protection & B_CLONEABLE_AREA) == 0) {
 #if KDEBUG
-		Team* team = thread_get_current_thread()->team;
-		dprintf("team \"%s\" (%" B_PRId32 ") attempted to clone area \"%s\" (%"
-			B_PRId32 ")!\n", team->Name(), team->id, sourceArea->name, sourceID);
+			Team* team = thread_get_current_thread()->team;
+			dprintf("team \"%s\" (%" B_PRId32 ") attempted to clone area \"%s\" (%"
+				B_PRId32 ")!\n", team->Name(), team->id, sourceArea->name, sourceID);
 #endif
-		return B_NOT_ALLOWED;
+			return B_NOT_ALLOWED;
+		}
+
+		if (protectionMax == 0)
+			protectionMax = B_USER_PROTECTION;
+		if ((sourceArea->protection & (B_WRITE_AREA | B_KERNEL_WRITE_AREA)) == 0)
+			protectionMax &= ~B_WRITE_AREA;
+		if (((protection & B_USER_PROTECTION) & ~protectionMax) != 0) {
+#if KDEBUG
+			Team* team = thread_get_current_thread()->team;
+			dprintf("team \"%s\" (%" B_PRId32 ") attempted to clone area \"%s\" (%"
+				B_PRId32 ") with extra permissions (0x%x)!\n", team->Name(), team->id,
+				sourceArea->name, sourceID, protection);
+#endif
+			return B_NOT_ALLOWED;
+		}
 	}
 	if (sourceArea->cache_type == CACHE_TYPE_NULL)
 		return B_NOT_ALLOWED;
@@ -2567,7 +2578,7 @@ vm_clone_area(team_id team, const char* name, void** address,
 	addressRestrictions.address_specification = addressSpec;
 	status = map_backing_store(targetAddressSpace, cache,
 		sourceArea->cache_offset, name, sourceArea->Size(),
-		sourceArea->wiring, protection, sourceArea->protection_max,
+		sourceArea->wiring, protection, protectionMax,
 		mapping, mappingFlags, &addressRestrictions,
 		kernel, &newArea, address);
 	if (status < B_OK)
@@ -3089,18 +3100,22 @@ vm_set_area_protection(team_id team, area_id areaID, uint32 newProtection,
 		// enforce restrictions
 		if (!kernel && (area->address_space == VMAddressSpace::Kernel()
 				|| (area->protection & B_KERNEL_AREA) != 0)) {
+#if KDEBUG
 			dprintf("vm_set_area_protection: team %" B_PRId32 " tried to "
 				"set protection %#" B_PRIx32 " on kernel area %" B_PRId32
 				" (%s)\n", team, newProtection, areaID, area->name);
+#endif
 			return B_NOT_ALLOWED;
 		}
 		if (!kernel && area->protection_max != 0
 			&& (newProtection & area->protection_max)
 				!= (newProtection & B_USER_PROTECTION)) {
+#if KDEBUG
 			dprintf("vm_set_area_protection: team %" B_PRId32 " tried to "
-				"set protection %#" B_PRIx32 " (max %#" B_PRIx32 ") on kernel "
-				"area %" B_PRId32 " (%s)\n", team, newProtection,
+				"set protection %#" B_PRIx32 " (max %#" B_PRIx32 ") on area "
+				"%" B_PRId32 " (%s)\n", team, newProtection,
 				area->protection_max, areaID, area->name);
+#endif
 			return B_NOT_ALLOWED;
 		}
 		if (team != VMAddressSpace::KernelID()
@@ -3443,9 +3458,12 @@ vm_area_for(addr_t address, bool kernel)
 
 	VMArea* area = locker.AddressSpace()->LookupArea(address);
 	if (area != NULL) {
-		if (!kernel && (area->protection & (B_READ_AREA | B_WRITE_AREA)) == 0
-				&& (area->protection & B_KERNEL_AREA) != 0)
+		if (!kernel && team == VMAddressSpace::KernelID()
+				&& (area->protection & (B_READ_AREA | B_WRITE_AREA | B_CLONEABLE_AREA)) == 0)
 			return B_ERROR;
+
+		if (area->id == RESERVED_AREA_ID)
+			return EADDRINUSE;
 
 		return area->id;
 	}
@@ -3990,12 +4008,35 @@ vm_init(kernel_args* args)
 	vm_block_address_range("overflow protection", lastPage, B_PAGE_SIZE);
 
 #if PARANOID_KERNEL_MALLOC
+	addr_t blockAddress = 0xcccccccc;
+	if (blockAddress < KERNEL_BASE)
+		blockAddress |= KERNEL_BASE;
 	vm_block_address_range("uninitialized heap memory",
-		(void *)ROUNDDOWN(0xcccccccc, B_PAGE_SIZE), B_PAGE_SIZE * 64);
+		(void *)ROUNDDOWN(blockAddress, B_PAGE_SIZE), B_PAGE_SIZE * 64);
+
+#if B_HAIKU_64_BIT
+	blockAddress = 0xcccccccccccccccc;
+	if (blockAddress < KERNEL_BASE)
+		blockAddress |= KERNEL_BASE;
+	vm_block_address_range("uninitialized heap memory",
+		(void *)ROUNDDOWN(blockAddress, B_PAGE_SIZE), B_PAGE_SIZE * 64);
 #endif
+#endif
+
 #if PARANOID_KERNEL_FREE
+	blockAddress = 0xdeadbeef;
+	if (blockAddress < KERNEL_BASE)
+		blockAddress |= KERNEL_BASE;
 	vm_block_address_range("freed heap memory",
-		(void *)ROUNDDOWN(0xdeadbeef, B_PAGE_SIZE), B_PAGE_SIZE * 64);
+		(void *)ROUNDDOWN(blockAddress, B_PAGE_SIZE), B_PAGE_SIZE * 64);
+
+#if B_HAIKU_64_BIT
+	blockAddress = 0xdeadbeefdeadbeef;
+	if (blockAddress < KERNEL_BASE)
+		blockAddress |= KERNEL_BASE;
+	vm_block_address_range("freed heap memory",
+		(void *)ROUNDDOWN(blockAddress, B_PAGE_SIZE), B_PAGE_SIZE * 64);
+#endif
 #endif
 
 	create_page_mappings_object_caches();
@@ -4677,7 +4718,7 @@ vm_get_info(system_info* info)
 {
 	swap_get_info(info);
 
-	MutexLocker locker(sAvailableMemoryLock);
+	InterruptsWriteSpinLocker locker(sAvailableMemoryLock);
 	info->needed_memory = sNeededMemory;
 	info->free_memory = sAvailableMemory;
 }
@@ -4693,7 +4734,7 @@ vm_num_page_faults(void)
 off_t
 vm_available_memory(void)
 {
-	MutexLocker locker(sAvailableMemoryLock);
+	InterruptsWriteSpinLocker locker(sAvailableMemoryLock);
 	return sAvailableMemory;
 }
 
@@ -4711,7 +4752,7 @@ vm_available_memory_debug(void)
 off_t
 vm_available_not_needed_memory(void)
 {
-	MutexLocker locker(sAvailableMemoryLock);
+	InterruptsWriteSpinLocker locker(sAvailableMemoryLock);
 	return sAvailableMemory - sNeededMemory;
 }
 
@@ -4739,9 +4780,8 @@ vm_unreserve_memory(size_t amount)
 	if (amount == 0)
 		return;
 
-	mutex_lock(&sAvailableMemoryLock);
-	sAvailableMemory += amount;
-	mutex_unlock(&sAvailableMemoryLock);
+	InterruptsReadSpinLocker readLocker(sAvailableMemoryLock);
+	atomic_add64(&sAvailableMemory, amount);
 }
 
 
@@ -4750,20 +4790,28 @@ vm_try_reserve_memory(size_t amount, int priority, bigtime_t timeout)
 {
 	ASSERT((amount % B_PAGE_SIZE) == 0);
 	ASSERT(priority >= 0 && priority < (int)B_COUNT_OF(kMemoryReserveForPriority));
-
-	MutexLocker locker(sAvailableMemoryLock);
-
-	//dprintf("try to reserve %lu bytes, %Lu left\n", amount, sAvailableMemory);
+	TRACE(("try to reserve %lu bytes, %Lu left\n", amount, sAvailableMemory));
 
 	const size_t reserve = kMemoryReserveForPriority[priority];
-	if (sAvailableMemory >= (off_t)(amount + reserve)) {
+	const off_t amountPlusReserve = amount + reserve;
+
+	// Try with a read-lock and atomics first, but only if there's more than double
+	// the amount of memory we're trying to reserve available, to avoid races.
+	InterruptsReadSpinLocker readLocker(sAvailableMemoryLock);
+	if (atomic_get64(&sAvailableMemory) > (off_t)(amountPlusReserve + amount)) {
+		if (atomic_add64(&sAvailableMemory, -amount) >= amountPlusReserve)
+			return B_OK;
+
+		// There wasn't actually enough, we must've raced. Undo what we just did.
+		atomic_add64(&sAvailableMemory, amount);
+	}
+	readLocker.Unlock();
+
+	InterruptsWriteSpinLocker writeLocker(sAvailableMemoryLock);
+
+	if (sAvailableMemory >= amountPlusReserve) {
 		sAvailableMemory -= amount;
 		return B_OK;
-	}
-
-	if (amount >= (vm_page_num_pages() * B_PAGE_SIZE)) {
-		// Do not wait for something that will never happen.
-		return B_NO_MEMORY;
 	}
 
 	if (timeout <= 0)
@@ -4772,23 +4820,25 @@ vm_try_reserve_memory(size_t amount, int priority, bigtime_t timeout)
 	// turn timeout into an absolute timeout
 	timeout += system_time();
 
-	// loop until we've got the memory or the timeout occurs
+	// loop until we're out of retries or the timeout occurs
+	int32 retries = 3;
 	do {
 		sNeededMemory += amount;
 
 		// call the low resource manager
-		locker.Unlock();
-		low_resource(B_KERNEL_RESOURCE_MEMORY, sNeededMemory - sAvailableMemory,
+		uint64 requirement = sNeededMemory - (sAvailableMemory - reserve);
+		writeLocker.Unlock();
+		low_resource(B_KERNEL_RESOURCE_MEMORY, requirement,
 			B_ABSOLUTE_TIMEOUT, timeout);
-		locker.Lock();
+		writeLocker.Lock();
 
 		sNeededMemory -= amount;
 
-		if (sAvailableMemory >= (off_t)(amount + reserve)) {
+		if (sAvailableMemory >= amountPlusReserve) {
 			sAvailableMemory -= amount;
 			return B_OK;
 		}
-	} while (timeout > system_time());
+	} while (--retries > 0 && timeout > system_time());
 
 	return B_NO_MEMORY;
 }
@@ -6145,11 +6195,6 @@ _user_create_area(const char* userName, void** userAddress, uint32 addressSpec,
 	if (addressSpec == B_EXACT_ADDRESS && IS_KERNEL_ADDRESS(address))
 		return B_BAD_VALUE;
 
-	if (addressSpec == B_ANY_ADDRESS)
-		addressSpec = B_RANDOMIZED_ANY_ADDRESS;
-	if (addressSpec == B_BASE_ADDRESS)
-		addressSpec = B_RANDOMIZED_BASE_ADDRESS;
-
 	fix_protection(&protection);
 
 	virtual_address_restrictions virtualRestrictions = {};
@@ -6567,6 +6612,10 @@ _user_get_memory_properties(team_id teamID, const void* address,
 {
 	if (!IS_USER_ADDRESS(_protected) || !IS_USER_ADDRESS(_lock))
 		return B_BAD_ADDRESS;
+
+	if (teamID != B_CURRENT_TEAM && teamID != team_get_current_team_id()
+			&& geteuid() != 0)
+		return B_NOT_ALLOWED;
 
 	AddressSpaceReadLocker locker;
 	status_t error = locker.SetTo(teamID);

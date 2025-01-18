@@ -15,6 +15,7 @@
 #include <util/DoublyLinkedList.h>
 
 
+struct debug_context;
 struct image_t;
 struct runtime_loader_debug_area;
 
@@ -48,11 +49,10 @@ private:
 // Area
 class Area : public DoublyLinkedListLinkImpl<Area> {
 public:
-	Area(area_id id, const void *address, int32 size)
-		: fRemoteID(id),
-		  fLocalID(-1),
-		  fRemoteAddress(address),
-		  fLocalAddress(NULL),
+	Area(area_id localID, addr_t remoteAddress, const void* localAddress, int32 size)
+		: fLocalID(localID),
+		  fRemoteAddress(remoteAddress),
+		  fLocalAddress(localAddress),
 		  fSize(size)
 	{
 	}
@@ -63,14 +63,14 @@ public:
 			delete_area(fLocalID);
 	}
 
-	const void* RemoteAddress() const	{ return fRemoteAddress; }
+	addr_t		RemoteAddress() const	{ return fRemoteAddress; }
 	const void* LocalAddress() const	{ return fLocalAddress; }
 	int32 Size() const					{ return fSize; }
 
 	bool ContainsAddress(const void *address, int32 size) const
 	{
-		return ((addr_t)fRemoteAddress <= (addr_t)address
-			&& (addr_t)address + size <= (addr_t)fRemoteAddress + fSize);
+		return (fRemoteAddress <= (addr_t)address
+			&& (addr_t)address + size <= (fRemoteAddress + fSize));
 	}
 
 	bool ContainsLocalAddress(const void* address) const
@@ -79,13 +79,12 @@ public:
 			&& (addr_t)address < (addr_t)fLocalAddress + fSize;
 	}
 
-	const void *PrepareAddress(const void *address);
+	const void *TranslateAddress(const void *remoteAddress);
 
 private:
-	area_id		fRemoteID;
 	area_id		fLocalID;
-	const void	*fRemoteAddress;
-	void		*fLocalAddress;
+	addr_t		fRemoteAddress;
+	const void	*fLocalAddress;
 	int32		fSize;
 };
 
@@ -93,17 +92,17 @@ private:
 // RemoteMemoryAccessor
 class RemoteMemoryAccessor {
 public:
-	RemoteMemoryAccessor(team_id team);
+	RemoteMemoryAccessor(debug_context* debugContext);
 	~RemoteMemoryAccessor();
 
-	status_t Init();
+	status_t InitCheck() const;
 
-	const void *PrepareAddress(const void *remoteAddress, int32 size) const;
+	const void *PrepareAddress(const void *remoteAddress, int32 size);
 	const void *PrepareAddressNoThrow(const void *remoteAddress,
-		int32 size) const;
+		int32 size);
 
 	template<typename Type> inline const Type &Read(
-		const Type &remoteData) const
+		const Type &remoteData)
 	{
 		const void *remoteAddress = &remoteData;
 		const void *localAddress = PrepareAddress(remoteAddress,
@@ -114,13 +113,13 @@ public:
 	Area* AreaForLocalAddress(const void* address) const;
 
 private:
-	Area &_FindArea(const void *address, int32 size) const;
-	Area* _FindAreaNoThrow(const void *address, int32 size) const;
+	Area& _GetArea(const void *address, int32 size);
+	status_t _GetAreaNoThrow(const void *address, int32 size, Area *&_area);
 
 	typedef DoublyLinkedList<Area>	AreaList;
 
 protected:
-	team_id		fTeam;
+	debug_context* fDebugContext;
 
 private:
 	AreaList	fAreas;
@@ -137,7 +136,7 @@ struct SymbolIterator {
 // SymbolLookup
 class SymbolLookup : private RemoteMemoryAccessor {
 public:
-	SymbolLookup(team_id team, image_id image);
+	SymbolLookup(debug_context* debugContext, image_id image);
 	~SymbolLookup();
 
 	status_t Init();
@@ -162,8 +161,8 @@ private:
 	friend class LoadedImage;
 
 private:
-	const image_t* _FindLoadedImageAtAddress(addr_t address) const;
-	const image_t* _FindLoadedImageByID(image_id id) const;
+	const image_t* _FindLoadedImageAtAddress(addr_t address);
+	const image_t* _FindLoadedImageByID(image_id id);
 	Image* _FindImageAtAddress(addr_t address) const;
 	Image* _FindImageByID(image_id id) const;
 	size_t _SymbolNameLen(const char* address) const;

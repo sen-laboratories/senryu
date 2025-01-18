@@ -22,13 +22,7 @@ enum {
 	NODE_TYPE_DIRECTORY,
 	NODE_TYPE_FILE,
 	NODE_TYPE_SYMLINK,
-};
-
-// access modes
-enum {
-	ACCESS_R	= S_IROTH,
-	ACCESS_W	= S_IWOTH,
-	ACCESS_X	= S_IXOTH,
+	NODE_TYPE_SPECIAL,
 };
 
 class Node : public DoublyLinkedListLinkImpl<Node> {
@@ -115,6 +109,8 @@ private:
 	Volume					*fVolume;
 	ino_t					fID;
 	int32					fRefCount;
+
+protected:
 	mode_t					fMode;
 	uid_t					fUID;
 	uid_t					fGID;
@@ -146,23 +142,6 @@ Node::MarkUnmodified()
 	}
 	return modified;
 }
-
-// open_mode_to_access
-inline static
-int
-open_mode_to_access(int openMode)
-{
-	switch (openMode & O_RWMASK) {
-		case O_RDONLY:
-			return ACCESS_R;
-		case O_WRONLY:
-			return ACCESS_W;
-		case O_RDWR:
-			return ACCESS_R | ACCESS_W;
-	}
-	return 0;
-}
-
 
 // NodeMTimeUpdater
 class NodeMTimeUpdater {
