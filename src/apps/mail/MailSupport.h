@@ -56,6 +56,10 @@ enum WINDOW_TYPES {
 	SIG_WINDOW
 };
 
+enum {
+	S_CLEAR_ERRORS = 1,
+	S_SHOW_ERRORS = 2
+};
 
 class BFile;
 class BMenu;
