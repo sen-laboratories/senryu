@@ -43,7 +43,7 @@ of their respective holders. All rights reserved.
 #include <Input.h>
 #include <Locale.h>
 #include <MailAttachment.h>
-#include "../../../headers/private/mail/mail_util.h"	// TEST: only needed for clang/Genio development
+#include <mail_util.h>
 #include <MenuItem.h>
 #include <NodeInfo.h>
 #include <NodeMonitor.h>
@@ -127,6 +127,7 @@ TTextView::~TTextView()
 {
 	ClearList();
 	delete fPanel;
+	delete fLinkMenu;
 
 	if (fYankBuffer)
 		free(fYankBuffer);
@@ -1007,6 +1008,19 @@ TTextView::MouseMoved(BPoint where, uint32 code, const BMessage *msg)
 	BTextView::MouseMoved(where, code, msg);
 }
 
+void
+TTextView::Clear()
+{
+	BTextView::Clear();
+	delete fMail;
+	ClearList();
+}
+
+bool
+TTextView::IsEmpty()
+{
+	return BTextView::TextLength() == 0;
+}
 
 void
 TTextView::ClearList()
@@ -2494,12 +2508,15 @@ void
 TTextView::WindowActivated(bool flag)
 {
 	if (!flag) {
-		// WindowActivated(false) は、IM も Inactive になり、そのまま確定される。
-		// しかしこの場合、input_server が B_INPUT_METHOD_EVENT(B_INPUT_METHOD_STOPPED)
-		// を送ってこないまま矛盾してしまうので、やむを得ずここでつじつまあわせ処理している。
-		// Haikuで修正されることを願って暫定処置としている。
+		// translated from Japanese, TODO: check if this comment still applies!
+		// WindowActivated(false) also makes IM Inactive and is confirmed as is.
+		// However, in this case, input_server will not send B_INPUT_METHOD_EVENT(B_INPUT_METHOD_STOPPED)
+		// but in this case, input_server does not send B_INPUT_METHOD_EVENT(B_INPUT_METHOD_STOPPED)
+		// so we are forced to make it consistent.
+		// I hope this will be fixed in Haiku.
 		fInputMethodUndoState.active = false;
-		// fInputMethodUndoBufferに溜まっている最後のデータがK_INSERTEDなら（確定）正規のバッファへ追加
+		// If the last data accumulated in fInputMethodUndoBuffer is K_INSERTED (confirmed),
+		// it is added to the regular buffer.
 		if (fInputMethodUndoBuffer.CountItems() > 0) {
 			KUndoItem *item = fInputMethodUndoBuffer.ItemAt(fInputMethodUndoBuffer.CountItems() - 1);
 			if (item->History == K_INSERTED) {

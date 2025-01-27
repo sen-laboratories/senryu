@@ -209,7 +209,6 @@ TMailWindow::TMailWindow(BRect rect, const char* title, TMailApp* app,
 	fDraft(false),
 	fChanged(false),
 	fOriginatingWindow(NULL),
-
 	fDownloading(false)
 {
 	fKeepStatusOnQuit = false;
@@ -401,6 +400,14 @@ TMailWindow::TMailWindow(BRect rect, const char* title, TMailApp* app,
 			new BMessage(M_HEADER), 'H'));
 		menu->AddItem(fRaw = new BMenuItem(B_TRANSLATE("Show raw message"),
 			new BMessage(M_RAW)));
+
+		menu->AddSeparatorItem();
+
+		menu->AddItem(fViewText = new BMenuItem(B_TRANSLATE("View as text"),
+			new BMessage(M_VIEW_TEXT), 'T', B_SHIFT_KEY | B_OPTION_KEY));
+		menu->AddItem(fViewHtml = new BMenuItem(B_TRANSLATE("View as HTML"),
+			new BMessage(M_VIEW_HTML), 'H', B_SHIFT_KEY | B_OPTION_KEY));
+
 		fMenuBar->AddItem(menu);
 	}
 
@@ -883,23 +890,18 @@ TMailWindow::SetTrackerSelectionToCurrent()
 void
 TMailWindow::PreserveReadingPos(bool save)
 {
-	BScrollBar* scroll = fContentView->TextView()->ScrollBar(B_VERTICAL);
-	if (scroll == NULL || fRef == NULL)
-		return;
-
 	BNode node(fRef);
-	float pos = scroll->Value();
-
+	float pos;
 	const char* name = "MAIL:read_pos";
+
 	if (save) {
+		pos = fContentView->GetReadingPos();
 		node.WriteAttr(name, B_FLOAT_TYPE, 0, &pos, sizeof(pos));
 		return;
 	}
 
 	if (node.ReadAttr(name, B_FLOAT_TYPE, 0, &pos, sizeof(pos)) == sizeof(pos)) {
-		Lock();
-		scroll->SetValue(pos);
-		Unlock();
+		fContentView->SetReadingPos(pos);
 	}
 }
 
@@ -945,7 +947,7 @@ TMailWindow::MenusBeginning()
 		bool gotCcField = !fHeaderView->IsCcEmpty();
 		bool gotBccField = !fHeaderView->IsBccEmpty();
 		bool gotSubjectField = !fHeaderView->IsSubjectEmpty();
-		bool gotText = fContentView->TextView()->Text()[0] != 0;
+		bool gotText = ! fContentView->IsEmpty();
 		fSendNow->SetEnabled(gotToField || gotBccField);
 		fSendLater->SetEnabled(fChanged && (gotToField || gotCcField
 			|| gotBccField || gotSubjectField || gotText));
@@ -986,7 +988,7 @@ TMailWindow::MenusBeginning()
 		}
 	}
 
-	fPrint->SetEnabled(fContentView->TextView()->TextLength());
+	fPrint->SetEnabled(! fContentView->IsEmpty());
 
 	BTextView* textView = dynamic_cast<BTextView*>(CurrentFocus());
 	if (textView != NULL
@@ -994,8 +996,8 @@ TMailWindow::MenusBeginning()
 			|| dynamic_cast<BTextControl*>(textView->Parent()) != NULL)) {
 		// one of To:, Subject:, Account:, Cc:, Bcc:
 		textView->GetSelection(&start, &finish);
-	} else if (fContentView->TextView()->IsFocus()) {
-		fContentView->TextView()->GetSelection(&start, &finish);
+	} else if (fContentView->IsFocus()) {
+		fContentView->GetSelection(&start, &finish);
 		if (!fIncoming) {
 			fQuote->SetEnabled(true);
 			fRemoveQuote->SetEnabled(true);
@@ -1152,6 +1154,7 @@ TMailWindow::MessageReceived(BMessage* msg)
 
 		case M_TRAIN_SPAM_AND_DELETE:
 			PostMessage(M_DELETE_NEXT);
+			// Fall through
 		case M_TRAIN_SPAM:
 			TrainMessageAs("Spam");
 			break;
@@ -1304,7 +1307,6 @@ TMailWindow::MessageReceived(BMessage* msg)
 			PostMessage(&msg);
 			break;
 		}
-
 		case M_CLOSE_READ:
 		{
 			BMessage message(B_CLOSE_REQUESTED);
@@ -1357,7 +1359,7 @@ TMailWindow::MessageReceived(BMessage* msg)
 
 			BMessage message(M_HEADER);
 			message.AddBool("header", showHeader);
-			PostMessage(&message, fContentView->TextView());
+			PostMessage(&message, fContentView);
 			break;
 		}
 		case M_RAW:
@@ -1366,7 +1368,17 @@ TMailWindow::MessageReceived(BMessage* msg)
 			fRaw->SetMarked(raw);
 			BMessage message(M_RAW);
 			message.AddBool("raw", raw);
-			PostMessage(&message, fContentView->TextView());
+			PostMessage(&message, fContentView);
+			break;
+		}
+		case M_VIEW_TEXT:
+		{
+			SwitchMailViewTo(VIEW_TEXT);
+			break;
+		}
+		case M_VIEW_HTML:
+		{
+			SwitchMailViewTo(VIEW_HTML);
 			break;
 		}
 		case M_SEND_NOW:
@@ -1645,7 +1657,7 @@ TMailWindow::MessageReceived(BMessage* msg)
 				fFieldState |= FIELD_CC;
 			if (!fHeaderView->IsBccEmpty())
 				fFieldState |= FIELD_BCC;
-			if (fContentView->TextView()->TextLength() != 0)
+			if (! fContentView->IsEmpty())
 				fFieldState |= FIELD_BODY;
 
 			fToolBar->SetActionEnabled(M_SAVE_AS_DRAFT, false);
@@ -1657,6 +1669,7 @@ TMailWindow::MessageReceived(BMessage* msg)
 		case M_CHECK_SPELLING:
 			if (gDictCount == 0)
 				// Give the application time to init and load dictionaries.
+				// FIXME - ugly hack and can be easily avoided by using a Message notification.
 				snooze (1500000);
 			if (!gDictCount) {
 				beep();
@@ -1668,8 +1681,9 @@ TMailWindow::MessageReceived(BMessage* msg)
 				alert->Go();
 			} else {
 				fSpelling->SetMarked(!fSpelling->IsMarked());
-				fContentView->TextView()->EnableSpellCheck(
-					fSpelling->IsMarked());
+				BMessage message(msg->what);
+				message.AddBool("enable", fSpelling->IsMarked());
+				PostMessage(&message, fContentView);
 			}
 			break;
 
@@ -1795,8 +1809,7 @@ TMailWindow::QuitRequested()
 			|| !fHeaderView->IsSubjectEmpty()
 			|| !fHeaderView->IsCcEmpty()
 			|| !fHeaderView->IsBccEmpty()
-			|| (fContentView->TextView() != NULL
-				&& strlen(fContentView->TextView()->Text()))
+			|| !(fContentView->IsEmpty())
 			|| (fEnclosuresView != NULL
 				&& fEnclosuresView->fList->CountItems()))) {
 		if (fResending) {
@@ -1885,7 +1898,7 @@ TMailWindow::Show()
 {
 	if (Lock()) {
 		if (!fResending && (fIncoming || fReplying)) {
-			fContentView->TextView()->MakeFocus(true);
+			fContentView->MakeFocus(true);
 		} else {
 			fHeaderView->ToControl()->MakeFocus(true);
 			fHeaderView->ToControl()->SelectAll();
@@ -1904,16 +1917,14 @@ TMailWindow::Zoom(BPoint /*pos*/, float /*x*/, float /*y*/)
 
 	BRect rect = Frame();
 	width = 80 * fApp->ContentFont().StringWidth("M")
-		+ (rect.Width() - fContentView->TextView()->Bounds().Width() + 6);
+		+ (rect.Width() - fContentView->Bounds().Width() + 6);
 
 	BScreen screen(this);
 	BRect screenFrame = screen.Frame();
 	if (width > (screenFrame.Width() - 8))
 		width = screenFrame.Width() - 8;
 
-	height = max_c(fContentView->TextView()->CountLines(), 20)
-		* fContentView->TextView()->LineHeight(0)
-		+ (rect.Height() - fContentView->TextView()->Bounds().Height());
+	height = fContentView->GetPreferredHeight(rect);
 	if (height > (screenFrame.Height() - 29))
 		height = screenFrame.Height() - 29;
 
@@ -1998,7 +2009,7 @@ TMailWindow::Forward(entry_ref* ref, TMailWindow* window,
 			fEnclosuresView->AddEnclosuresFromMail(fMail);
 	}
 
-	fContentView->TextView()->LoadMessage(fMail, false, NULL);
+	fContentView->LoadMessage(fMail, false, NULL);
 	fChanged = false;
 	fFieldState = 0;
 }
@@ -2022,8 +2033,6 @@ TMailWindow::Print()
 	print.SetSettings(new BMessage(fApp->PrintSettings()));
 
 	if (print.ConfigJob() == B_OK) {
-		int32 curPage = 1;
-		int32 lastLine = 0;
 		BTextView header_view(print.PrintableRect(), "header",
 			print.PrintableRect().OffsetByCopy(BPoint(
 				-print.PrintableRect().left, -print.PrintableRect().top)),
@@ -2047,9 +2056,7 @@ TMailWindow::Print()
 		if (!fHeaderView->IsDateEmpty())
 			header_view.Insert(fHeaderView->Date());
 
-		int32 maxLine = fContentView->TextView()->CountLines();
 		BRect pageRect = print.PrintableRect();
-		BRect curPageRect = pageRect;
 
 		print.BeginJob();
 		float header_height = header_view.TextHeight(0,
@@ -2065,6 +2072,11 @@ TMailWindow::Print()
 		print.DrawView(&line, line.Bounds(), BPoint(0, header_height + 1));
 		bmap.Unlock();
 		header_height += 5;
+/* FIXME: add back print but delegate to ContentView and also support HTML page print
+		int32 curPage = 1;
+		int32 lastLine = 0;
+		int32 maxLine = fContentView->CountLines();
+		BRect curPageRect = pageRect;
 
 		do {
 			int32 lineOffset = fContentView->TextView()->OffsetAt(lastLine);
@@ -2096,7 +2108,7 @@ TMailWindow::Print()
 			curPage++;
 
 		} while (print.CanContinue() && lastLine < maxLine);
-
+*/
 		print.CommitJob();
 		bmap.RemoveChild(&header_view);
 		bmap.RemoveChild(&line);
@@ -2135,8 +2147,7 @@ TMailWindow::SetTo(const char* mailTo, const char* subject, const char* ccTo,
 		fHeaderView->SetBcc(bccTo);
 
 	if (body != NULL && body->Length()) {
-		fContentView->TextView()->SetText(body->String(), body->Length());
-		fContentView->TextView()->GoToLine(0);
+		fContentView->SetText(body);
 	}
 
 	if (enclosures && enclosures->HasRef("refs"))
@@ -2162,12 +2173,7 @@ TMailWindow::CopyMessage(entry_ref* ref, TMailWindow* src)
 			fHeaderView->SetCc(string);
 	}
 
-	TTextView* text = src->fContentView->TextView();
-	text_run_array* style = text->RunArray(0, text->TextLength());
-
-	fContentView->TextView()->SetText(text->Text(), text->TextLength(), style);
-
-	free(style);
+	fContentView->SetTextFrom(src->fContentView);
 }
 
 
@@ -2236,46 +2242,12 @@ TMailWindow::Reply(entry_ref* ref, TMailWindow* window, uint32 type)
 	preamble.ReplaceAll("\\n", "\n");
 
 	// insert (if selection) or load (if whole mail) message text into text view
-
-	int32 finish, start;
-	window->fContentView->TextView()->GetSelection(&start, &finish);
+	int32 start, finish;
+	fContentView->GetSelection(&start, &finish);
 	if (start != finish) {
-		char* text = (char*)malloc(finish - start + 1);
-		if (text == NULL)
-			return;
-
-		window->fContentView->TextView()->GetText(start, finish - start, text);
-		if (text[strlen(text) - 1] != '\n') {
-			text[strlen(text)] = '\n';
-			finish++;
-		}
-		fContentView->TextView()->SetText(text, finish - start);
-		free(text);
-
-		finish = fContentView->TextView()->CountLines();
-		for (int32 loop = 0; loop < finish; loop++) {
-			fContentView->TextView()->GoToLine(loop);
-			fContentView->TextView()->Insert((const char*)QUOTE);
-		}
-
-		if (fApp->ColoredQuotes()) {
-			const BFont* font = fContentView->TextView()->Font();
-			int32 length = fContentView->TextView()->TextLength();
-
-			TextRunArray style(length / 8 + 8);
-
-			FillInQuoteTextRuns(fContentView->TextView(), NULL,
-				fContentView->TextView()->Text(), length, font, &style.Array(),
-				style.MaxEntries());
-
-			fContentView->TextView()->SetRunArray(0, length, &style.Array());
-		}
-
-		fContentView->TextView()->GoToLine(0);
-		if (preamble.Length() > 0)
-			fContentView->TextView()->Insert(preamble);
+		fContentView->SetReply(&preamble, start, finish, fApp->ColoredQuotes());
 	} else {
-		fContentView->TextView()->LoadMessage(mail, true, preamble);
+		fContentView->LoadMessage(mail, true, preamble);
 	}
 
 	fReplying = true;
@@ -2327,19 +2299,19 @@ TMailWindow::Send(bool now)
 	// Count the number of characters in the message body which aren't in the
 	// currently selected character set.  Also see if the resulting encoded
 	// text can safely use 7 bit characters.
-	if (fContentView->TextView()->TextLength() > 0) {
+	if (! fContentView->IsEmpty()) {
 		// First do a trial encoding with the user's character set.
 		int32 converterState = 0;
 		int32 originalLength;
 		BString tempString;
 		int32 tempStringLength;
 		char* tempStringPntr;
-		originalLength = fContentView->TextView()->TextLength();
+		originalLength = fContentView->GetTextLength();
 		tempStringLength = originalLength * 6;
 			// Some character sets bloat up on escape codes
 		tempStringPntr = tempString.LockBuffer (tempStringLength);
 		if (tempStringPntr != NULL && mail_convert_from_utf8(characterSetToUse,
-				fContentView->TextView()->Text(), &originalLength,
+				fContentView->GetText(), &originalLength,
 				tempStringPntr, &tempStringLength, &converterState,
 				0x1A /* used for unknown characters */) == B_OK) {
 			// Check for any characters which don't fit in a 7 bit encoding.
@@ -2460,8 +2432,7 @@ TMailWindow::Send(bool now)
 
 		// the content text is always added to make sure there is a mail body
 		fMail->SetBodyTextTo("");
-		fContentView->TextView()->AddAsContent(fMail, fApp->WrapMode(),
-			characterSetToUse, encodingForBody);
+		fContentView->AddAsContent(fMail, fApp->WrapMode(), characterSetToUse, encodingForBody);
 
 		if (fEnclosuresView != NULL) {
 			TListItem* item;
@@ -2662,8 +2633,8 @@ TMailWindow::SaveAsDraft()
 	}
 
 	// Write the content of the message
-	draft.Write(fContentView->TextView()->Text(),
-		fContentView->TextView()->TextLength());
+	draft.Write(fContentView->GetText(),
+		fContentView->GetTextLength());
 
 	// Add the header stuff as attributes
 	WriteAttrString(&draft, B_MAIL_ATTR_NAME, fHeaderView->To());
@@ -2878,7 +2849,7 @@ TMailWindow::OpenMessage(const entry_ref* ref, uint32 characterSetForDecoding)
 	fPrevTrackerPositionSaved = false;
 	fNextTrackerPositionSaved = false;
 
-	fContentView->TextView()->StopLoad();
+	fContentView->StopLoad();
 	delete fMail;
 	fMail = NULL;
 
@@ -2905,14 +2876,13 @@ TMailWindow::OpenMessage(const entry_ref* ref, uint32 characterSetForDecoding)
 	// from, to, bcc, attachments listed as attributes.
 	if (strcmp(kDraftType, mimeType) == 0) {
 		BNode node(fRef);
-		off_t size;
 		BString string;
 
 		fMail = new BEmailMessage; // Not really used much, but still needed.
 
 		// Load the raw UTF-8 text from the file.
-		file.GetSize(&size);
-		fContentView->TextView()->SetText(&file, 0, size);
+		// NOTE: assumes the draft is always in TEXT format.
+		fContentView->SetText(&file);
 
 		// Restore Fields from attributes
 		if (node.ReadAttrString(B_MAIL_ATTR_TO, &string) == B_OK)
@@ -2975,6 +2945,9 @@ TMailWindow::OpenMessage(const entry_ref* ref, uint32 characterSetForDecoding)
 	SetTitleForMessage();
 
 	if (fIncoming) {
+		// TODO: set mail view format according to preferences
+		SwitchMailViewTo(VIEW_HTML);
+
 		//	Put the addresses in the 'Save Address' Menu
 		BMenuItem* item;
 		while ((item = fSaveAddrMenu->RemoveItem((int32)0)) != NULL)
@@ -3025,15 +2998,24 @@ TMailWindow::OpenMessage(const entry_ref* ref, uint32 characterSetForDecoding)
 		}
 
 		// Clear out existing contents of text view.
-		fContentView->TextView()->SetText("", (int32)0);
+		fContentView->Clear();
 
-		fContentView->TextView()->LoadMessage(fMail, false, NULL);
+		// load message (fills content view according to Mail MIME type)
+		fContentView->LoadMessage(fMail, false, NULL);
 
 		if (fApp->ShowToolBar())
 			_UpdateReadButton();
 	}
 
 	return B_OK;
+}
+
+
+void TMailWindow::SwitchMailViewTo(MAIL_VIEW view)
+{
+	fViewHtml->SetMarked(view == VIEW_HTML);
+	fViewText->SetMarked(view == VIEW_TEXT);
+	fContentView->ShowView(view);	// TODO: or send message, already defined
 }
 
 

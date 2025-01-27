@@ -68,6 +68,7 @@ public:
 			bool			AttachAttributes();
 			bool			ColoredQuotes();
 			uint8			ShowButtonBar();
+			bool			ShowHtmlMail();
 			bool			WarnAboutUnencodableCharacters();
 			bool			StartWithSpellCheckOn();
 			void			SetDefaultChain(uint32 chain);
@@ -106,6 +107,7 @@ private:
 			int32			fUseAccountFrom;
 			uint32			fMailCharacterSet;
 			BFont			fContentFont;
+			bool			fShowHtmlMail;
 };
 
 

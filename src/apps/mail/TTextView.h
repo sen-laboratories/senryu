@@ -80,7 +80,10 @@ class TTextView : public BTextView {
 			const text_run_array *runs);
 		virtual void  DeleteText(int32 start, int32 finish);
 
+		void Clear();
 		void ClearList();
+		bool IsEmpty();
+
 		void LoadMessage(BEmailMessage *mail, bool quoteIt, const char *insertText);
 		void Open(hyper_text*);
 		status_t Save(BMessage *, bool makeNewFile = true);

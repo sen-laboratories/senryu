@@ -70,6 +70,7 @@ Settings::Settings()
 	fWrapMode(true),
 	fAttachAttributes(true),
 	fColoredQuotes(true),
+	fShowHtmlMail(false),
 	fShowButtonBar(kShowToolBar),
 	fWarnAboutUnencodableCharacters(true),
 	fStartWithSpellCheckOn(false),
@@ -193,19 +194,25 @@ Settings::SaveSettings()
 	font_style fontStyle;
 	fContentFont.GetFamilyAndStyle(&fontFamily, &fontStyle);
 
+	// style
 	settings.AddString("FontFamily", fontFamily);
 	settings.AddString("FontStyle", fontStyle);
 	settings.AddFloat("FontSize", fContentFont.Size());
+	settings.AddBool("ShowHtmlMail", fShowHtmlMail);
 
+	// layout
 	settings.AddBool("WordWrapMode", fWrapMode);
 	settings.AddBool("AutoMarkRead", fAutoMarkRead);
 	settings.AddString("SignatureText", fSignature);
 	settings.AddInt32("CharacterSet", fMailCharacterSet);
+
+	// reply
 	settings.AddInt8("ShowButtonBar", fShowButtonBar);
 	settings.AddInt32("UseAccountFrom", fUseAccountFrom);
 	settings.AddBool("ColoredQuotes", fColoredQuotes);
 	settings.AddString("ReplyPreamble", fReplyPreamble);
 	settings.AddBool("AttachAttributes", fAttachAttributes);
+
 	settings.AddBool("WarnAboutUnencodableCharacters",
 		fWarnAboutUnencodableCharacters);
 	settings.AddBool("StartWithSpellCheck", fStartWithSpellCheckOn);
@@ -302,6 +309,8 @@ Settings::LoadSettings()
 		|| fUseAccountFrom > ACCOUNT_FROM_MAIL)
 		fUseAccountFrom = ACCOUNT_USE_DEFAULT;
 
+	fShowHtmlMail = settings.GetBool("ShowHtmlMail", fShowHtmlMail);
+
 	fColoredQuotes = settings.GetBool("ColoredQuotes", fColoredQuotes);
 
 	if (settings.FindString("ReplyPreamble", &string) == B_OK)
@@ -356,6 +365,12 @@ Settings::AttachAttributes()
 	return fAttachAttributes;
 }
 
+bool
+Settings::ShowHtmlMail()
+{
+	BAutolock lock(be_app);
+	return fShowHtmlMail;
+}
 
 bool
 Settings::ColoredQuotes()

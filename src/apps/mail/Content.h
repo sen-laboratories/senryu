@@ -34,6 +34,7 @@ All rights reserved.
 #ifndef _CONTENT_H
 #define _CONTENT_H
 
+#include <CardLayout.h>
 #include <FilePanel.h>
 #include <FindDirectory.h>
 #include <Font.h>
@@ -44,6 +45,7 @@ All rights reserved.
 #include <Rect.h>
 #include <MessageFilter.h>
 #include "TTextView.h"
+#include "THtmlView.h"
 
 #define DEBUG_SPELLCHECK 0
 #if DEBUG_SPELLCHECK
@@ -109,6 +111,11 @@ typedef struct {
 	sem_id *stop_sem;
 } reader_info;
 
+enum MAIL_VIEW {
+	VIEW_TEXT = 0,
+	VIEW_HTML
+};
+
 enum ENCLOSURE_TYPE {
 	TYPE_ENCLOSURE = 100,
 	TYPE_BE_ENCLOSURE,
@@ -141,12 +148,32 @@ public:
 			void				FindString(const char *);
 			void				Focus(bool);
 
-			TTextView*			TextView() const { return fTextView; }
+			void				Clear();
+			bool				IsEmpty();
+			int32				CountLines();
+			void				LoadMessage(BEmailMessage *mail, bool quoteIt = false, const char *text = NULL);
+			void				AddAsContent(BEmailMessage *mail, bool wrap, uint32 charset, mail_encoding encoding);
+			void				SetText(const BString* body);
+			void				SetText(BFile* content, int32 offset = 0, int32 length = -1);
+			void				SetTextFrom(TContentView* srcView);
+			void				SetReply(const BString* preamble, int32 start, int32 finish, bool coloredQuotes = false);
+			void				GetStyledText(char* text, text_run_array* style);
+			int32				GetTextLength();
+			const char*			GetText();
+			void				GetSelection(int32* start, int32* end);
+			void				StopLoad();
+			void				SetReadingPos(float y);
+			float				GetReadingPos();
+			float				GetPreferredHeight(BRect outerFrame);
+			void				ShowView(MAIL_VIEW view);
 
 	virtual	void				MessageReceived(BMessage* message);
+			bool				IsFocus();
 
 private:
+			BCardLayout*		fCardLayout;
 			TTextView*			fTextView;
+			THtmlView*			fHtmlView;
 			bool				fFocus;
 			bool				fIncoming;
 			float				fOffset;

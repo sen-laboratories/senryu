@@ -32,8 +32,6 @@ countries. Other brand product names are registered trademarks or trademarks
 of their respective holders. All rights reserved.
 */
 
-
-#include <GroupLayout.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,6 +45,7 @@ of their respective holders. All rights reserved.
 #include <E-mail.h>
 #include <Input.h>
 #include <Locale.h>
+#include <Looper.h>
 #include <MenuItem.h>
 #include <Mime.h>
 #include <NodeInfo.h>
@@ -63,12 +62,8 @@ of their respective holders. All rights reserved.
 
 #include "MailApp.h"
 #include "MailSupport.h"
-#include "MailWindow.h"
 #include "Messages.h"
 #include "Content.h"
-#include "Utilities.h"
-#include "FieldMsg.h"
-#include "Words.h"
 
 #define B_TRANSLATION_CONTEXT "Mail"
 
@@ -301,15 +296,245 @@ TContentView::TContentView(bool incoming, BFont* font,
 {
 	SetViewUIColor(B_PANEL_BACKGROUND_COLOR);
 
-	BGroupLayout* layout = new BGroupLayout(B_VERTICAL, 0);
-	SetLayout(layout);
+	// we use a stacked card view for TEXT/HTML view to make switching simple,
+	// but only set up the HTML view if needed, as it consumes more resources.
+	fCardLayout = new BCardLayout();
+	SetLayout(fCardLayout);
 
+	// set up Text view
 	fTextView = new TTextView(fIncoming, this, font, showHeader,
 		coloredQuotes);
 
-	BScrollView* scrollView = new BScrollView("", fTextView, 0, true, true);
-	scrollView->SetBorders(BControlLook::B_TOP_BORDER);
-	AddChild(scrollView);
+	BScrollView* scrollViewText = new BScrollView("textMailScrollView", fTextView, 0, true, true);
+	scrollViewText->SetBorders(BControlLook::B_TOP_BORDER);
+	AddChild(scrollViewText);
+
+	// set up HTML view if enabled
+	// TODO: only add if html is enabled
+	// TODO: set externalRefs to app setting
+	fHtmlView = new THtmlView(this, true);
+	BScrollView* scrollViewHtml = new BScrollView("htmlMailScrollView", fHtmlView, 0, true, true);
+	scrollViewHtml->SetBorders(BControlLook::B_TOP_BORDER);
+	AddChild(scrollViewHtml);
+
+	fCardLayout->SetVisibleItem(VIEW_HTML);	// TODO: set to configured default view
+}
+
+void TContentView::ShowView(MAIL_VIEW view)
+{
+	fCardLayout->SetVisibleItem(view);
+}
+
+
+void TContentView::Clear()
+{
+	fTextView->Clear();
+	fHtmlView->Clear();
+}
+
+void TContentView::LoadMessage(BEmailMessage *mail, bool quoteIt, const char *text)
+{
+	fTextView->LoadMessage(mail, quoteIt, text);
+	if (fHtmlView) {
+		bool htmlPartFound = false;
+		// check for HTML mail attachment
+		for (int comp = 0; comp < mail->CountComponents(); comp++) {
+			auto component = mail->GetComponent(comp);
+			BMimeType mime;
+			status_t mimeCheck = component->MIMEType(&mime);
+			if (mimeCheck == B_OK) {
+				if (mime == BMimeType("text/html")) {
+					// read and render in separate View thread
+					printf("Content::found HTML mail...\n");
+					htmlPartFound = true;
+					fHtmlView->LoadMessage(component);
+					break;
+				} else {
+					printf("skipping mail component of MIME type %s\n", mime.Type());
+				}
+			}
+		}
+		if (!htmlPartFound) {
+			printf("no HTML part found, falling back to text\n");
+			fCardLayout->SetVisibleItem(VIEW_TEXT);
+		} else {
+			printf("HTML part found and rendered, switching to HTML view.\n");
+			fCardLayout->SetVisibleItem(VIEW_HTML);
+			fHtmlView->Invalidate();
+		}
+	}
+}
+
+
+// TODO: when is this called? how can we support HTML mail here?
+void TContentView::SetText(const BString* body)
+{
+	fTextView->SetText(body->String());
+	if (fHtmlView) {
+		fHtmlView->Clear();
+		fHtmlView->SetText(body);
+	}
+}
+
+
+void TContentView::SetText(BFile* content, int32 offset, int32 length)
+{
+	if (length == -1) {
+		off_t size;
+		content->GetSize(&size);
+		length = size;
+	}
+
+	fTextView->SetText(content, offset, length);
+	if (fHtmlView) {
+		fHtmlView->Clear();
+		fHtmlView->SetText(content, offset, length);
+	}
+}
+
+
+void TContentView::SetTextFrom(TContentView* srcView)
+{
+	int32 textLen = srcView->GetTextLength();
+	char text[textLen];
+	text_run_array style;
+	srcView->GetStyledText(text, &style);
+
+	fTextView->SetText(text, textLen, &style);
+//	free(style);	// haha freestyle :-P
+}
+
+
+void TContentView::SetReply(const BString* preamble, int32 start, int32 finish, bool coloredQuotes)
+{
+	char* text = (char*)malloc(finish - start + 1);
+	if (text == NULL)
+		return;
+
+	fTextView->GetText(start, finish - start, text);
+	if (text[strlen(text) - 1] != '\n') {
+		text[strlen(text)] = '\n';
+		finish++;
+	}
+	fTextView->SetText(text, finish - start);
+	free(text);
+
+	finish = fTextView->CountLines();
+	for (int32 loop = 0; loop < finish; loop++) {
+		fTextView->GoToLine(loop);
+		fTextView->Insert((const char*)QUOTE);
+	}
+
+	if (coloredQuotes) {
+		const BFont* font = fTextView->Font();
+		int32 length = fTextView->TextLength();
+
+		TextRunArray style(length / 8 + 8);
+
+		FillInQuoteTextRuns(fTextView, NULL,
+			fTextView->Text(), length, font, &style.Array(),
+			style.MaxEntries());
+
+		fTextView->SetRunArray(0, length, &style.Array());
+	}
+
+	fTextView->GoToLine(0);
+	if (preamble->Length() > 0)
+		fTextView->Insert(preamble->String());
+}
+
+
+void TContentView::AddAsContent(BEmailMessage *mail, bool wrap, uint32 charset, mail_encoding encoding)
+{
+	if (fCardLayout->VisibleIndex() == VIEW_TEXT) {
+		fTextView->AddAsContent(mail, wrap, charset, encoding);
+	} else  {
+		// TODO: not yet supported
+	}
+}
+
+
+const char* TContentView::GetText()
+{
+	if (fCardLayout->VisibleIndex() == VIEW_TEXT) {
+		return fTextView->Text();
+	} else  {
+		// TODO: not yet supported
+		return "";
+	}
+}
+
+
+void TContentView::GetStyledText(char* text, text_run_array* style)
+{
+	int32 textLen = fTextView->TextLength();
+	fTextView->GetText(0, textLen, text);
+	style = fTextView->RunArray(0, textLen);
+}
+
+
+void TContentView::GetSelection(int32* start, int32* end)
+{
+	if (fCardLayout->VisibleIndex() == VIEW_TEXT) {
+		fTextView->GetSelection(start, end);
+	} else  {
+		// TODO: not yet supported
+		*start = 0;
+		*end = 0;
+	}
+}
+
+
+int32 TContentView::GetTextLength()
+{
+	return fTextView->TextLength();
+}
+
+
+void TContentView::StopLoad()
+{
+	fTextView->StopLoad();
+	// n/a for htmlView (yet)
+}
+
+void TContentView::SetReadingPos(float y)
+{
+	//TODO: move to TextView alltogether
+	BScrollBar* scroll = fTextView->ScrollBar(B_VERTICAL);
+	if (scroll == NULL)
+		return;
+
+	fTextView->LockLooper();
+		scroll->SetValue(y);
+	fTextView->UnlockLooper();
+}
+
+float TContentView::GetReadingPos()
+{
+	//TODO: move to TextView alltogether
+	BScrollBar* scroll = fTextView->ScrollBar(B_VERTICAL);
+	if (scroll == NULL) {
+		return 0.0;
+	} else {
+		return scroll->Value();
+	}
+}
+
+bool TContentView::IsFocus()
+{
+	return fTextView->IsFocus();
+}
+
+
+int32 TContentView::CountLines()
+{
+	return fTextView->CountLines();
+}
+
+
+bool TContentView::IsEmpty()
+{
+	return fTextView->IsEmpty();
 }
 
 
@@ -393,6 +618,26 @@ void
 TContentView::MessageReceived(BMessage *msg)
 {
 	switch (msg->what) {
+		case M_VIEW_TEXT:
+		{
+			fCardLayout->SetVisibleItem(VIEW_TEXT);
+			break;
+		}
+		case M_VIEW_HTML:
+		{
+			fCardLayout->SetVisibleItem(VIEW_HTML);
+			break;
+		}
+		case M_HEADER:
+		{
+			be_app_messenger.SendMessage(msg, fTextView);
+			break;
+		}
+		case M_RAW:
+		{
+			be_app_messenger.SendMessage(msg, fTextView);
+			break;
+		}
 		case CHANGE_FONT:
 		{
 			BFont *font;
@@ -401,7 +646,6 @@ TContentView::MessageReceived(BMessage *msg)
 			fTextView->Invalidate(Bounds());
 			break;
 		}
-
 		case M_ADD_QUOTE_LEVEL:
 		{
 			int32 start, finish;
@@ -416,7 +660,6 @@ TContentView::MessageReceived(BMessage *msg)
 			fTextView->RemoveQuote(start, finish);
 			break;
 		}
-
 		case M_SIGNATURE:
 		{
 			if (fTextView->IsReaderThreadRunning()) {
@@ -480,7 +723,12 @@ TContentView::MessageReceived(BMessage *msg)
 			}
 			break;
 		}
-
+		case M_CHECK_SPELLING:
+		{
+			bool enable = msg->GetBool("enable", false);
+			fTextView->EnableSpellCheck(enable);
+			break;
+		}
 		case M_FIND:
 			FindString(msg->FindString("findthis"));
 			break;
@@ -490,6 +738,14 @@ TContentView::MessageReceived(BMessage *msg)
 	}
 }
 
+
+float TContentView::GetPreferredHeight(BRect outerFrame)
+{
+	return max_c(fTextView->CountLines(), 20)
+		* fTextView->LineHeight(0)
+		+ (outerFrame.Height()
+		- fTextView->Bounds().Height());
+}
 
 //====================================================================
 //	#pragma mark -

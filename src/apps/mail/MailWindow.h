@@ -35,6 +35,7 @@ All rights reserved.
 #define _MAIL_WINDOW_H
 
 
+#include "Content.h"
 #include <Entry.h>
 #include <Font.h>
 #include <Locker.h>
@@ -122,6 +123,7 @@ protected:
 			void				AddEnclosure(BMessage* msg);
 			void				BuildToolBar();
 			status_t			TrainMessageAs(const char* commandWord);
+			void				SwitchMailViewTo(MAIL_VIEW view);
 
 private:
 			status_t			_GetQueryPath(BPath* path) const;
@@ -159,6 +161,8 @@ private:
 			BMenuItem*			fPrintSetup;
 			BMenuItem*			fQuote;
 			BMenuItem*			fRaw;
+			BMenuItem*			fViewText;
+			BMenuItem*			fViewHtml;
 			BMenuItem*			fRemove;
 			BMenuItem*			fRemoveQuote;
 			BMenuItem*			fSendNow;

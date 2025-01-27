@@ -5,8 +5,12 @@ UsePrivateHeaders mail ;
 UsePrivateHeaders textencoding ;
 UsePrivateHeaders shared ;
 UsePrivateHeaders storage ;
+UsePrivateHeaders netservices2 ;
 
 SEARCH_SOURCE += [ FDirName $(HAIKU_TOP) src apps webpositive autocompletion ] ;
+
+# FIXME: obviously a quick&dirty solution during development
+HDRS += /boot/home/Develop/html-renderer/litehtml/include/ ;
 
 AddResources Mail : pictures.rdef  ;
 
@@ -28,6 +32,7 @@ Application Mail :
 	Signature.cpp
 	Status.cpp
     TTextView.cpp
+    THtmlView.cpp
 	Utilities.cpp
 	WIndex.cpp
 	Words.cpp
@@ -39,7 +44,7 @@ Application Mail :
 	TextViewCompleter.cpp
 
 	: shared be tracker [ TargetLibstdc++ ] [ TargetLibsupc++ ]
-		localestub libmail.so libtextencoding.so
+		localestub libmail.so libtextencoding.so /boot/home/config/non-packaged/lib/liblitehtml.so
 	: Mail.rdef
 ;
 
@@ -58,4 +63,5 @@ DoCatalogs Mail :
 	Signature.cpp
 	Status.cpp
     TTextView.cpp
+    THtmlView.cpp
 ;
