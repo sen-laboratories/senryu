@@ -463,7 +463,7 @@ VMAnonymousCache::Init(bool canOvercommit, int32 numPrecommittedPages,
 		")\n", this, canOvercommit ? "yes" : "no", numPrecommittedPages,
 		numGuardPages);
 
-	status_t error = VMCache::Init(CACHE_TYPE_RAM, allocationFlags);
+	status_t error = VMCache::Init("VMAnonymousCache", CACHE_TYPE_RAM, allocationFlags);
 	if (error != B_OK)
 		return error;
 
@@ -750,7 +750,7 @@ VMAnonymousCache::CanOvercommit()
 
 
 bool
-VMAnonymousCache::HasPage(off_t offset)
+VMAnonymousCache::StoreHasPage(off_t offset)
 {
 	if (_SwapBlockGetAddress(offset >> PAGE_SHIFT) != SWAP_SLOT_NONE)
 		return true;
@@ -760,7 +760,7 @@ VMAnonymousCache::HasPage(off_t offset)
 
 
 bool
-VMAnonymousCache::DebugHasPage(off_t offset)
+VMAnonymousCache::DebugStoreHasPage(off_t offset)
 {
 	off_t pageIndex = offset >> PAGE_SHIFT;
 	swap_hash_key key = { this, pageIndex };
@@ -991,7 +991,7 @@ VMAnonymousCache::Fault(struct VMAddressSpace* aspace, off_t offset)
 		}
 	}
 
-	if (fCanOvercommit && LookupPage(offset) == NULL && !HasPage(offset)) {
+	if (fCanOvercommit && LookupPage(offset) == NULL && !StoreHasPage(offset)) {
 		if (fPrecommittedPages == 0) {
 			// never commit more than needed
 			if (committed_size / B_PAGE_SIZE > page_count)
@@ -1036,7 +1036,7 @@ VMAnonymousCache::Merge(VMCache* _source)
 	committed_size += source->committed_size;
 	source->committed_size = 0;
 
-	off_t actualSize = virtual_end - virtual_base;
+	off_t actualSize = PAGE_ALIGN(virtual_end - virtual_base);
 	if (committed_size > actualSize)
 		_Commit(actualSize, VM_PRIORITY_USER);
 
@@ -1551,8 +1551,7 @@ void
 swap_init(void)
 {
 	// create swap block cache
-	sSwapBlockCache = create_object_cache("swapblock", sizeof(swap_block),
-		sizeof(void*), NULL, NULL, NULL);
+	sSwapBlockCache = create_object_cache("swapblock", sizeof(swap_block), 0);
 	if (sSwapBlockCache == NULL)
 		panic("swap_init(): can't create object cache for swap blocks\n");
 

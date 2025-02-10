@@ -504,7 +504,7 @@ pcn_probe(dev)
 	device_t		dev;
 {
 	const struct pcn_type	*t;
-	struct pcn_softc	*sc;
+	struct pcn_softc	*sc, *local_sc;
 	int			rid;
 	u_int32_t		chip_id;
 
@@ -513,12 +513,24 @@ pcn_probe(dev)
 		return (ENXIO);
 	sc = device_get_softc(dev);
 
+#ifdef __HAIKU__
+	local_sc = NULL;
+	if (sc == NULL) {
+		sc = local_sc = __builtin_alloca(offsetof(struct pcn_softc, pcn_ldata));
+		device_set_softc(dev, local_sc);
+	}
+#endif
+
 	/*
 	 * Temporarily map the I/O space so we can read the chip ID register.
 	 */
 	rid = PCN_RID;
 	sc->pcn_res = bus_alloc_resource_any(dev, PCN_RES, &rid, RF_ACTIVE);
 	if (sc->pcn_res == NULL) {
+#ifdef __HAIKU__
+		if (local_sc != NULL)
+			device_set_softc(dev, NULL);
+#endif
 		device_printf(dev, "couldn't map ports/memory\n");
 		return(ENXIO);
 	}
@@ -528,6 +540,11 @@ pcn_probe(dev)
 	chip_id = pcn_chip_id(dev);
 
 	bus_release_resource(dev, PCN_RES, PCN_RID, sc->pcn_res);
+
+#ifdef __HAIKU__
+	if (local_sc != NULL)
+		device_set_softc(dev, NULL);
+#endif
 
 	switch((chip_id >> 12) & PART_MASK) {
 	case Am79C971:

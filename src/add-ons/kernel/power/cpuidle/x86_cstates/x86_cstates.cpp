@@ -23,6 +23,10 @@
 
 #define CPUIDLE_CSTATE_MAX			8
 
+#define CPUID_MWAIT_ECX_EXTENSIONS			0x1
+#define CPUID_MWAIT_ECX_INTERRUPTS_BREAK	0x2
+#define CPUID_MWAIT_ECX_SUPPORT (CPUID_MWAIT_ECX_EXTENSIONS | CPUID_MWAIT_ECX_INTERRUPTS_BREAK)
+
 #define MWAIT_INTERRUPTS_BREAK		(1 << 0)
 
 #define X86_CSTATES_MODULE_NAME	CPUIDLE_MODULES_PREFIX "/x86_cstates/v1"
@@ -126,10 +130,6 @@ init_cstates()
 {
 	if (!x86_check_feature(IA32_FEATURE_EXT_MONITOR, FEATURE_EXT))
 		return B_ERROR;
-	if (!x86_check_feature(IA32_FEATURE_POWER_MWAIT, FEATURE_5_ECX))
-		return B_ERROR;
-	if (!x86_check_feature(IA32_FEATURE_INTERRUPT_MWAIT, FEATURE_5_ECX))
-		return B_ERROR;
 
 	// we need invariant TSC
 	if (!x86_check_feature(IA32_FEATURE_INVARIANT_TSC, FEATURE_EXT_7_EDX))
@@ -139,17 +139,34 @@ init_cstates()
 	cpuid_info cpuid;
 	get_current_cpuid(&cpuid, 0, 0);
 	uint32 maxBasicLeaf = cpuid.eax_0.max_eax;
-	if (maxBasicLeaf < 5)
+	if (maxBasicLeaf < IA32_CPUID_LEAF_MWAIT)
 		return B_ERROR;
 
-	get_current_cpuid(&cpuid, 5, 0);
-	if ((cpuid.regs.eax & 0xffff) < sizeof(int32))
+	get_current_cpuid(&cpuid, IA32_CPUID_LEAF_MWAIT, 0);
+	uint32 minMonitorLineSize = cpuid.regs.eax & 0xffff;
+	//uint32 maxMonitorLineSize = cpuid.regs.ebx & 0xffff;
+	uint32 mwaitSubStates  = cpuid.regs.edx;
+	if (minMonitorLineSize < sizeof(int32))
 		return B_ERROR;
+	if (mwaitSubStates == 0)
+		return B_ERROR;
+	// check Enumeration of Monitor-Mwait extensions is supported
+	// and check treating interrupts as break-events even when interrupts disabled is supported
+	if ((cpuid.regs.ecx & CPUID_MWAIT_ECX_SUPPORT) != CPUID_MWAIT_ECX_SUPPORT)
+		return B_ERROR;
+
+	cpu_ent* cpu = &gCPU[0];
+	uint8 model = cpu->arch.model + (cpu->arch.extended_model << 4);
+	if (cpu->arch.family == 6) {
+		// disable C5 and C6 states on Skylake (same as Linux)
+		if (model == 0x5e && (mwaitSubStates & (0xf << 28)) != 0)
+			mwaitSubStates &= 0xf00fffff;
+	}
 
 	char cStates[64];
 	unsigned int offset = 0;
 	for (int32 i = 1; i < CPUIDLE_CSTATE_MAX; i++) {
-		int32 subStates = (cpuid.regs.edx >> (i * 4)) & 0xf;
+		int32 subStates = (mwaitSubStates >> (i * 4)) & 0xf;
 		// no sub-states means the state is not available
 		if (subStates == 0)
 			continue;

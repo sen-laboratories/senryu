@@ -2417,10 +2417,11 @@ _vm_map_file(team_id team, const char* name, void** _address,
 		cache->ReleaseRefLocked();
 	}
 
-	if (status == B_OK && (protection & B_READ_AREA) != 0) {
-		// Pre-map at most 10MB worth of pages.
+	if (status == B_OK && (protection & B_READ_AREA) != 0 && cache->page_count > 0) {
+		// Pre-map up to 1 MB for every time the cache has been faulted "in full".
 		pre_map_area_pages(area, cache, &reservation,
-			(10LL * 1024 * 1024) / B_PAGE_SIZE);
+			(cache->FaultCount() / cache->page_count)
+				* ((1 * 1024 * 1024) / B_PAGE_SIZE));
 	}
 
 	cache->Unlock();
@@ -2966,22 +2967,8 @@ vm_copy_area(team_id team, const char* name, void** _address,
 	} while (restart);
 
 	// unreserve pages later
-	struct PagesUnreserver {
-		PagesUnreserver(vm_page_reservation* reservation)
-			:
-			fReservation(reservation)
-		{
-		}
-
-		~PagesUnreserver()
-		{
-			if (fReservation != NULL)
-				vm_page_unreserve_pages(fReservation);
-		}
-
-	private:
-		vm_page_reservation*	fReservation;
-	} pagesUnreserver(wiredPages > 0 ? &wiredPagesReservation : NULL);
+	CObjectDeleter<vm_page_reservation, void, vm_page_unreserve_pages>
+		pagesUnreserver(wiredPages > 0 ? &wiredPagesReservation : NULL);
 
 	bool writableCopy
 		= (source->protection & (B_KERNEL_WRITE_AREA | B_WRITE_AREA)) != 0;
@@ -4316,7 +4303,7 @@ fault_get_page(PageFaultContext& context)
 		// The current cache does not contain the page we're looking for.
 
 		// see if the backing store has it
-		if (cache->HasPage(context.cacheOffset)) {
+		if (cache->StoreHasPage(context.cacheOffset)) {
 			// insert a fresh page and mark it busy -- we're going to read it in
 			page = vm_page_allocate_page(&context.reservation,
 				PAGE_STATE_ACTIVE | VM_PAGE_ALLOC_BUSY);
@@ -4367,10 +4354,12 @@ fault_get_page(PageFaultContext& context)
 	}
 
 	if (page == NULL) {
-		// There was no adequate page, determine the cache for a clean one.
-		// Read-only pages come in the deepest cache, only the top most cache
-		// may have direct write access.
-		cache = context.isWrite ? context.topCache : lastCache;
+		// There was no adequate page. Insert a clean one into the topmost cache.
+		cache = context.topCache;
+
+		// We don't need the other caches anymore.
+		context.cacheChainLocker.Unlock(context.topCache);
+		context.cacheChainLocker.SetTo(context.topCache);
 
 		// allocate a clean page
 		page = vm_page_allocate_page(&context.reservation,
@@ -4403,6 +4392,7 @@ fault_get_page(PageFaultContext& context)
 
 		context.cacheChainLocker.RelockCaches(true);
 		sourcePage->Cache()->MarkPageUnbusy(sourcePage);
+		sourcePage->Cache()->IncrementCopiedPagesCount();
 
 		// insert the new page into our cache
 		context.topCache->InsertPage(page, context.cacheOffset);
@@ -4664,8 +4654,9 @@ vm_soft_fault(VMAddressSpace* addressSpace, addr_t originalAddress,
 			*wirePage = context.page;
 		}
 
-		DEBUG_PAGE_ACCESS_END(context.page);
+		context.page->Cache()->IncrementFaultCount();
 
+		DEBUG_PAGE_ACCESS_END(context.page);
 		break;
 	}
 
@@ -4777,6 +4768,8 @@ vm_kernel_address_space_left(void)
 void
 vm_unreserve_memory(size_t amount)
 {
+	ASSERT((amount % B_PAGE_SIZE) == 0);
+
 	if (amount == 0)
 		return;
 
@@ -4916,15 +4909,17 @@ fill_area_info(struct VMArea* area, area_info* info, size_t size)
 	info->protection = area->protection;
 	info->lock = area->wiring;
 	info->team = area->address_space->ID();
-	info->copy_count = 0;
-	info->in_count = 0;
-	info->out_count = 0;
-		// TODO: retrieve real values here!
 
 	VMCache* cache = vm_area_get_locked_cache(area);
 
 	// Note, this is a simplification; the cache could be larger than this area
 	info->ram_size = cache->page_count * B_PAGE_SIZE;
+
+	info->copy_count = cache->CopiedPagesCount();
+
+	info->in_count = 0;
+	info->out_count = 0;
+		// TODO: retrieve real values here!
 
 	vm_area_put_locked_cache(cache);
 }

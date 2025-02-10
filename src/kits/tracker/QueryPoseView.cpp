@@ -152,6 +152,27 @@ BQueryPoseView::MessageReceived(BMessage* message)
 
 
 void
+BQueryPoseView::AdoptSystemColors()
+{
+	SetViewUIColor(B_DOCUMENT_BACKGROUND_COLOR, ReadOnlyTint(B_DOCUMENT_BACKGROUND_COLOR));
+	SetLowUIColor(ViewUIColor());
+	SetHighUIColor(B_DOCUMENT_TEXT_COLOR);
+}
+
+
+bool
+BQueryPoseView::HasSystemColors() const
+{
+	float tint = B_NO_TINT;
+	float readOnlyTint = ReadOnlyTint(B_DOCUMENT_BACKGROUND_COLOR);
+
+	return ViewUIColor(&tint) == B_DOCUMENT_BACKGROUND_COLOR && tint == readOnlyTint
+		&& LowUIColor(&tint) == B_DOCUMENT_BACKGROUND_COLOR && tint == readOnlyTint
+		&& HighUIColor(&tint) == B_DOCUMENT_TEXT_COLOR && tint == B_NO_TINT;
+}
+
+
+void
 BQueryPoseView::EditQueries()
 {
 	BMessage message(kEditQuery);
@@ -270,7 +291,7 @@ BQueryPoseView::InitDirentIterator(const entry_ref* ref)
 	// dynamic date query during a Refresh call
 	PoseList* oldPoseList = NULL;
 	if (fCreateOldPoseList) {
-		oldPoseList = new PoseList(10, false);
+		oldPoseList = new PoseList(10);
 		oldPoseList->AddList(fPoseList);
 	}
 
@@ -522,7 +543,7 @@ QueryRefFilter::Filter(const entry_ref* ref, BNode* node, stat_beos* st,
 QueryEntryListCollection::QueryEntryListCollection(Model* model,
 	BHandler* target, PoseList* oldPoseList)
 	:
-	fQueryListRep(new QueryListRep(new BObjectList<BQuery>(5, true)))
+	fQueryListRep(new QueryListRep(new BObjectList<BQuery, true>(5)))
 {
 	Rewind();
 	attr_info info;
@@ -650,7 +671,7 @@ QueryEntryListCollection::QueryEntryListCollection(Model* model,
 
 status_t
 QueryEntryListCollection::FetchOneQuery(const BQuery* copyThis,
-	BHandler* target, BObjectList<BQuery>* list, BVolume* volume)
+	BHandler* target, BObjectList<BQuery, true>* list, BVolume* volume)
 {
 	BQuery* query = new (nothrow) BQuery;
 	if (query == NULL)

@@ -20,7 +20,7 @@
 status_t
 VMVnodeCache::Init(struct vnode* vnode, uint32 allocationFlags)
 {
-	status_t error = VMCache::Init(CACHE_TYPE_VNODE, allocationFlags);
+	status_t error = VMCache::Init("VMVnodeCache", CACHE_TYPE_VNODE, allocationFlags);
 	if (error != B_OK)
 		return error;
 
@@ -47,7 +47,7 @@ VMVnodeCache::Commit(off_t size, int priority)
 
 
 bool
-VMVnodeCache::HasPage(off_t offset)
+VMVnodeCache::StoreHasPage(off_t offset)
 {
 	return ROUNDUP(offset, B_PAGE_SIZE) >= virtual_base
 		&& offset < virtual_end;
@@ -114,7 +114,7 @@ VMVnodeCache::WriteAsync(off_t offset, const generic_io_vec* vecs, size_t count,
 status_t
 VMVnodeCache::Fault(struct VMAddressSpace* aspace, off_t offset)
 {
-	if (!HasPage(offset))
+	if (!StoreHasPage(offset))
 		return B_BAD_ADDRESS;
 
 	// vm_soft_fault() reads the page in.

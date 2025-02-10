@@ -81,7 +81,8 @@ public:
 								VMCache();
 	virtual						~VMCache();
 
-			status_t			Init(uint32 cacheType, uint32 allocationFlags);
+			status_t			Init(const char* name, uint32 cacheType,
+									uint32 allocationFlags);
 
 	virtual	void				Delete();
 
@@ -152,7 +153,7 @@ public:
 	// backing store operations
 	virtual	bool				CanOvercommit();
 	virtual	status_t			Commit(off_t size, int priority);
-	virtual	bool				HasPage(off_t offset);
+	virtual	bool				StoreHasPage(off_t offset);
 
 	virtual	status_t			Read(off_t offset, const generic_io_vec *vecs,
 									size_t count, uint32 flags,
@@ -174,13 +175,23 @@ public:
 	virtual	status_t			Fault(struct VMAddressSpace *aspace,
 									off_t offset);
 
+	inline	uint64				FaultCount() const
+									{ return fFaultCount; }
+	inline	void				IncrementFaultCount()
+									{ fFaultCount++; }
+
+	inline	uint64				CopiedPagesCount() const
+									{ return fCopiedPagesCount; }
+	inline	void				IncrementCopiedPagesCount()
+									{ fCopiedPagesCount++; }
+
 	virtual	void				Merge(VMCache* source);
 
 	virtual	status_t			AcquireUnreferencedStoreRef();
 	virtual	void				AcquireStoreRef();
 	virtual	void				ReleaseStoreRef();
 
-	virtual	bool				DebugHasPage(off_t offset);
+	virtual	bool				DebugStoreHasPage(off_t offset);
 			vm_page*			DebugLookupPage(off_t offset);
 
 	virtual	void				Dump(bool showPages) const;
@@ -228,7 +239,10 @@ private:
 			PageEventWaiter*	fPageEventWaiters;
 			void*				fUserData;
 			VMCacheRef*			fCacheRef;
+
 			page_num_t			fWiredPagesCount;
+			uint64				fFaultCount;
+			uint64				fCopiedPagesCount;
 };
 
 

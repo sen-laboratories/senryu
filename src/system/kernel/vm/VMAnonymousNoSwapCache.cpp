@@ -45,7 +45,7 @@ VMAnonymousNoSwapCache::Init(bool canOvercommit, int32 numPrecommittedPages,
 	TRACE(("VMAnonymousNoSwapCache::Init(canOvercommit = %s, numGuardPages = %ld) "
 		"at %p\n", canOvercommit ? "yes" : "no", numGuardPages, store));
 
-	status_t error = VMCache::Init(CACHE_TYPE_RAM, allocationFlags);
+	status_t error = VMCache::Init("VMAnonymousNoSwapCache", CACHE_TYPE_RAM, allocationFlags);
 	if (error != B_OK)
 		return error;
 
@@ -113,7 +113,7 @@ VMAnonymousNoSwapCache::CanOvercommit()
 
 
 bool
-VMAnonymousNoSwapCache::HasPage(off_t offset)
+VMAnonymousNoSwapCache::StoreHasPage(off_t offset)
 {
 	return false;
 }
@@ -197,7 +197,7 @@ VMAnonymousNoSwapCache::Merge(VMCache* _source)
 	committed_size += source->committed_size;
 	source->committed_size = 0;
 
-	off_t actualSize = virtual_end - virtual_base;
+	off_t actualSize = PAGE_ALIGN(virtual_end - virtual_base);
 	if (committed_size > actualSize) {
 		vm_unreserve_memory(committed_size - actualSize);
 		committed_size = actualSize;

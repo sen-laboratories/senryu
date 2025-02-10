@@ -16,10 +16,14 @@ class BDirectory;
 class BListView;
 class BMenu;
 
-class VirtualKeyboardWindow : public BWindow{
+static const uint32 kKeymapChange = 'vKCG';
+
+
+class VirtualKeyboardWindow : public BWindow {
 public:
 							VirtualKeyboardWindow(BInputServerDevice* dev);
-		virtual void		MessageReceived(BMessage* message);			
+		virtual void		MessageReceived(BMessage* message);
+		virtual void		ScreenChanged(BRect screenRect, color_space depth);
 
 private:
 		KeyboardLayoutView* fKeyboardView;

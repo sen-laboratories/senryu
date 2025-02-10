@@ -68,19 +68,21 @@ DraggableContainerIcon::MouseDown(BPoint where)
 {
 	// we only like container windows
 	BContainerWindow* window = dynamic_cast<BContainerWindow*>(Window());
-	ThrowOnAssert(window != NULL);
+	if (window == NULL)
+		return;
 
 	// we don't like the Trash icon (because it cannot be moved)
 	if (window->TargetModel()->IsTrash() || window->TargetModel()->IsPrintersDir())
 		return;
 
-	uint32 buttons;
-	window->CurrentMessage()->FindInt32("buttons", (int32*)&buttons);
+	if (window->CurrentMessage() == NULL)
+		return;
+
+	uint32 buttons = Window()->CurrentMessage()->GetInt32("buttons", 0);
 
 	if (IconCache::sIconCache->IconHitTest(where, window->TargetModel(), kNormalIcon, fIconSize)) {
 		// The click hit the icon, initiate a drag
-		fDragButton = buttons
-			& (B_PRIMARY_MOUSE_BUTTON | B_SECONDARY_MOUSE_BUTTON);
+		fDragButton = buttons & (B_PRIMARY_MOUSE_BUTTON | B_SECONDARY_MOUSE_BUTTON);
 		fDragStarted = false;
 		fClickPoint = where;
 	} else {
@@ -144,27 +146,24 @@ DraggableContainerIcon::MouseMoved(BPoint where, uint32, const BMessage*)
 
 	rgb_color textColor = ui_color(B_PANEL_TEXT_COLOR);
 	textColor.alpha = 128;
-		// set the level of transparency by value
+		// set the level of opacity by value
 	view->SetHighColor(textColor);
 	view->SetBlendingMode(B_CONSTANT_ALPHA, B_ALPHA_COMPOSITE);
 
 	// Draw the icon
 	float hIconOffset = (rect.Width() - Bounds().Width()) / 2;
-	IconCache::sIconCache->Draw(model, view, BPoint(hIconOffset, 0),
-		kNormalIcon, fIconSize, true);
+	IconCache::sIconCache->Draw(model, view, BPoint(hIconOffset, 0), kNormalIcon, fIconSize, true);
 
 	// See if we need to truncate the string
 	BString nameString = model->Name();
-	if (view->StringWidth(model->Name()) > rect.Width()) {
-		view->TruncateString(&nameString, B_TRUNCATE_MIDDLE,
-			rect.Width() - 5);
-	}
+	if (view->StringWidth(model->Name()) > rect.Width())
+		view->TruncateString(&nameString, B_TRUNCATE_MIDDLE, rect.Width() - 5);
 
 	// Draw the label
-	float leftText = (view->StringWidth(nameString.String())
-		- Bounds().Width()) / 2;
-	view->MovePenTo(BPoint(hIconOffset - leftText + 2, Bounds().Height()
-		+ (fontHeight.ascent + 2)));
+	float leftText = roundf((view->StringWidth(nameString.String()) - Bounds().Width()) / 2);
+	float x = hIconOffset - leftText + 2;
+	float y = Bounds().Height() + fontHeight.ascent + 2;
+	view->MovePenTo(BPoint(x, y));
 	view->DrawString(nameString.String());
 
 	view->Sync();
