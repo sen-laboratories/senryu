@@ -88,7 +88,10 @@ THtmlView::AttachedToWindow()
 	BView::AttachedToWindow();
 
 	if (fMail != NULL) {
-		LoadMessage(fMail);
+		// todo: needed? LoadMessage(fMail);
+		printf("THtmlView::AttachedToWindow() - LoadMessage not implemented here.\n");
+		// just try to redraw
+		fHtmlView->Invalidate();
 	}
 }
 
@@ -220,18 +223,10 @@ THtmlView::IsEmpty()
 
 
 void
-THtmlView::LoadMessage(BMailComponent* mailComponent)
+THtmlView::LoadMessage(const BString* htmlText)
 {
-	BMallocIO buffer;
-	buffer.SetBlockSize(4096);
-	mailComponent->GetDecodedData(&buffer);
-
-	off_t size;
-	buffer.GetSize(&size);
-	char text[size];
-	buffer.Read(&text, size);
-
-	fHtmlView->RenderHtml(BString(text));
+	fHtmlView->RenderHtml(*htmlText);
+	fHtmlView->Invalidate();
 }
 
 
@@ -241,6 +236,7 @@ THtmlView::SetText(const BString* text)
 	// TODO: handle in a better way
 	Clear();
 	fHtmlView->RenderHtml(*text);
+	fHtmlView->Invalidate();
 }
 
 
@@ -252,14 +248,15 @@ THtmlView::SetText(BFile* file, int32 offset, int32 length)
 	char buffer[length];
 	file->Read(buffer, length);
 	fHtmlView->RenderHtml(BString(buffer));
+	fHtmlView->Invalidate();
 }
 
 
 void
 THtmlView::WindowActivated(bool flag)
 {
-	if (!flag) {
-		// TODO: check if redraw needed
+	if (flag) {
+		fHtmlView->Invalidate();
 	}
 	BView::WindowActivated(flag);
 }

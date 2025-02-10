@@ -3015,7 +3015,7 @@ void TMailWindow::SwitchMailViewTo(MAIL_VIEW view)
 {
 	fViewHtml->SetMarked(view == VIEW_HTML);
 	fViewText->SetMarked(view == VIEW_TEXT);
-	fContentView->ShowView(view);	// TODO: or send message, already defined
+	fContentView->ShowView(view);
 }
 
 

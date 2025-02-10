@@ -343,15 +343,24 @@ void TContentView::LoadMessage(BEmailMessage *mail, bool quoteIt, const char *te
 			BMimeType mime;
 			status_t mimeCheck = component->MIMEType(&mime);
 			if (mimeCheck == B_OK) {
-				if (mime == BMimeType("text/html")) {
+				if ((mime == BMimeType("text/html")) || (mime == BMimeType("multipart/alternative")) ) {
 					// read and render in separate View thread
-					printf("Content::found HTML mail...\n");
-					htmlPartFound = true;
-					fHtmlView->LoadMessage(component);
+					printf("Content::found HTML mail with component type %d...\n", component->ComponentType());
+					if (component->ComponentType() == B_MAIL_PLAIN_TEXT_BODY) {
+						BTextMailComponent* textComponent = reinterpret_cast<BTextMailComponent*>(component);
+						if (textComponent->BStringText()->Length() > 0) {
+							htmlPartFound = true;
+							fHtmlView->LoadMessage(textComponent->BStringText());
+						} else {
+							printf("skipping empty mail component plain text body.\n");
+						}
+					}
 					break;
 				} else {
 					printf("skipping mail component of MIME type %s\n", mime.Type());
 				}
+			} else {
+				printf("could not get MIME type of mail component #%d: %s\n", comp, strerror(mimeCheck));
 			}
 		}
 		if (!htmlPartFound) {
@@ -360,7 +369,7 @@ void TContentView::LoadMessage(BEmailMessage *mail, bool quoteIt, const char *te
 		} else {
 			printf("HTML part found and rendered, switching to HTML view.\n");
 			fCardLayout->SetVisibleItem(VIEW_HTML);
-			fHtmlView->Invalidate();
+			//fHtmlView->Invalidate();
 		}
 	}
 }

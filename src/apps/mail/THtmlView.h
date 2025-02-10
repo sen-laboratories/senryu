@@ -59,7 +59,7 @@ class THtmlView : public BView {
 		void Clear();
 		bool IsEmpty();
 
-		void LoadMessage(BMailComponent* mailComponent);
+		void LoadMessage(const BString* htmlText);
 		void SetText(const BString* text);
 		void SetText(BFile* file, int32 offset, int32 length);
 		void WindowActivated(bool flag);
