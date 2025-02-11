@@ -70,7 +70,7 @@ THtmlView::THtmlView(TContentView *view, bool allowExternalRefs)
 	fLinkMenu->AddItem(new BMenuItem(B_TRANSLATE("Copy link location"),
 		new BMessage(M_COPY)));
 
-	fHtmlView = new LiteHtmlView(Bounds(), "liteHtmlView");
+	fHtmlView = new LiteHtmlView(BRect(800.0, 600.0), "liteHtmlView");
 	fHtmlView->StartWatching(this, M_HTML_RENDERED);
 }
 
@@ -90,9 +90,8 @@ THtmlView::AttachedToWindow()
 	if (fMail != NULL) {
 		// todo: needed? LoadMessage(fMail);
 		printf("THtmlView::AttachedToWindow() - LoadMessage not implemented here.\n");
-		// just try to redraw
-		fHtmlView->Invalidate();
 	}
+	fHtmlView->ResizeToPreferred();
 }
 
 

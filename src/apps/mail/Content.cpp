@@ -290,16 +290,15 @@ TextRunArray::~TextRunArray()
 TContentView::TContentView(bool incoming, BFont* font,
 	bool showHeader, bool coloredQuotes)
 	:
-	BView("m_content", B_WILL_DRAW | B_FULL_UPDATE_ON_RESIZE),
+	BCardView("m_content"),
 	fFocus(false),
 	fIncoming(incoming)
 {
-	SetViewUIColor(B_PANEL_BACKGROUND_COLOR);
+	//SetViewUIColor(B_PANEL_BACKGROUND_COLOR);
 
 	// we use a stacked card view for TEXT/HTML view to make switching simple,
 	// but only set up the HTML view if needed, as it consumes more resources.
-	fCardLayout = new BCardLayout();
-	SetLayout(fCardLayout);
+	fCardLayout = CardLayout();
 
 	// set up Text view
 	fTextView = new TTextView(fIncoming, this, font, showHeader,
@@ -335,43 +334,59 @@ void TContentView::Clear()
 void TContentView::LoadMessage(BEmailMessage *mail, bool quoteIt, const char *text)
 {
 	fTextView->LoadMessage(mail, quoteIt, text);
+
 	if (fHtmlView) {
-		bool htmlPartFound = false;
 		// check for HTML mail attachment
-		for (int comp = 0; comp < mail->CountComponents(); comp++) {
-			auto component = mail->GetComponent(comp);
-			BMimeType mime;
-			status_t mimeCheck = component->MIMEType(&mime);
-			if (mimeCheck == B_OK) {
-				if ((mime == BMimeType("text/html")) || (mime == BMimeType("multipart/alternative")) ) {
-					// read and render in separate View thread
-					printf("Content::found HTML mail with component type %d...\n", component->ComponentType());
-					if (component->ComponentType() == B_MAIL_PLAIN_TEXT_BODY) {
-						BTextMailComponent* textComponent = reinterpret_cast<BTextMailComponent*>(component);
-						if (textComponent->BStringText()->Length() > 0) {
-							htmlPartFound = true;
-							fHtmlView->LoadMessage(textComponent->BStringText());
-						} else {
-							printf("skipping empty mail component plain text body.\n");
-						}
-					}
-					break;
-				} else {
-					printf("skipping mail component of MIME type %s\n", mime.Type());
-				}
-			} else {
-				printf("could not get MIME type of mail component #%d: %s\n", comp, strerror(mimeCheck));
-			}
-		}
-		if (!htmlPartFound) {
+		BMailComponent *component = ParseMailForHtmlBody(mail);
+		if (component == NULL) {
 			printf("no HTML part found, falling back to text\n");
-			fCardLayout->SetVisibleItem(VIEW_TEXT);
+			ShowView(VIEW_TEXT);
+			return;
+		}
+
+		printf("*** HTML part found, rendering HTML view.\n\n");
+		BTextMailComponent* textComponent = reinterpret_cast<BTextMailComponent*>(component);
+		if (textComponent->BStringText()->Length() > 0) {
+			fHtmlView->LoadMessage(textComponent->BStringText());
 		} else {
-			printf("HTML part found and rendered, switching to HTML view.\n");
-			fCardLayout->SetVisibleItem(VIEW_HTML);
-			//fHtmlView->Invalidate();
+			printf("skipping empty mail component plain text body.\n");
+		}
+		printf("\n*** HTML part rendered, switching to HTML view.\n");
+		ShowView(VIEW_HTML);
+	}
+}
+
+BMailComponent* TContentView::ParseMailForHtmlBody(BMailContainer *mailContainer)
+{
+	if (mailContainer == NULL)
+		return NULL;
+
+	for (int comp = 0; comp < mailContainer->CountComponents(); comp++) {
+		auto component = mailContainer->GetComponent(comp);
+		BMimeType mime;
+		status_t mimeCheck = component->MIMEType(&mime);
+
+		if (mimeCheck != B_OK) {
+			printf("internal error: skipping component #%d, MIME check failed: %s\n",
+				comp, strerror(mimeCheck));
+			continue;
+		}
+
+		printf("PARSE Content::processing mail component with MIME type %s...\n", mime.Type());
+
+		if (component->ComponentType() == B_MAIL_MULTIPART_CONTAINER) {
+			printf("  >> recursively parsing MULTIPART container...\n");
+			return ParseMailForHtmlBody(dynamic_cast<BMIMEMultipartMailContainer *>(component));
+		}
+
+		if (mime == BMimeType("text/html")) {
+			printf("PARSE Content::found HTML mail with MIME type %s...\n", mime.Type());
+			return component;
 		}
 	}
+
+	printf("PARSE mail components done, no HTML body found in this round.\n");
+	return NULL;
 }
 
 
@@ -380,6 +395,7 @@ void TContentView::SetText(const BString* body)
 {
 	fTextView->SetText(body->String());
 	if (fHtmlView) {
+		printf("TContentView::SetText with body called.\n");	//TEST
 		fHtmlView->Clear();
 		fHtmlView->SetText(body);
 	}
@@ -395,10 +411,7 @@ void TContentView::SetText(BFile* content, int32 offset, int32 length)
 	}
 
 	fTextView->SetText(content, offset, length);
-	if (fHtmlView) {
-		fHtmlView->Clear();
-		fHtmlView->SetText(content, offset, length);
-	}
+	fHtmlView->SetText(content, offset, length);
 }
 
 
@@ -410,7 +423,8 @@ void TContentView::SetTextFrom(TContentView* srcView)
 	srcView->GetStyledText(text, &style);
 
 	fTextView->SetText(text, textLen, &style);
-//	free(style);	// haha freestyle :-P
+	printf("TContentView::SetTextFrom(TContentView) called.\n");	//TEST
+	fHtmlView->SetText(new BString(text));
 }
 
 

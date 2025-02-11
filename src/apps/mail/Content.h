@@ -34,6 +34,7 @@ All rights reserved.
 #ifndef _CONTENT_H
 #define _CONTENT_H
 
+#include <CardView.h>
 #include <CardLayout.h>
 #include <FilePanel.h>
 #include <FindDirectory.h>
@@ -140,7 +141,7 @@ struct hyper_text {
 class TSavePanel;
 
 
-class TContentView : public BView {
+class TContentView : public BCardView {
 public:
 								TContentView(bool incoming, BFont* font,
 									bool showHeader, bool coloredQuotes);
@@ -170,6 +171,8 @@ public:
 	virtual	void				MessageReceived(BMessage* message);
 			bool				IsFocus();
 
+protected:
+			BMailComponent* 	ParseMailForHtmlBody(BMailContainer *mailContainer);
 private:
 			BCardLayout*		fCardLayout;
 			TTextView*			fTextView;

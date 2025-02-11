@@ -1103,6 +1103,7 @@ TMailWindow::MessageReceived(BMessage* msg)
 			}
 			break;
 		}
+
 		case LIST_INVOKED:
 			PostMessage(msg, fEnclosuresView);
 			break;
