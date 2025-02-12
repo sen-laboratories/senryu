@@ -70,16 +70,19 @@ THtmlView::THtmlView(TContentView *view, bool allowExternalRefs)
 	fLinkMenu->AddItem(new BMenuItem(B_TRANSLATE("Copy link location"),
 		new BMessage(M_COPY)));
 
-	BRect bounds = fParent->Bounds();
+	BRect bounds = Bounds();
 	fHtmlView = new LiteHtmlView(bounds, "liteHtmlView");
 	fParent->AddChild(fHtmlView);
 
 	fHtmlView->StartWatching(this, M_HTML_RENDERED);
+	fHtmlView->StartWatching(this, M_ANCHOR_CLICKED);
 }
 
 
 THtmlView::~THtmlView()
 {
+	fHtmlView->StopWatching(this, M_HTML_RENDERED);
+	fHtmlView->StopWatching(this, M_ANCHOR_CLICKED);
 	delete fHtmlView;
 	delete fLinkMenu;
 }
@@ -94,7 +97,7 @@ THtmlView::AttachedToWindow()
 		// todo: needed? LoadMessage(fMail);
 		printf("THtmlView::AttachedToWindow() - LoadMessage not implemented here.\n");
 	}
-	ResizeToPreferred();
+	//ResizeToPreferred();
 }
 
 
@@ -163,11 +166,12 @@ THtmlView::MessageReceived(BMessage *msg)
 					{
 						std::cout << "HTML_RENDERED received" << std::endl;
                         //UpdateScrollBars();
+						break;
 					}
                     case M_ANCHOR_CLICKED:
                     {
                         const char *href = msg->FindString("href");
-                        std::cout << "Anchor clicked received: " << href << std::endl;
+                        std::cout << "ANCHOR_CLICKED received: " << href << std::endl;
                         // local anchor?
                         BPoint anchorPos;
                         status_t result = msg->FindPoint("fragmentPos", &anchorPos);
@@ -176,13 +180,17 @@ THtmlView::MessageReceived(BMessage *msg)
                             std::cout << "   scrolling to anchor with y pos = " << anchorPos.y << std::endl;
                             fHtmlView->ScrollTo(0, anchorPos.y);
                         } else {
-                           // no, open in external viewer (usually the default browser, at least for HTTP(S) links)
+                            // no, open in external viewer (usually the default browser, at least for HTTP(S) links)
                             BUrl url(href);
                             const char* signature = url.PreferredApplication();
                             std::cout << "   opening external link with application " << signature << std::endl;
+
                             BRoster launchRoster;
-                            launchRoster.Launch(signature);
+							const char* args[1];
+							args[0] = href;
+                            launchRoster.Launch(signature, 1, args);
                         }
+						break;
                     }
 					default:
 					{
@@ -199,14 +207,14 @@ THtmlView::MessageReceived(BMessage *msg)
 void
 THtmlView::MouseDown(BPoint where)
 {
-//	fHtmlView->MouseDown(where);
+	fHtmlView->MouseDown(where);
 }
 
 
 void
 THtmlView::MouseMoved(BPoint where, uint32 code, const BMessage *msg)
 {
-//	fHtmlView->MouseMoved(where, code, msg);
+	fHtmlView->MouseMoved(where, code, msg);
 }
 
 void
@@ -228,7 +236,6 @@ void
 THtmlView::LoadMessage(const BString* htmlText)
 {
 	fHtmlView->RenderHtml(*htmlText);
-	fHtmlView->Invalidate();
 }
 
 
@@ -238,7 +245,6 @@ THtmlView::SetText(const BString* text)
 	// TODO: handle in a better way
 	Clear();
 	fHtmlView->RenderHtml(*text);
-	fHtmlView->Invalidate();
 }
 
 
@@ -250,7 +256,6 @@ THtmlView::SetText(BFile* file, int32 offset, int32 length)
 	char buffer[length];
 	file->Read(buffer, length);
 	fHtmlView->RenderHtml(BString(buffer));
-	fHtmlView->Invalidate();
 }
 
 
