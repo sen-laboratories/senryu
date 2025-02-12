@@ -83,24 +83,14 @@ recursive_attachment_search(TEnclosuresView* us, BMailContainer* mail,
 
 	for (int32 i = 0; i < mail->CountComponents(); i++) {
 		BMailComponent *component = mail->GetComponent(i);
-		BMimeType mime;
-		component->MIMEType(&mime);
-
-		if (component == body) {
-			printf("found BODY with MIME type %s, skipping...\n", mime.Type());
+		if (component == body)
 			continue;
-		}
 
 		if (component->ComponentType() == B_MAIL_MULTIPART_CONTAINER) {
-			printf("recursively parsing MULTIPART container...\n");
 			recursive_attachment_search(us,
 				dynamic_cast<BMIMEMultipartMailContainer *>(component), body);
 		}
 
-		printf("found %s component attachment, adding.\n", mime.Type());
-		if ( (mime == BMimeType("text/html")) || (mime == BMimeType("multipart/alternative")) ) {
-			printf("  >> HTML enclosure found!\n");
-		}
 		us->fList->AddItem(new TListItem(component));
 	}
 }

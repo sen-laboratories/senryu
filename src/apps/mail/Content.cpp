@@ -372,7 +372,11 @@ BMailComponent* TContentView::ParseMailForHtmlBody(BMailContainer *mailContainer
 			continue;
 		}
 
-		printf("PARSE Content::processing mail component with MIME type %s...\n", mime.Type());
+		if (component->IsAttachment()) {
+			printf("PARSE Content::processing mail attachment with MIME type %s...\n", mime.Type());
+		} else {
+			printf("PARSE Content::processing mail component with MIME type %s...\n", mime.Type());
+		}
 
 		if (component->ComponentType() == B_MAIL_MULTIPART_CONTAINER) {
 			printf("  >> recursively parsing MULTIPART container...\n");

@@ -60,7 +60,7 @@ THtmlView::THtmlView(TContentView *view, bool allowExternalRefs)
 	fMail(NULL),
 	fParent(view),
 	fRaw(false),
-	fAllowExternalRefs(false)
+	fAllowExternalRefs(allowExternalRefs)
 {
 	// Hyperlink pop up menu
 	fLinkMenu = new BPopUpMenu("Link", false, false);
@@ -70,7 +70,10 @@ THtmlView::THtmlView(TContentView *view, bool allowExternalRefs)
 	fLinkMenu->AddItem(new BMenuItem(B_TRANSLATE("Copy link location"),
 		new BMessage(M_COPY)));
 
-	fHtmlView = new LiteHtmlView(BRect(800.0, 600.0), "liteHtmlView");
+	BRect bounds = fParent->Bounds();
+	fHtmlView = new LiteHtmlView(bounds, "liteHtmlView");
+	fParent->AddChild(fHtmlView);
+
 	fHtmlView->StartWatching(this, M_HTML_RENDERED);
 }
 
@@ -91,7 +94,7 @@ THtmlView::AttachedToWindow()
 		// todo: needed? LoadMessage(fMail);
 		printf("THtmlView::AttachedToWindow() - LoadMessage not implemented here.\n");
 	}
-	fHtmlView->ResizeToPreferred();
+	ResizeToPreferred();
 }
 
 
