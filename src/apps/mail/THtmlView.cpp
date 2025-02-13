@@ -36,6 +36,7 @@ of their respective holders. All rights reserved.
 #include <Application.h>
 #include <Beep.h>
 #include <Catalog.h>
+#include <Clipboard.h>
 #include <E-mail.h>
 #include <File.h>
 #include <Locale.h>
@@ -43,9 +44,11 @@ of their respective holders. All rights reserved.
 #include <NodeInfo.h>
 #include <NodeMonitor.h>
 #include <Roster.h>
+
 #include <iostream>
 
 #include "Content.h"
+#include "../../kits/tracker/MimeTypes.h"
 #include "Messages.h"
 #include "THtmlView.h"
 
@@ -65,10 +68,9 @@ THtmlView::THtmlView(TContentView *view, bool allowExternalRefs)
 	// Hyperlink pop up menu
 	fLinkMenu = new BPopUpMenu("Link", false, false);
 	fLinkMenu->SetFont(be_plain_font);
-	fLinkMenu->AddItem(new BMenuItem(B_TRANSLATE("Open this link"),
-		new BMessage(M_OPEN)));
-	fLinkMenu->AddItem(new BMenuItem(B_TRANSLATE("Copy link location"),
-		new BMessage(M_COPY)));
+	fLinkMenu->AddItem(new BMenuItem(B_TRANSLATE("Open this link"), new BMessage(M_OPEN)));
+	fLinkMenu->AddItem(new BMenuItem(B_TRANSLATE("Copy link location"), new BMessage(M_COPY)));
+	fLinkMenu->SetTargetForItems(this);
 
 	BRect bounds = Bounds();
 	fHtmlView = new LiteHtmlView(bounds, "liteHtmlView");
@@ -83,6 +85,7 @@ THtmlView::~THtmlView()
 {
 	fHtmlView->StopWatching(this, M_HTML_RENDERED);
 	fHtmlView->StopWatching(this, M_ANCHOR_CLICKED);
+	Clear();
 	delete fHtmlView;
 	delete fLinkMenu;
 }
@@ -156,6 +159,46 @@ THtmlView::MessageReceived(BMessage *msg)
 	uint32 originalWhat;
 
 	switch (msg->what) {
+		case M_OPEN:
+		{
+			BMessage params;
+			status_t status = msg->FindMessage("params", &params);
+			if (status == B_OK) {
+				OpenUrl(&params);
+			} else {
+				std::cout << "could not find expected message 'params' for opening link!" << std::endl;
+			}
+			break;
+		}
+		case M_COPY:
+		{
+			BMessage params;
+			status_t status = msg->FindMessage("params", &params);
+
+			if (status == B_OK) {
+				BString href = msg->GetString("href");
+				std::cout << "copy URL to clipboard: " << href << std::endl;
+
+				if (href && be_clipboard->Lock()) {
+					be_clipboard->Clear();
+
+					BMessage *clip = be_clipboard->Data();
+					clip->AddData(kPlainTextMimeType, B_MIME_TYPE, href.String(), href.Length());
+					// TODO: how to add as Bookmark? - clip->AddData(B_BOOKMARK_MIMETYPE, B_MIME_TYPE, ??, ??);
+
+					status = be_clipboard->Commit();
+					if (status != B_OK) {
+						fprintf(stderr, "could not commit data to clipboard.\n");
+					}
+					be_clipboard->Unlock();
+				} else {
+					fprintf(stderr, "could not copy to clipboard.\n");
+				}
+			} else {
+				std::cout << "could not find expected message 'params' for copying link!" << std::endl;
+			}
+			break;
+		}
 		case B_OBSERVER_NOTICE_CHANGE:
 		{
 			if (B_OK == msg->FindUInt32(B_OBSERVE_ORIGINAL_WHAT, &originalWhat))
@@ -170,26 +213,22 @@ THtmlView::MessageReceived(BMessage *msg)
 					}
                     case M_ANCHOR_CLICKED:
                     {
-                        const char *href = msg->FindString("href");
-                        std::cout << "ANCHOR_CLICKED received: " << href << std::endl;
-                        // local anchor?
-                        BPoint anchorPos;
-                        status_t result = msg->FindPoint("fragmentPos", &anchorPos);
-                        if (result == B_OK) {
-                            // yes, scroll to position
-                            std::cout << "   scrolling to anchor with y pos = " << anchorPos.y << std::endl;
-                            fHtmlView->ScrollTo(0, anchorPos.y);
-                        } else {
-                            // no, open in external viewer (usually the default browser, at least for HTTP(S) links)
-                            BUrl url(href);
-                            const char* signature = url.PreferredApplication();
-                            std::cout << "   opening external link with application " << signature << std::endl;
+						msg->PrintToStream();	// TEST get title
 
-                            BRoster launchRoster;
-							const char* args[1];
-							args[0] = href;
-                            launchRoster.Launch(signature, 1, args);
-                        }
+						uint32 buttons = msg->GetUInt32("buttons", B_PRIMARY_MOUSE_BUTTON);
+						if (buttons & B_SECONDARY_MOUSE_BUTTON) {
+							// adjust target messages with correct parameters from selected anchor
+							for (int i = 0; i < fLinkMenu->CountItems(); i++) {
+								BMessage* msg = fLinkMenu->ItemAt(i)->Message();
+								// replace contained params with selected link params
+								msg->ReplaceMessage("params", msg);
+							}
+							BPoint where = msg->GetPoint("where", Bounds().LeftTop());
+							ConvertToScreen(&where);
+							fLinkMenu->Go(where, true, false, true);
+						} else {
+							OpenUrl(msg);
+						}
 						break;
                     }
 					default:
@@ -200,6 +239,34 @@ THtmlView::MessageReceived(BMessage *msg)
 			}
 			break;
 		}
+	}
+}
+
+
+void
+THtmlView::OpenUrl(BMessage* urlMsg)
+{
+	const char *href = urlMsg->FindString("href");
+
+	// local anchor?
+	BPoint anchorPos;
+	status_t result = urlMsg->FindPoint("fragmentPos", &anchorPos);
+
+	if (result == B_OK) {
+		// yes, scroll to position
+		std::cout << "   scrolling to anchor with y pos = " << anchorPos.y << std::endl;
+		fHtmlView->ScrollTo(0, anchorPos.y);
+	} else {
+		// no, open in external viewer (usually the default browser, at least for HTTP(S) links)
+		BUrl url(href);
+		const char* signature = url.PreferredApplication();
+		std::cout << "   opening external link with application " << signature << std::endl;
+
+		BRoster launchRoster;
+		const char* args[1];
+		args[0] = href;
+
+		launchRoster.Launch(signature, 1, args);
 	}
 }
 

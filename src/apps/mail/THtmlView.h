@@ -66,6 +66,9 @@ class THtmlView : public BView {
 
 		bool fReady;
 
+	protected:
+		void OpenUrl(BMessage *urlMsg);
+
 	private:
 		int32 fLastPosition;
 		BEmailMessage *fMail;
