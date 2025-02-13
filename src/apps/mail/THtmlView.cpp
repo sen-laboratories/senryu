@@ -262,9 +262,6 @@ THtmlView::SetText(BFile* file, int32 offset, int32 length)
 void
 THtmlView::WindowActivated(bool flag)
 {
-	if (flag) {
-		fHtmlView->Invalidate();
-	}
 	BView::WindowActivated(flag);
 }
 
