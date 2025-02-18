@@ -9,8 +9,7 @@ UsePrivateHeaders netservices2 ;
 
 SEARCH_SOURCE += [ FDirName $(HAIKU_TOP) src apps webpositive autocompletion ] ;
 
-# FIXME: obviously a quick&dirty solution during development
-HDRS += /boot/home/Develop/html-renderer/litehtml/include/ ;
+HDRS += /boot/home/config/non-packaged/include/litehtml ;
 
 AddResources Mail : pictures.rdef  ;
 

@@ -301,8 +301,7 @@ TContentView::TContentView(bool incoming, BFont* font,
 	fCardLayout = CardLayout();
 
 	// set up Text view
-	fTextView = new TTextView(fIncoming, this, font, showHeader,
-		coloredQuotes);
+	fTextView = new TTextView(fIncoming, this, font, showHeader, coloredQuotes);
 
 	BScrollView* scrollViewText = new BScrollView("textMailScrollView", fTextView, 0, true, true);
 	scrollViewText->SetBorders(BControlLook::B_TOP_BORDER);
@@ -312,6 +311,7 @@ TContentView::TContentView(bool incoming, BFont* font,
 	// TODO: only add if html is enabled
 	// TODO: set externalRefs to app setting
 	fHtmlView = new THtmlView(this, true);
+
 	BScrollView* scrollViewHtml = new BScrollView("htmlMailScrollView", fHtmlView, 0, true, true);
 	scrollViewHtml->SetBorders(BControlLook::B_TOP_BORDER);
 	AddChild(scrollViewHtml);

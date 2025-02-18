@@ -74,10 +74,9 @@ THtmlView::THtmlView(TContentView *view, bool allowExternalRefs)
 
 	BRect bounds = Bounds();
 	fHtmlView = new LiteHtmlView(bounds, "liteHtmlView");
-	fParent->AddChild(fHtmlView);
+	AddChild(fHtmlView);
 
-	fHtmlView->StartWatching(this, M_HTML_RENDERED);
-	fHtmlView->StartWatching(this, M_ANCHOR_CLICKED);
+    fHtmlView->StartWatchingAll(this);
 }
 
 
@@ -86,7 +85,6 @@ THtmlView::~THtmlView()
 	fHtmlView->StopWatching(this, M_HTML_RENDERED);
 	fHtmlView->StopWatching(this, M_ANCHOR_CLICKED);
 	Clear();
-	delete fHtmlView;
 	delete fLinkMenu;
 }
 
@@ -288,7 +286,6 @@ void
 THtmlView::Clear()
 {
 	// NOOP for now, will be reused for next Load()
-	delete fMail;
 }
 
 // TODO: probably not needed at all
