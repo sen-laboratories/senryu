@@ -312,10 +312,6 @@ TContentView::TContentView(bool incoming, BFont* font,
 	// TODO: set externalRefs to app setting
 	fHtmlView = new THtmlView(this, true);
 
-	BScrollView* scrollViewHtml = new BScrollView("htmlMailScrollView", fHtmlView, 0, true, true);
-	scrollViewHtml->SetBorders(BControlLook::B_TOP_BORDER);
-	AddChild(scrollViewHtml);
-
 	fCardLayout->SetVisibleItem(VIEW_HTML);	// TODO: set to configured default view
 }
 

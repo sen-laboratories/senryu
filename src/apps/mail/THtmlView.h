@@ -37,6 +37,7 @@ All rights reserved.
 #include <File.h>
 #include <MailMessage.h>
 #include <PopUpMenu.h>
+#include <ScrollView.h>
 
 #include "/boot/home/Develop/html-renderer/litehtml/include/litehtml.h"
 #include "/boot/home/Develop/html-renderer/litehtml/containers/haiku/container_haiku.h"
@@ -44,7 +45,7 @@ All rights reserved.
 class TContentView;
 class TSavePanel;
 
-class THtmlView : public BView {
+class THtmlView : public LiteHtmlView {
 	public:
 		THtmlView(TContentView *parentView, bool allowExternalRefs);
 		virtual ~THtmlView();
@@ -63,20 +64,24 @@ class THtmlView : public BView {
 		void SetText(const BString* text);
 		void SetText(BFile* file, int32 offset, int32 length);
 		void WindowActivated(bool flag);
-
+        void FrameResized(float newWidth, float newHeight);
 		bool fReady;
 
 	protected:
 		void OpenUrl(BMessage *urlMsg);
+		void UpdateScrollBars();
 
 	private:
-		int32 fLastPosition;
+		int32 		   fLastPosition;
 		BEmailMessage *fMail;
-		TContentView *fParent;
-		LiteHtmlView *fHtmlView;
-		BPopUpMenu *fLinkMenu;
-		bool fRaw;
-		bool fAllowExternalRefs;
+		TContentView  *fParent;
+		LiteHtmlView  *fHtmlView;
+		BScrollView   *scrollViewHtml;
+		BScrollBar    *fScrollBarHorizontal;
+		BScrollBar    *fScrollBarVertical;
+		BPopUpMenu    *fLinkMenu;
+		bool 		  fRaw;
+		bool 		  fAllowExternalRefs;
 };
 
 #endif	/* #idfef THTMLVIEW_H */

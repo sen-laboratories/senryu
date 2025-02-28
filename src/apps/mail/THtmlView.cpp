@@ -56,8 +56,7 @@ of their respective holders. All rights reserved.
 
 THtmlView::THtmlView(TContentView *view, bool allowExternalRefs)
 	:
-	BView("mail_message_htmlview", B_WILL_DRAW | B_NAVIGABLE),
-
+	LiteHtmlView(view->Bounds(), "mail_message_htmlview"),
 	fReady(false),
 	fLastPosition(-1),
 	fMail(NULL),
@@ -65,6 +64,15 @@ THtmlView::THtmlView(TContentView *view, bool allowExternalRefs)
 	fRaw(false),
 	fAllowExternalRefs(allowExternalRefs)
 {
+	scrollViewHtml = new BScrollView("htmlMailScrollView", this, 0, true, true);
+	//scrollViewHtml->SetBorders(BControlLook::B_TOP_BORDER);
+	fParent->AddChild(scrollViewHtml);
+
+	BSize min = scrollViewHtml->MinSize();
+	BSize max = scrollViewHtml->MaxSize();
+	scrollViewHtml->SetExplicitMinSize(min);
+	scrollViewHtml->SetExplicitMaxSize(max);
+
 	// Hyperlink pop up menu
 	fLinkMenu = new BPopUpMenu("Link", false, false);
 	fLinkMenu->SetFont(be_plain_font);
@@ -72,18 +80,16 @@ THtmlView::THtmlView(TContentView *view, bool allowExternalRefs)
 	fLinkMenu->AddItem(new BMenuItem(B_TRANSLATE("Copy link location"), new BMessage(M_COPY)));
 	fLinkMenu->SetTargetForItems(this);
 
-	BRect bounds = Bounds();
-	fHtmlView = new LiteHtmlView(bounds, "liteHtmlView");
-	AddChild(fHtmlView);
+	fScrollBarHorizontal = scrollViewHtml->ScrollBar(B_HORIZONTAL);
+    fScrollBarVertical   = scrollViewHtml->ScrollBar(B_VERTICAL);
 
-    fHtmlView->StartWatchingAll(this);
+    StartWatchingAll(this);
 }
 
 
 THtmlView::~THtmlView()
 {
-	fHtmlView->StopWatching(this, M_HTML_RENDERED);
-	fHtmlView->StopWatching(this, M_ANCHOR_CLICKED);
+	StopWatchingAll(this);
 	Clear();
 	delete fLinkMenu;
 }
@@ -98,27 +104,48 @@ THtmlView::AttachedToWindow()
 		// todo: needed? LoadMessage(fMail);
 		printf("THtmlView::AttachedToWindow() - LoadMessage not implemented here.\n");
 	}
-	//ResizeToPreferred();
+	ResizeToPreferred();
 }
 
+void
+THtmlView::FrameResized(float newWidth, float newHeight)
+{
+	UpdateScrollBars();
+}
+
+void
+THtmlView::UpdateScrollBars()
+{
+    BSize viewSize(scrollViewHtml->Bounds().Size());
+    float width, height;
+    GetPreferredSize(&width, &height);
+
+	printf("UpdateScrollBars: viewSize = %f x %f, htmlSize = %f x %f\n",
+		   viewSize.Width(), viewSize.Height(), width, height);
+
+    fScrollBarHorizontal->SetRange(0,  width);
+    fScrollBarHorizontal->SetSteps(10, width / 10);
+    fScrollBarVertical->SetRange(0,  height);
+    fScrollBarVertical->SetSteps(10, height / 10);
+}
 
 void
 THtmlView::KeyDown(const char *key, int32 count)
 {
 	//uint32 mods = modifiers();
 	BSize targetSize;
-	fHtmlView->GetPreferredSize(&targetSize.width, &targetSize.height);
-	BRect clientRect = fHtmlView->GetClientRect();
+	GetPreferredSize(&targetSize.width, &targetSize.height);
+	BRect clientRect = GetClientRect();
 	BRect viewRect = Bounds();
 	float maxScrollVertical = targetSize.Height() - viewRect.Height();
 
 	switch (key[0]) {
 		case B_HOME:
-			fHtmlView->ScrollTo(0, 0);
+			ScrollTo(0, 0);
 			break;
 
 		case B_END:
-			fHtmlView->ScrollTo(0, maxScrollVertical);
+			ScrollTo(0, maxScrollVertical);
 			break;
 
 		case B_PAGE_UP: {
@@ -126,7 +153,7 @@ THtmlView::KeyDown(const char *key, int32 count)
 			if (y < 0) {
 				y = 0;
 			}
-			fHtmlView->ScrollTo(0, y);
+			ScrollTo(0, y);
 			break;
 		}
 		case B_PAGE_DOWN: {
@@ -134,7 +161,7 @@ THtmlView::KeyDown(const char *key, int32 count)
 			if (y > maxScrollVertical) {
 				y = maxScrollVertical;
 			}
-			fHtmlView->ScrollTo(0, y);
+			ScrollTo(0, y);
 			break;
 		}
 		default:
@@ -142,14 +169,12 @@ THtmlView::KeyDown(const char *key, int32 count)
 	}
 }
 
-
 void
 THtmlView::MakeFocus(bool focus)
 {
 	BView::MakeFocus(focus);
 	fParent->Focus(focus);
 }
-
 
 void
 THtmlView::MessageReceived(BMessage *msg)
@@ -206,7 +231,8 @@ THtmlView::MessageReceived(BMessage *msg)
 					case M_HTML_RENDERED:
 					{
 						std::cout << "HTML_RENDERED received" << std::endl;
-                        //UpdateScrollBars();
+                        UpdateScrollBars();
+						Invalidate();
 						break;
 					}
                     case M_ANCHOR_CLICKED:
@@ -240,7 +266,6 @@ THtmlView::MessageReceived(BMessage *msg)
 	}
 }
 
-
 void
 THtmlView::OpenUrl(BMessage* urlMsg)
 {
@@ -253,7 +278,7 @@ THtmlView::OpenUrl(BMessage* urlMsg)
 	if (result == B_OK) {
 		// yes, scroll to position
 		std::cout << "   scrolling to anchor with y pos = " << anchorPos.y << std::endl;
-		fHtmlView->ScrollTo(0, anchorPos.y);
+		ScrollTo(0, anchorPos.y);
 	} else {
 		// no, open in external viewer (usually the default browser, at least for HTTP(S) links)
 		BUrl url(href);
@@ -268,18 +293,17 @@ THtmlView::OpenUrl(BMessage* urlMsg)
 	}
 }
 
-
 void
 THtmlView::MouseDown(BPoint where)
 {
-	fHtmlView->MouseDown(where);
+	MouseDown(where);
 }
 
 
 void
 THtmlView::MouseMoved(BPoint where, uint32 code, const BMessage *msg)
 {
-	fHtmlView->MouseMoved(where, code, msg);
+	MouseMoved(where, code, msg);
 }
 
 void
@@ -295,22 +319,19 @@ THtmlView::IsEmpty()
 	return (!fReady);
 }
 
-
 void
 THtmlView::LoadMessage(const BString* htmlText)
 {
-	fHtmlView->RenderHtml(*htmlText);
+	RenderHtml(*htmlText);
 }
-
 
 void
 THtmlView::SetText(const BString* text)
 {
 	// TODO: handle in a better way
 	Clear();
-	fHtmlView->RenderHtml(*text);
+	RenderHtml(*text);
 }
-
 
 void
 THtmlView::SetText(BFile* file, int32 offset, int32 length)
@@ -319,9 +340,8 @@ THtmlView::SetText(BFile* file, int32 offset, int32 length)
 	Clear();
 	char buffer[length];
 	file->Read(buffer, length);
-	fHtmlView->RenderHtml(BString(buffer));
+	RenderHtml(BString(buffer));
 }
-
 
 void
 THtmlView::WindowActivated(bool flag)
