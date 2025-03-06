@@ -654,15 +654,7 @@ load_library(char const *path, uint32 flags, bool addOn, void* caller,
 		}
 
 		// First of all, find the caller image.
-		image_t* callerImage = get_loaded_images().head;
-		for (; callerImage != NULL; callerImage = callerImage->next) {
-			elf_region_t& text = callerImage->regions[0];
-			if ((addr_t)caller >= text.vmstart
-				&& (addr_t)caller < text.vmstart + text.vmsize) {
-				// found the image
-				break;
-			}
-		}
+		image_t* callerImage = find_loaded_image_by_address((addr_t)caller);
 		if (callerImage != NULL) {
 			runpath = find_dt_runpath(callerImage);
 			if (runpath == NULL)
@@ -774,8 +766,10 @@ unload_library(void* handle, image_id imageID, bool addOn)
 			// call_atexit_hooks_for_range() only here, which happens only when
 			// libraries are unloaded dynamically.
 			if (gRuntimeLoader.call_atexit_hooks_for_range != NULL) {
-				gRuntimeLoader.call_atexit_hooks_for_range(
-					image->regions[0].vmstart, image->regions[0].vmsize);
+				for (uint32 i = 0; i < image->num_regions; i++) {
+					gRuntimeLoader.call_atexit_hooks_for_range(
+						image->regions[i].vmstart, image->regions[i].vmsize);
+				}
 			}
 
 			image_event(image, IMAGE_EVENT_UNINITIALIZING);
@@ -1006,16 +1000,7 @@ get_library_symbol(void* handle, void* caller, const char* symbolName,
 		// calling image. Return the next after the caller symbol.
 
 		// First of all, find the caller image.
-		image_t* callerImage = get_loaded_images().head;
-		for (; callerImage != NULL; callerImage = callerImage->next) {
-			elf_region_t& text = callerImage->regions[0];
-			if ((addr_t)caller >= text.vmstart
-				&& (addr_t)caller < text.vmstart + text.vmsize) {
-				// found the image
-				break;
-			}
-		}
-
+		image_t* callerImage = find_loaded_image_by_address((addr_t)caller);
 		if (callerImage != NULL) {
 			// found the caller -- now search the global scope until we find
 			// the next symbol

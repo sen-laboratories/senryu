@@ -507,20 +507,19 @@ vm_cache_init(kernel_args* args)
 {
 	// Create object caches for the structures we allocate here.
 	gCacheRefObjectCache = create_object_cache("cache refs", sizeof(VMCacheRef),
-		0, NULL, NULL, NULL);
+		0);
 #if ENABLE_SWAP_SUPPORT
 	gAnonymousCacheObjectCache = create_object_cache("anon caches",
-		sizeof(VMAnonymousCache), 0, NULL, NULL, NULL);
+		sizeof(VMAnonymousCache), 0);
 #endif
 	gAnonymousNoSwapCacheObjectCache = create_object_cache(
-		"anon no-swap caches", sizeof(VMAnonymousNoSwapCache), 0, NULL, NULL,
-		NULL);
+		"anon no-swap caches", sizeof(VMAnonymousNoSwapCache), 0);
 	gVnodeCacheObjectCache = create_object_cache("vnode caches",
-		sizeof(VMVnodeCache), 0, NULL, NULL, NULL);
+		sizeof(VMVnodeCache), 0);
 	gDeviceCacheObjectCache = create_object_cache("device caches",
-		sizeof(VMDeviceCache), 0, NULL, NULL, NULL);
+		sizeof(VMDeviceCache), 0);
 	gNullCacheObjectCache = create_object_cache("null caches",
-		sizeof(VMNullCache), 0, NULL, NULL, NULL);
+		sizeof(VMNullCache), 0);
 
 	if (gCacheRefObjectCache == NULL
 #if ENABLE_SWAP_SUPPORT
@@ -631,9 +630,9 @@ VMCache::~VMCache()
 
 
 status_t
-VMCache::Init(uint32 cacheType, uint32 allocationFlags)
+VMCache::Init(const char* name, uint32 cacheType, uint32 allocationFlags)
 {
-	mutex_init(&fLock, "VMCache");
+	mutex_init(&fLock, name);
 
 	fRefCount = 1;
 	source = NULL;
@@ -643,6 +642,8 @@ VMCache::Init(uint32 cacheType, uint32 allocationFlags)
 	temporary = 0;
 	page_count = 0;
 	fWiredPagesCount = 0;
+	fFaultCount = 0;
+	fCopiedPagesCount = 0;
 	type = cacheType;
 	fPageEventWaiters = NULL;
 
@@ -788,14 +789,15 @@ VMCache::InsertPage(vm_page* page, off_t offset)
 {
 	TRACE(("VMCache::InsertPage(): cache %p, page %p, offset %" B_PRIdOFF "\n",
 		this, page, offset));
+	T2(InsertPage(this, page, offset));
+
 	AssertLocked();
+	ASSERT(offset >= virtual_base && offset < virtual_end);
 
 	if (page->CacheRef() != NULL) {
 		panic("insert page %p into cache %p: page cache is set to %p\n",
 			page, this, page->Cache());
 	}
-
-	T2(InsertPage(this, page, offset));
 
 	page->cache_offset = (page_num_t)(offset >> PAGE_SHIFT);
 	page_count++;
@@ -854,7 +856,7 @@ VMCache::MovePage(vm_page* page, off_t offset)
 
 	AssertLocked();
 	oldCache->AssertLocked();
-	ASSERT(offset >= virtual_base && (offset + B_PAGE_SIZE) <= virtual_end);
+	ASSERT(offset >= virtual_base && offset < virtual_end);
 
 	// remove from old cache
 	oldCache->pages.Remove(page);
@@ -950,7 +952,7 @@ VMCache::WaitForPageEvents(vm_page* page, uint32 events, bool relock)
 }
 
 
-/*!	Makes this case the source of the \a consumer cache,
+/*!	Makes this cache the source of the \a consumer cache,
 	and adds the \a consumer to its list.
 	This also grabs a reference to the source cache.
 	Assumes you have the cache and the consumer's lock held.
@@ -1170,6 +1172,17 @@ VMCache::Resize(off_t newSize, int priority)
 		while (_FreePageRange(pages.GetIterator(newPageCount, true, true)))
 			;
 	}
+	if (newSize < virtual_end && newPageCount > 0) {
+		// We may have a partial page at the end of the cache that must be cleared.
+		uint32 partialBytes = newSize % B_PAGE_SIZE;
+		if (partialBytes != 0) {
+			vm_page* page = LookupPage(newSize - partialBytes);
+			if (page != NULL) {
+				vm_memset_physical(page->physical_page_number * B_PAGE_SIZE
+					+ partialBytes, 0, B_PAGE_SIZE - partialBytes);
+			}
+		}
+	}
 
 	if (priority >= 0) {
 		status_t status = Commit(PAGE_ALIGN(newSize - virtual_base), priority);
@@ -1322,7 +1335,7 @@ VMCache::Commit(off_t size, int priority)
 	changes in the meantime).
 */
 bool
-VMCache::HasPage(off_t offset)
+VMCache::StoreHasPage(off_t offset)
 {
 	// In accordance with Fault() the default implementation doesn't have a
 	// backing store and doesn't allow faults.
@@ -1424,14 +1437,14 @@ VMCache::ReleaseStoreRef()
 }
 
 
-/*!	Kernel debugger version of HasPage().
+/*!	Kernel debugger version of StoreHasPage().
 	Does not do any locking.
 */
 bool
-VMCache::DebugHasPage(off_t offset)
+VMCache::DebugStoreHasPage(off_t offset)
 {
 	// default that works for all subclasses that don't lock anyway
-	return HasPage(offset);
+	return StoreHasPage(offset);
 }
 
 

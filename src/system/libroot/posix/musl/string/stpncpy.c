@@ -6,11 +6,11 @@
 #define ALIGN (sizeof(size_t)-1)
 #define ONES ((size_t)-1/UCHAR_MAX)
 #define HIGHS (ONES * (UCHAR_MAX/2+1))
-#define HASZERO(x) ((x)-ONES & ~(x) & HIGHS)
+#define HASZERO(x) (((x)-ONES) & ~(x) & HIGHS)
 
-char *__stpncpy(char *d, const char *s, size_t n)
+char *stpncpy(char *d, const char *s, size_t n)
 {
-#if 0
+#if defined(__GNUC__) && __GNUC__ >= 4
 	typedef size_t __attribute__((__may_alias__)) word;
 	word *wd;
 	const word *ws;
@@ -28,6 +28,3 @@ tail:
 	memset(d, 0, n);
 	return d;
 }
-
-weak_alias(__stpncpy, stpncpy);
-

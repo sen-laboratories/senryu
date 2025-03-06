@@ -29,7 +29,7 @@ typedef struct {
 	uint64	virtual_end;
 	uint64	page_hole;
 	// smp stuff
-	uint32	apic_time_cv_factor; // apic ticks per second
+	uint32	_unused; // previously: apic ticks per second
 	uint32	apic_phys;
 	FixedWidthPointer<void> apic;
 	uint32	ioapic_phys;
@@ -38,8 +38,8 @@ typedef struct {
 	// hpet stuff
 	uint32	hpet_phys;
 	FixedWidthPointer<void> hpet;
-	// needed for UEFI, otherwise kernel acpi support can't find ACPI root
 	FixedWidthPointer<void> acpi_root;
 } _PACKED arch_kernel_args;
+
 
 #endif	/* KERNEL_ARCH_x86_KERNEL_ARGS_H */

@@ -44,6 +44,7 @@ ScreenBlanker::ScreenBlanker()
 	fWindow(NULL),
 	fSaverRunner(NULL),
 	fPasswordWindow(NULL),
+	fImmediateLock(false),
 	fTestSaver(false),
 	fResumeRunner(NULL),
 	fStandByScreenRunner(NULL),
@@ -219,12 +220,22 @@ ScreenBlanker::_QueueTurnOffScreen()
 
 
 void
+ScreenBlanker::ArgvReceived(int argc, char** argv)
+{
+	if (argc > 1 && strcmp("-l", argv[1]) == 0)
+		fImmediateLock = true;
+}
+
+
+void
 ScreenBlanker::MessageReceived(BMessage* message)
 {
 	switch (message->what) {
 		case kMsgUnlock:
 		{
-			if (strcmp(fSettings.Password(), crypt(fPasswordWindow->Password(),
+			// if the user has no password then just exit on any input
+			if (fSettings.Password()[0] != '\0'
+				&& strcmp(fSettings.Password(), crypt(fPasswordWindow->Password(),
 					fSettings.Password())) != 0) {
 				beep();
 				fPasswordWindow->SetPassword("");
@@ -240,6 +251,8 @@ ScreenBlanker::MessageReceived(BMessage* message)
 		case kMsgResumeSaver:
 		{
 			if (fWindow->Lock()) {
+				// ensure that our window and application are active before calling HideCursor()
+				fWindow->Activate();
 				HideCursor();
 				fPasswordWindow->SetPassword("");
 				fPasswordWindow->Hide();
@@ -285,7 +298,7 @@ ScreenBlanker::QuitRequested()
 		bigtime_t minTime = fSettings.PasswordTime() - fSettings.BlankTime();
 		if (minTime == 0)
 			minTime = 5000000;
-		if (system_time() - fBlankTime > minTime) {
+		if (fImmediateLock || system_time() - fBlankTime > minTime) {
 			_ShowPasswordWindow();
 			return false;
 		}

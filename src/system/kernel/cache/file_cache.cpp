@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <AutoDeleter.h>
 #include <KernelExport.h>
 #include <fs_cache.h>
 
@@ -750,20 +751,32 @@ cache_io(void* _cacheRef, void* cookie, off_t offset, addr_t buffer,
 	// satisfied request part
 
 	const uint32 kMaxChunkSize = MAX_IO_VECS * B_PAGE_SIZE;
+
+	size_t lastReservedPages = min_c(MAX_IO_VECS, (pageOffset + size
+		+ B_PAGE_SIZE - 1) >> PAGE_SHIFT);
+	vm_page_reservation reservation;
+	reserve_pages(ref, &reservation, lastReservedPages, doWrite);
+	CObjectDeleter<vm_page_reservation, void, vm_page_unreserve_pages>
+		pagesUnreserver(&reservation);
+
+	AutoLocker<VMCache> locker(cache);
+
+	// Now that we have the lock, make sure the situation didn't change.
+	if ((pageOffset + offset) >= cache->virtual_end) {
+		locker.Unlock();
+		*_size = 0;
+		return B_OK;
+	}
+	if ((off_t)(pageOffset + offset + size) > cache->virtual_end)
+		size = cache->virtual_end - (pageOffset + offset);
+
 	size_t bytesLeft = size, lastLeft = size;
 	int32 lastPageOffset = pageOffset;
 	addr_t lastBuffer = buffer;
 	off_t lastOffset = offset;
-	size_t lastReservedPages = min_c(MAX_IO_VECS, (pageOffset + bytesLeft
-		+ B_PAGE_SIZE - 1) >> PAGE_SHIFT);
 	size_t reservePages = 0;
 	size_t pagesProcessed = 0;
 	cache_func function = NULL;
-
-	vm_page_reservation reservation;
-	reserve_pages(ref, &reservation, lastReservedPages, doWrite);
-
-	AutoLocker<VMCache> locker(cache);
 
 	while (bytesLeft > 0) {
 		// Periodically reevaluate the low memory situation and select the
@@ -862,7 +875,6 @@ cache_io(void* _cacheRef, void* cookie, off_t offset, addr_t buffer,
 			if (bytesLeft <= bytesInPage) {
 				// we've read the last page, so we're done!
 				locker.Unlock();
-				vm_page_unreserve_pages(&reservation);
 				return B_OK;
 			}
 
@@ -1264,23 +1276,9 @@ file_cache_set_size(void* _cacheRef, off_t newSize)
 	VMCache* cache = ref->cache;
 	AutoLocker<VMCache> _(cache);
 
-	off_t oldSize = cache->virtual_end;
 	status_t status = cache->Resize(newSize, VM_PRIORITY_USER);
 		// Note, the priority doesn't really matter, since this cache doesn't
 		// reserve any memory.
-	if (status == B_OK && newSize < oldSize) {
-		// We may have a new partial page at the end of the cache that must be
-		// cleared.
-		uint32 partialBytes = newSize % B_PAGE_SIZE;
-		if (partialBytes != 0) {
-			vm_page* page = cache->LookupPage(newSize - partialBytes);
-			if (page != NULL) {
-				vm_memset_physical(page->physical_page_number * B_PAGE_SIZE
-					+ partialBytes, 0, B_PAGE_SIZE - partialBytes);
-			}
-		}
-	}
-
 	return status;
 }
 

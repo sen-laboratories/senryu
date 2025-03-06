@@ -930,7 +930,11 @@ IconCache::Preload(AutoLock<SimpleIconCache>* nodeCacheLocker,
 		IconSource source = model->IconFrom();
 		if (source == kUnknownSource || source == kUnknownNotFromNode) {
 			// fish for special first models and handle them appropriately
-			if (model->IsVolume()) {
+			if (model->IsRoot()) {
+				entry = GetRootIcon(nodeCacheLocker, sharedCacheLocker, &resultingOpenCache, model,
+					source, mode, size, &lazyBitmap);
+				ASSERT(entry != NULL);
+			} else if (model->IsVolume()) {
 				// volume may use specialized icon in the volume node
 				entry = GetNodeIcon(&modelOpener, nodeCacheLocker,
 					&resultingOpenCache, model, source, mode, size,
@@ -941,11 +945,6 @@ IconCache::Preload(AutoLock<SimpleIconCache>* nodeCacheLocker,
 						&resultingOpenCache, model, source, mode,
 						size, &lazyBitmap);
 				}
-			} else if (model->IsRoot()) {
-				entry = GetRootIcon(nodeCacheLocker, sharedCacheLocker,
-					&resultingOpenCache, model, source, mode, size,
-						&lazyBitmap);
-				ASSERT(entry != NULL);
 			} else {
 				if (source == kUnknownSource) {
 					// look for node icons first
@@ -1391,7 +1390,7 @@ IconCache::IconHitTest(BPoint where, const Model* model, IconDrawMode mode,
 
 
 void
-IconCacheEntry::RetireIcons(BObjectList<BBitmap>* retiredBitmapList)
+IconCacheEntry::RetireIcons(BObjectList<BBitmap, true>* retiredBitmapList)
 {
 	if (fLargeIcon != NULL) {
 		retiredBitmapList->AddItem(fLargeIcon);
@@ -1426,7 +1425,7 @@ SharedIconCache::SharedIconCache()
 	:
 	SimpleIconCache("Tracker shared icon cache"),
 	fHashTable(),
-	fRetiredBitmaps(256, true)
+	fRetiredBitmaps(256)
 {
 	fHashTable.Init(256);
 }

@@ -3343,6 +3343,8 @@ OutlineView::RedrawColumn(BColumn* column, float leftEdge, bool isFirstColumn)
 	if (!column)
 		return;
 
+	PushState();
+
 	font_height fh;
 	GetFontHeight(&fh);
 	float line = 0.0;
@@ -3481,6 +3483,8 @@ OutlineView::RedrawColumn(BColumn* column, float leftEdge, bool isFirstColumn)
 #endif
 		}
 	}
+
+	PopState();
 }
 
 
@@ -4339,8 +4343,10 @@ OutlineView::ExpandOrCollapse(BRow* parentRow, bool expand)
 			FindRect(fFocusRow, &fFocusRowRect);
 		}
 
-		Invalidate(BRect(0, parentRect.top, fVisibleRect.right,
-			fVisibleRect.bottom));
+		if (parentRect.top < fVisibleRect.bottom) {
+			Invalidate(BRect(0, parentRect.top, fVisibleRect.right,
+				fVisibleRect.bottom));
+		}
 		FixScrollBar(false);
 	}
 }

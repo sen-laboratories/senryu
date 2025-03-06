@@ -299,6 +299,7 @@ for platform in [ MultiBootSubDirSetup ] {
 									$(TARGET_KERNEL_ARCH_DIR) ] ;
 		}
 
+		SEARCH_SOURCE += [ FDirName $(SUBDIR) $(DOTDOT) libroot posix musl string ] ;
 		SEARCH_SOURCE += [ FDirName $(SUBDIR) $(DOTDOT) libroot posix string ] ;
 		SEARCH_SOURCE += [ FDirName $(SUBDIR) $(DOTDOT) libroot posix stdlib ] ;
 		SEARCH_SOURCE += [ FDirName $(SUBDIR) $(DOTDOT) libroot posix locale ] ;
@@ -317,8 +318,8 @@ for platform in [ MultiBootSubDirSetup ] {
 			memmove.c
 			strdup.cpp
 			strndup.cpp
-			strlen.cpp
-			strnlen.cpp
+			strlen.c
+			strnlen.c
 			strcmp.c
 			strcasecmp.c
 			strncmp.c

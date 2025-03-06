@@ -77,11 +77,11 @@ OpenRelationsMenu::StartBuildingItemList()
 
 		// use SEN action as new message type for passing on to SEN
 		uint32 senCmd = 0;
-		message->FindUInt32(SEN_ACTION_CMD, &senCmd);
+		status_t result = message->FindUInt32(SEN_ACTION_CMD, &senCmd);
 
-		if (senCmd == 0) {
+		if (result != B_OK) {
 			senCmd = SEN_RELATIONS_GET_ALL;
-			PRINT(("OpenRelationsMenu::StartBuildingItemList got NO SEN ActionCmd, fall back to GetAllRelations\n"));
+			PRINT(("failed to get SEN ActionCmd, fall back to GetAllRelations: %s\n", strerror(result) ));
 		}
 		message->what = senCmd;
 
@@ -108,7 +108,7 @@ OpenRelationsMenu::StartBuildingItemList()
 
         return true;
     } else {
-        PRINT(("failed to reach SEN server, please start process '%s' first.", SEN_SERVER_SIGNATURE));
+        PRINT(("failed to reach SEN server, please start process '%s' first.\n", SEN_SERVER_SIGNATURE));
         return false;
     }
 }
@@ -145,7 +145,11 @@ OpenRelationsMenu::DoneBuildingItemList()
 	int32 relationCount = 0;
 	BString source;
 	// safe since we added it from the ref above
-	fRelationsReply.FindString(SEN_RELATION_SOURCE, &source);
+	status_t result = fRelationsReply.FindString(SEN_RELATION_SOURCE, &source);
+	if (result != B_OK) {
+		PRINT(("error parsing SEN relation reply: %s\n", strerror(result) ));
+		// still continue and build empty relations menu for a more consistent behavior
+	}
 
 	// check for self relations and handle them separately
 	// todo: use relation flags for better classification!

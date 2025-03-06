@@ -81,7 +81,7 @@ struct ELF32Class {
 		void** _mappedAddress)
 	{
 		status_t status = platform_allocate_region((void**)_address, size,
-			protection, false);
+			protection);
 		if (status != B_OK)
 			return status;
 
@@ -139,8 +139,7 @@ struct ELF64Class {
 		void* address = (void*)*_address;
 #endif
 
-		status_t status = platform_allocate_region(&address, size, protection,
-			false);
+		status_t status = platform_allocate_region(&address, size, protection);
 		if (status != B_OK)
 			return status;
 
@@ -316,6 +315,10 @@ ELFLoader<Class>::Load(int fd, preloaded_image* _image)
 				!= B_OK) {
 			status = B_NO_MEMORY;
 			goto error1;
+		}
+		if (elfHeader.e_type != ET_DYN && address != firstRegion->start) {
+			panic("Non-relocatable ELF image assigned to address 0x%" B_PRIx64 ", not %" B_PRIx64,
+				(uint64)address, (uint64)firstRegion->start);
 		}
 		firstRegion->start = address;
 	}

@@ -441,10 +441,12 @@ XHCI::XHCI(pci_info *info, 	pci_device_module_info* pci, pci_device* device, Sta
 	// Assume ownership of the controller from the BIOS.
 	uint32 eec = 0xffffffff;
 	uint32 eecp = HCS0_XECP(cparams) << 2;
-	for (; eecp != 0 && XECP_NEXT(eec); eecp += XECP_NEXT(eec) << 2) {
+	for (; eecp != 0 && XECP_NEXT(eec) != 0; eecp += XECP_NEXT(eec) << 2) {
 		TRACE("eecp register: 0x%08" B_PRIx32 "\n", eecp);
 
 		eec = ReadCapReg32(eecp);
+		if (eec == 0xffffffff)
+			break;
 		if (XECP_ID(eec) != XHCI_LEGSUP_CAPID)
 			continue;
 
@@ -476,12 +478,12 @@ XHCI::XHCI(pci_info *info, 	pci_device_module_info* pci, pci_device* device, Sta
 			// and then freeze the system when interrupts are generated.
 			WriteCapReg32(eecp, eec & ~XHCI_LEGSUP_BIOSOWNED);
 		}
+
+		uint32 legctlsts = ReadCapReg32(eecp + XHCI_LEGCTLSTS);
+		legctlsts &= (XHCI_LEGCTLSTS_RESERVED_BITS | XHCI_LEGCTLSTS_READONLY_BITS);
+		WriteCapReg32(eecp + XHCI_LEGCTLSTS, legctlsts);
 		break;
 	}
-	uint32 legctlsts = ReadCapReg32(eecp + XHCI_LEGCTLSTS);
-	legctlsts &= XHCI_LEGCTLSTS_DISABLE_SMI;
-	legctlsts |= XHCI_LEGCTLSTS_EVENTS_SMI;
-	WriteCapReg32(eecp + XHCI_LEGCTLSTS, legctlsts);
 
 	// We need to explicitly take ownership of EHCI ports on earlier Intel chipsets.
 	if (fPCIInfo->vendor_id == PCI_VENDOR_INTEL) {

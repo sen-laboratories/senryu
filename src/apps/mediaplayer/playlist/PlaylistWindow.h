@@ -39,8 +39,7 @@ enum {
 
 	// edit
 	M_PLAYLIST_RANDOMIZE = 'rand',
-	M_PLAYLIST_REMOVE = 'rmov',
-	M_PLAYLIST_MOVE_TO_TRASH = 'trsh'
+	M_PLAYLIST_REMOVE = 'rmov'
 };
 
 
@@ -71,7 +70,7 @@ private:
 									int32 index);
 			void				_HandleItemRemoved(int32 index);
 
-			BObjectList<bigtime_t>
+			BObjectList<bigtime_t, true>
 								fKnown;
 			bigtime_t			fTotalDuration;
 			PlaylistWindow&		fParent;

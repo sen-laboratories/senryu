@@ -95,6 +95,13 @@ ReadOnlyTint(rgb_color base)
 }
 
 
+float
+ReadOnlyTint(color_which base)
+{
+	return ReadOnlyTint(ui_color(base));
+}
+
+
 rgb_color
 InvertColor(rgb_color color)
 {
@@ -103,16 +110,16 @@ InvertColor(rgb_color color)
 
 
 rgb_color
-InvertedBackColor(rgb_color background)
+InvertColorSmart(rgb_color color)
 {
-	rgb_color inverted = InvertColor(background);
+	rgb_color inverted = InvertColor(color);
 
 	// The colors are different enough, we can use inverted
-	if (rgb_color::Contrast(background, inverted) > 127)
+	if (rgb_color::Contrast(color, inverted) > 127)
 		return inverted;
 
 	// use black or white
-	return background.IsLight() ? kBlack : kWhite;
+	return color.IsLight() ? kBlack : kWhite;
 }
 
 
@@ -178,6 +185,10 @@ ValidateStream(BMallocIO* stream, uint32 key, int32 version)
 void
 DisallowFilenameKeys(BTextView* textView)
 {
+	// disallow control characters
+	for (uint32 i = 0; i < 0x20; ++i)
+		textView->DisallowChar(i);
+
 	textView->DisallowChar('/');
 }
 
@@ -199,7 +210,7 @@ DisallowMetaKeys(BTextView* textView)
 
 PeriodicUpdatePoses::PeriodicUpdatePoses()
 	:
-	fPoseList(20, true)
+	fPoseList(20)
 {
 	fLock = new Benaphore("PeriodicUpdatePoses");
 }
@@ -655,7 +666,7 @@ DraggableIcon::MouseDown(BPoint point)
 	view->FillRect(view->Bounds());
 	view->SetDrawingMode(B_OP_ALPHA);
 	view->SetHighColor(0, 0, 0, 128);
-		// set the level of transparency by value
+		// set the level of opacity by value
 	view->SetBlendingMode(B_CONSTANT_ALPHA, B_ALPHA_COMPOSITE);
 	view->DrawBitmap(fBitmap);
 	view->Sync();

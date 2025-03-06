@@ -20,34 +20,20 @@ for architectureObject in [ MultiArchSubDirSetup ] {
 			bcmp.c
 			bcopy.c
 			bzero.c
-			memccpy.c
-			memchr.c
 			memcmp.c
-			memmem.c
-			memmove.c
-			stpcpy.c
 			strcasecmp.c
 			strcasestr.c
-			strcat.c
 			strchr.c
 			strcmp.c
 			strcoll.cpp
 			strcpy.c
 			strdup.cpp
 			strerror.c
-			strlcat.c
-			strlcpy.c
-			strlen.cpp
 			strlwr.c
-			strncat.c
 			strncmp.c
 			strncpy.cpp
 			strndup.cpp
-			strnlen.cpp
-			strpbrk.c
 			strrchr.c
-			strspn.c
-			strstr.c
 			strtok.c
 			strupr.c
 			strxfrm.cpp

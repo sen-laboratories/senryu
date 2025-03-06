@@ -6,6 +6,7 @@
 
 #include <InterfaceDefs.h>
 
+
 extern "C" BInputServerDevice*
 instantiate_input_device()
 {
@@ -26,8 +27,7 @@ VirtualKeyboardInputDevice::~VirtualKeyboardInputDevice()
 status_t
 VirtualKeyboardInputDevice::InitCheck()
 {
-	static input_device_ref keyboard = {(char*) "VirtualKeyboard",
-		B_KEYBOARD_DEVICE, (void*) this};
+	static input_device_ref keyboard = {(char*)"VirtualKeyboard", B_KEYBOARD_DEVICE, (void*)this};
 	static input_device_ref* devices[2] = {&keyboard, NULL};
 
 	RegisterDevices(devices);
@@ -56,8 +56,10 @@ VirtualKeyboardInputDevice::Stop(const char* name, void* cookie)
 
 
 status_t
-VirtualKeyboardInputDevice::Control(const char* name, void* cookie,
-	uint32 command, BMessage* message)
+VirtualKeyboardInputDevice::Control(const char* name, void* cookie, uint32 command,
+	BMessage* message)
 {
+	if (command == B_KEY_MAP_CHANGED)
+		fKeyboardWindow->PostMessage(kKeymapChange);
 	return B_OK;
 }

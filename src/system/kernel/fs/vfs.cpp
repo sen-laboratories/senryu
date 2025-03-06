@@ -255,7 +255,7 @@ static rw_lock sVnodeLock = RW_LOCK_INITIALIZER("vfs_vnode_lock");
 	The only operation allowed while holding this lock besides getting or
 	setting the field is inc_vnode_ref_count() on io_context::root.
 */
-static mutex sIOContextRootLock = MUTEX_INITIALIZER("io_context::root lock");
+static rw_lock sIOContextRootLock = RW_LOCK_INITIALIZER("io_context::root lock");
 
 
 namespace {
@@ -1897,7 +1897,7 @@ replace_vnode_if_disconnected(struct fs_mount* mount,
 	ReadLocker vnodeReadLocker(sVnodeLock);
 
 	if (lockRootLock)
-		mutex_lock(&sIOContextRootLock);
+		rw_lock_write_lock(&sIOContextRootLock);
 
 	while (vnode != NULL && vnode->mount == mount
 		&& (vnodeToDisconnect == NULL || vnodeToDisconnect == vnode)) {
@@ -1915,7 +1915,7 @@ replace_vnode_if_disconnected(struct fs_mount* mount,
 		inc_vnode_ref_count(vnode);
 
 	if (lockRootLock)
-		mutex_unlock(&sIOContextRootLock);
+		rw_lock_write_unlock(&sIOContextRootLock);
 
 	vnodeReadLocker.Unlock();
 
@@ -1992,13 +1992,13 @@ get_root_vnode(bool kernel)
 		// Get current working directory from io context
 		struct io_context* context = get_current_io_context(kernel);
 
-		mutex_lock(&sIOContextRootLock);
+		rw_lock_read_lock(&sIOContextRootLock);
 
 		struct vnode* root = context->root;
 		if (root != NULL)
 			inc_vnode_ref_count(root);
 
-		mutex_unlock(&sIOContextRootLock);
+		rw_lock_read_unlock(&sIOContextRootLock);
 
 		if (root != NULL)
 			return root;
@@ -2272,10 +2272,10 @@ vnode_path_to_vnode(struct vnode* start, char* path, bool traverseLeafLink,
 				while (*++path == '/')
 					;
 
-				mutex_lock(&sIOContextRootLock);
+				rw_lock_read_lock(&sIOContextRootLock);
 				vnode.SetTo(ioContext->root);
 				inc_vnode_ref_count(vnode.Get());
-				mutex_unlock(&sIOContextRootLock);
+				rw_lock_read_unlock(&sIOContextRootLock);
 
 				absoluteSymlink = true;
 			}
@@ -4956,11 +4956,11 @@ vfs_new_io_context(const io_context* parentContext, bool purgeCloseOnExec)
 	// Copy all parent file descriptors
 
 	if (parentContext != NULL) {
-		mutex_lock(&sIOContextRootLock);
+		rw_lock_read_lock(&sIOContextRootLock);
 		context->root = parentContext->root;
 		if (context->root != NULL)
 			inc_vnode_ref_count(context->root);
-		mutex_unlock(&sIOContextRootLock);
+		rw_lock_read_unlock(&sIOContextRootLock);
 
 		context->cwd = parentContext->cwd;
 		if (context->cwd != NULL)
@@ -5278,18 +5278,18 @@ vfs_init(kernel_args* args)
 		panic("vfs_init: error creating mounts hash table\n");
 
 	sPathNameCache = create_object_cache("vfs path names",
-		B_PATH_NAME_LENGTH, 8, NULL, NULL, NULL);
+		B_PATH_NAME_LENGTH, 0);
 	if (sPathNameCache == NULL)
 		panic("vfs_init: error creating path name object_cache\n");
 	object_cache_set_minimum_reserve(sPathNameCache, 1);
 
 	sVnodeCache = create_object_cache("vfs vnodes",
-		sizeof(struct vnode), 8, NULL, NULL, NULL);
+		sizeof(struct vnode), 0);
 	if (sVnodeCache == NULL)
 		panic("vfs_init: error creating vnode object_cache\n");
 
 	sFileDescriptorCache = create_object_cache("vfs fds",
-		sizeof(file_descriptor), 8, NULL, NULL, NULL);
+		sizeof(file_descriptor), 0);
 	if (sFileDescriptorCache == NULL)
 		panic("vfs_init: error creating file descriptor object_cache\n");
 
@@ -7660,11 +7660,11 @@ fs_mount(char* path, const char* device, const char* fsName, uint32 flags,
 	}
 	rw_lock_write_unlock(&sVnodeLock);
 
-	if (!sRoot) {
+	if (sRoot == NULL) {
 		sRoot = mount->root_vnode;
-		mutex_lock(&sIOContextRootLock);
+		rw_lock_write_lock(&sIOContextRootLock);
 		get_current_io_context(true)->root = sRoot;
-		mutex_unlock(&sIOContextRootLock);
+		rw_lock_write_unlock(&sIOContextRootLock);
 		inc_vnode_ref_count(sRoot);
 	}
 
@@ -10088,10 +10088,10 @@ _user_change_root(const char* userPath)
 
 	// set the new root
 	struct io_context* context = get_current_io_context(false);
-	mutex_lock(&sIOContextRootLock);
+	rw_lock_write_lock(&sIOContextRootLock);
 	struct vnode* oldRoot = context->root;
 	context->root = vnode.Detach();
-	mutex_unlock(&sIOContextRootLock);
+	rw_lock_write_unlock(&sIOContextRootLock);
 
 	put_vnode(oldRoot);
 

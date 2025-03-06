@@ -87,12 +87,12 @@ status_t
 VMKernelAddressSpace::InitObject()
 {
 	fAreaObjectCache = create_object_cache("kernel areas",
-		sizeof(VMKernelArea), 0, NULL, NULL, NULL);
+		sizeof(VMKernelArea), 0);
 	if (fAreaObjectCache == NULL)
 		return B_NO_MEMORY;
 
 	fRangesObjectCache = create_object_cache("kernel address ranges",
-		sizeof(Range), 0, NULL, NULL, NULL);
+		sizeof(Range), 0);
 	if (fRangesObjectCache == NULL)
 		return B_NO_MEMORY;
 
@@ -177,7 +177,7 @@ VMKernelAddressSpace::FindClosestArea(addr_t address, bool less) const
 {
 	Range* range = fRangeTree.FindClosest(address, less);
 	while (range != NULL && range->type != Range::RANGE_AREA)
-		range = fRangeTree.Next(range);
+		range = less ? fRangeTree.Previous(range) : fRangeTree.Next(range);
 
 	return range != NULL ? range->area : NULL;
 }
