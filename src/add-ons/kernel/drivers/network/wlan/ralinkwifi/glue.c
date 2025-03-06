@@ -33,13 +33,17 @@ HAIKU_FIRMWARE_NAME_MAP({
 	{"rt2561sfw", "rt2561s.ucode"},
 	{"rt2661fw", "rt2661.ucode"},
 	{"rt2860fw", "rt2860.ucode"},
+
 	{"runfw", "rt2870.ucode"},
+
+	{"/mediatek/mt7601u.bin", "mtw-mt7601u"},
 });
 
 NO_HAIKU_FBSD_MII_DRIVER();
 NO_HAIKU_REENABLE_INTERRUPTS();
 
 extern driver_t* DRIVER_MODULE_NAME(ral, pci);
+extern driver_t* DRIVER_MODULE_NAME(mtw, uhub);
 extern driver_t* DRIVER_MODULE_NAME(ural, uhub);
 extern driver_t* DRIVER_MODULE_NAME(run, uhub);
 extern driver_t* DRIVER_MODULE_NAME(rum, uhub);
@@ -53,6 +57,7 @@ __haiku_handle_fbsd_drivers_list(status_t (*handler)(driver_t *[], driver_t *[])
 		NULL
 	};
 	driver_t *usb_drivers[] = {
+		DRIVER_MODULE_NAME(mtw, uhub),
 		DRIVER_MODULE_NAME(ural, uhub),
 		DRIVER_MODULE_NAME(run, uhub),
 		DRIVER_MODULE_NAME(rum, uhub),
@@ -69,11 +74,11 @@ __haiku_handle_fbsd_drivers_list(status_t (*handler)(driver_t *[], driver_t *[])
 int
 HAIKU_CHECK_DISABLE_INTERRUPTS(device_t dev)
 {
-	struct rt2560_softc* sc = (struct rt2560_softc*)device_get_softc(dev);
-		// sc_ifp is common between context data structures
-
 	switch (pci_get_device(dev)) {
 		case 0x0201:
+		{
+			struct rt2560_softc* sc = (struct rt2560_softc*)device_get_softc(dev);
+
 			// disable interrupts
 			RAL_WRITE(sc, RT2560_CSR8, 0xffffffff);
 
@@ -82,9 +87,13 @@ HAIKU_CHECK_DISABLE_INTERRUPTS(device_t dev)
 				return 0;
 			}
 			break;
+		}
 		case 0x0301:
 		case 0x0302:
 		case 0x0401:
+		{
+			struct rt2661_softc* sc = (struct rt2661_softc*)device_get_softc(dev);
+
 			// disable MAC and MCU interrupts
 			RAL_WRITE(sc, RT2661_INT_MASK_CSR, 0xffffff7f);
 			RAL_WRITE(sc, RT2661_MCU_INT_MASK_CSR, 0xffffffff);
@@ -94,12 +103,12 @@ HAIKU_CHECK_DISABLE_INTERRUPTS(device_t dev)
 				return 0;
 			}
 			break;
+		}
 		default:
 		{
-			uint32 r;
 			struct rt2860_softc* sc =
 				(struct rt2860_softc*)device_get_softc(dev);
-			r = RAL_READ(sc, RT2860_INT_STATUS);
+			uint32 r = RAL_READ(sc, RT2860_INT_STATUS);
 			if (r == 0 || r == 0xffffffff)
 				return 0;
 
