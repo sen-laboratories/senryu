@@ -70,6 +70,7 @@ for architectureObject in [ MultiArchSubDirSetup ] {
 			PoseList.cpp
 			PoseView.cpp
 			PoseViewScripting.cpp
+            PoseViewSen.cpp
 			QueryContainerWindow.cpp
 			QueryPoseView.cpp
 			RecentItems.cpp

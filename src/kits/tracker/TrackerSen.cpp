@@ -31,6 +31,7 @@ of Be Incorporated in the United States and other countries. Other brand product
 names are registered trademarks or trademarks of their respective holders.
 All rights reserved.
 */
+
 #define DEBUG 1
 
 #include <Debug.h>
@@ -404,7 +405,7 @@ status_t TTracker::ConvertAttributesToMessage(const entry_ref* ref, BMessage* pa
 		    return result;
         }
 		if (! BString(attrName).StartsWith(SEN_ATTR_PREFIX)) {
-			PRINT(("skipping non-managed attribute %s of file %s...\n", attrName, path.Leaf()) );
+			PRINT(("skipping non-managed attribute '%s' of file %s...\n", attrName, path.Leaf()) );
 			continue;
 		}
 		PRINT(("adding attribute %s of file %s...\n", attrName, path.Leaf()) );

@@ -1827,8 +1827,11 @@ BContainerWindow::AddFileMenu(BMenu* menu)
 		menu->AddSeparatorItem();
 	}
 
-	if (!TargetModel()->IsRoot())
+	if (!TargetModel()->IsRoot()) {
+		menu->AddItem(Shortcuts()->EnrichItem());
 		menu->AddItem(Shortcuts()->IdentifyItem());
+	}
+
 	if (ShouldHaveAddOnMenus())
 		menu->AddItem(new BMenuItem(new BMenu(Shortcuts()->AddOnsLabel())));
 }
@@ -1976,7 +1979,7 @@ BContainerWindow::MenusBeginning()
 
 	if (fFileMenu != NULL)
 		UpdateMenu(fFileMenu, kFileMenuContext);
-	fFileMenu->AddSeparatorItem();
+//	fFileMenu->AddSeparatorItem();
 
 	if (fWindowMenu != NULL)
 		UpdateMenu(fWindowMenu, kWindowMenuContext);
@@ -2074,13 +2077,6 @@ BContainerWindow::SetupNavigationMenu(BMenu* parent, const entry_ref* ref)
 
 	if (!PoseView()->IsDragging())
 		parent->SetTrackingHook(NULL, NULL);
-}
-
-
-void
-BContainerWindow::SetupEditQueryItem(BMenu* parent)
-{
-	SetupEditQueryItem(parent, TargetModel()->EntryRef());
 }
 
 
@@ -2706,6 +2702,9 @@ BContainerWindow::AddPoseContextMenu(BMenu* menu)
 	menu->AddItem(Shortcuts()->OpenItem());
 	// "Edit query" and "Open with..." inserted here,
 	// see UpdateMenu(), SetupEditQueryItem() and SetupOpenWithMenu()
+
+	menu->AddSeparatorItem();
+
 	menu->AddItem(Shortcuts()->GetInfoItem());
 	menu->AddItem(Shortcuts()->EditNameItem());
 
@@ -2729,7 +2728,9 @@ BContainerWindow::AddPoseContextMenu(BMenu* menu)
 		menu->AddSeparatorItem();
 	}
 
+	menu->AddItem(Shortcuts()->EnrichItem());
 	menu->AddItem(Shortcuts()->IdentifyItem());
+
 	if (ShouldHaveAddOnMenus())
 		menu->AddItem(new BMenuItem(new BMenu(Shortcuts()->AddOnsLabel())));
 }

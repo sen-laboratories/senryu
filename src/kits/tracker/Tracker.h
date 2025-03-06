@@ -172,8 +172,8 @@ protected:
 	bool SetProperty(BMessage*, BMessage*, int32, const char*, BMessage*);
 
 	// SEN integration
-	bool HandleSenMessage(BMessage* message);
-	bool ResolveRelation(const entry_ref* ref, BString* srcId, BString* targetId);
+	bool HandleSenMessage(BMessage*);
+	bool ResolveRelation(const entry_ref*, BString*, BString*);
 
 	status_t PrepareLaunchTarget(const entry_ref* srcRef, const char* targetId, entry_ref* targetRef, BMessage* params);
 	status_t PrepareRelationWindow(BMessage *message, RelationInfo* relationInfo);

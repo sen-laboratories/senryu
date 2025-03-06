@@ -186,7 +186,8 @@ OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 		index++;
 		(*targetCount)++;
 	}
-	if (result != B_NAME_NOT_FOUND) {
+	// check for normal end state of refs processing
+	if (result != B_NAME_NOT_FOUND && result != B_BAD_INDEX) {
 		PRINT(("failed to resolve refs: %s\n", strerror(result)));
 		return result;
 	}

@@ -889,6 +889,9 @@ TTracker::OpenRef(const entry_ref* ref, const node_ref* nodeToClose,
 		delete model;
 		// run Launch in a separate thread and close parent if successful
 		if (nodeToClose) {
+			if (DEBUG) {
+				PRINT(("refsReceived nodeToClose, bypassing normal handling:\n"));
+			}
 			Thread::Launch(new EntryAndNodeDoSoonWithMessageFunctor<TTracker,
 				bool (TTracker::*)(const entry_ref*, const node_ref*,
 				const BMessage*)>(&TTracker::LaunchAndCloseParentIfOK, this,
@@ -1042,6 +1045,11 @@ TTracker::RefsReceived(BMessage* message)
 	entry_ref handlingApp;
 	if (message->FindRef("handler", &handlingApp) == B_OK)
 		selector = kOpenWith;
+
+#if DEBUG
+	PRINT(("Tracker::RefsReceived:\n"));
+	message->PrintToStream();
+#endif
 
 	int32 count;
 	uint32 type;

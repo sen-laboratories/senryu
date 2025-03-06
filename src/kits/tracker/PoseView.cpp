@@ -32,9 +32,9 @@ names are registered trademarks or trademarks of their respective holders.
 All rights reserved.
 */
 
+#define DEBUG 1
 
 #include "PoseView.h"
-#include "Sen.h"
 #include <algorithm>
 #include <functional>
 #include <map>
@@ -2192,6 +2192,9 @@ BPoseView::MessageReceived(BMessage* message)
 	if (HandleScriptingMessage(message))
 		return;
 
+	if (HandleSenMessage(message))
+		return;
+
 	switch (message->what) {
 		case kAddNewPoses:
 		{
@@ -2465,6 +2468,11 @@ BPoseView::MessageReceived(BMessage* message)
 			OpenInfoWindows();
 			break;
 
+		case kEnrichEntry:
+			// todo:SEN: call enricher plugin
+			PRINT(("Enrich called.\n"));
+			break;
+
 		case kIdentifyEntry:
 			IdentifySelection(message->GetBool("force", false));
 			break;
@@ -2591,7 +2599,7 @@ BPoseView::MessageReceived(BMessage* message)
 			SetDefaultPrinter();
 			break;
 
-#if DEBUG
+#if !DEBUG	//HACK to avoid errors with test deps
 		case kTestIconCache:
 			RunIconCacheTests();
 			break;
@@ -8192,6 +8200,11 @@ BPoseView::OpenSelectionCommon(BPose* clickedPose, int32* poseIndex, bool openWi
 	// add a messenger to the launch message that will be used to
 	// dispatch scripting calls from apps to the PoseView
 	message.AddMessenger("TrackerViewToken", BMessenger(this));
+
+#if DEBUG
+	PRINT(("PostView::OpenSelectionCommon called with refs msg:\n"));
+	message.PrintToStream();
+#endif
 
 	if (fSelectionHandler)
 		fSelectionHandler->PostMessage(&message);

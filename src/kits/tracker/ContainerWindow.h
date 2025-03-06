@@ -77,7 +77,7 @@ enum {
 	// flags that describe opening of the window
 	kRestoreWorkspace	= 0x1,
 	kIsHidden			= 0x2,
-		// set when opening a window during initial Tracker start
+	// set when opening a window during initial Tracker start
 	kRestoreDecor		= 0x4
 };
 
@@ -251,8 +251,7 @@ protected:
 	virtual void SetupOpenRelationsMenu(BMenu*, const entry_ref* ref = NULL);
 	virtual void SetupOpenWithMenu(BMenu*, const entry_ref* ref = NULL);
 	virtual void SetupNewTemplatesMenu(BMenu*, MenuContext context);
-	virtual void SetupEditQueryItem(BMenu*);
-	virtual void SetupEditQueryItem(BMenu*, const entry_ref* ref);
+	virtual void SetupEditQueryItem(BMenu*, const entry_ref* ref = NULL);
 	virtual void SetupDiskMenu(BMenu*);
 	virtual void SetupMountMenu(BMenu*, MenuContext context);
 	virtual void SetupMountMenu(BMenu*, MenuContext context, const entry_ref* ref);

@@ -458,6 +458,10 @@ protected:
 
 	// scripting handlers
 	virtual bool HandleScriptingMessage(BMessage* message);
+
+	// SEN integration
+	virtual bool HandleSenMessage(BMessage* message);
+
 	bool SetProperty(BMessage* message, BMessage* specifier, int32 form,
 		const char* property, BMessage* reply);
 	bool GetProperty(BMessage*, int32, const char*, BMessage*);
