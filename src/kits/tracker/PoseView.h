@@ -461,6 +461,8 @@ protected:
 
 	// SEN integration
 	virtual bool HandleSenMessage(BMessage* message);
+	status_t EnrichRefsFromMsg(BMessage* message);
+	status_t EnrichRefWithPlugin(entry_ref* ref);
 
 	bool SetProperty(BMessage* message, BMessage* specifier, int32 form,
 		const char* property, BMessage* reply);

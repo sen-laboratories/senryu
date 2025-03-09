@@ -183,8 +183,8 @@ AddOnMenuGenerate(const entry_ref* addOnRef, BMenu* menu, BContainerWindow* wind
 
 	void (*populateMenu)(BMessage*, BMenu*, BHandler*);
 	result = get_image_symbol(addOnImage, "populate_menu", 2, (void**)&populateMenu);
-	if (result < 0) {
-		PRINT(("Couldn't find populate_menu\n"));
+	if (result != B_OK) {
+		PRINT(("Couldn't get image symbol for addon %s: %s\n", addOnRef->name, strerror(result)));
 		unload_add_on(addOnImage);
 		return result;
 	}
@@ -1454,10 +1454,12 @@ BContainerWindow::MessageReceived(BMessage* message)
 
 		case kOpenRelations:
 			//todo: implement top level SEN relations view
+			PRINT(("SEN: show relations in Tracker not yet implemented.\n"));
 			break;
 
 		case kOpenSelfRelations:
 			//todo: implement top level SEN relations view
+			PRINT(("SEN: show contains relations in Tracker not yet implemented.\n"));
 			break;
 
 		case kNewTemplateSubmenu:

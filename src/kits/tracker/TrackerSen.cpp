@@ -51,12 +51,32 @@ All rights reserved.
 bool
 TTracker::HandleSenMessage(BMessage* message)
 {
-	if (message->what != SEN_OPEN_RELATION_VIEW
-		&& message->what != SEN_OPEN_RELATION_TARGET_VIEW
-		&& message->what != kOpenRelations	// top level relation view invoked by selecting "Open related"
-		&& message->what != kOpenSelfRelations) {
-		// not a SEN command message, handle as normal
-		return false;
+	switch (message->what) {
+		case kOpenRelations:
+		case kOpenSelfRelations:
+		case SEN_OPEN_RELATION_TARGET_VIEW:	// fallthrough
+			PRINT(("TrackerSen::Open (Self) Relations called.\n"));
+			break;
+
+		case SENSEI_CMD_EXTRACT:
+			PRINT(("TrackerSen::SENSEI extract called.\n"));
+			break;
+
+		case SENSEI_CMD_ENRICH:
+			PRINT(("TrackerSen::SENSEI enrich called.\n"));
+			break;
+
+		case SENSEI_CMD_IDENTIFY:
+			PRINT(("TrackerSen::SENSEI identify called.\n"));
+			break;
+
+		case SENSEI_CMD_NAVIGATE:
+			PRINT(("TrackerSen::SENSEI navigate called.\n"));
+			break;
+
+		default:
+			// not a SEN command message, handle as normal
+			return false;
 	}
 
 	// handle modifier for differentiating between open relation view and invoke target (dynamic/self relations)
@@ -93,17 +113,22 @@ TTracker::HandleSenMessage(BMessage* message)
 		default:
 		{
 			PRINT(("unknown SEN message %u, ignoring.\n", message->what));
-			break;
+			return false;
 		}
 	}
 	if (result == B_OK) {
 		// done handling message, send as refs to Tracker for opening as normal
 		BMessage* trackerOpenDir = new BMessage(B_REFS_RECEIVED);
 		trackerOpenDir->AddRef("refs", &relationInfo.relationDirRef);
+
+		PRINT(("open Tracker relation dir:\n"));
+		trackerOpenDir->PrintToStream();
+
 		be_app_messenger.SendMessage(trackerOpenDir);
 	} else {
-		ERROR("error opening relation view: %s\n", strerror(result));
+		PRINT(("error opening relation view: %s\n", strerror(result)));
 	}
+
 	// just indicates we are done and no further processing by the caller is needed.
 	return true;
 }
@@ -113,7 +138,7 @@ bool TTracker::ResolveRelation(const entry_ref* ref, BString* srcId, BString* ta
 	BFile relationTarget(ref, B_READ_WRITE);
 	status_t result = relationTarget.InitCheck();
 	if (result != B_OK) {
-		ERROR("error reading relation target %s: %s\n", ref->name, strerror(result));
+		PRINT(("error reading relation target %s: %s\n", ref->name, strerror(result)));
 		return result;
 	}
 
@@ -121,7 +146,7 @@ bool TTracker::ResolveRelation(const entry_ref* ref, BString* srcId, BString* ta
 	BNodeInfo relationNodeInfo(&relationNode);
 	if (result == B_OK) result = relationNodeInfo.InitCheck();
 	if (result != B_OK) {
-		ERROR("error accessing relation target %s nodeInfo: %s\n", ref->name, strerror(result));
+		PRINT(("error accessing relation target %s nodeInfo: %s\n", ref->name, strerror(result)));
 		return result;
 	}
 	if (result == B_OK) result = relationNode.ReadAttrString(SEN_RELATION_SOURCE_ATTR, srcId);
@@ -166,7 +191,7 @@ TTracker::PrepareRelationTargetWindow(BMessage *message, RelationInfo* relationI
 {
 	status_t result;
 	if ((result = PrepareRelationDirectory(message, relationInfo) != B_OK)) {
-		ERROR("could not create relation target view: %s\n", strerror(result));
+		PRINT(("could not create relation target view: %s\n", strerror(result)));
 		return result;
 	}
 	BDirectory relationDir(&relationInfo->relationDirRef);
@@ -184,7 +209,7 @@ TTracker::PrepareRelationTargetWindow(BMessage *message, RelationInfo* relationI
 	BMessage relations;
 	if (reply.FindMessage(SEN_RELATIONS, &relations) != B_OK) {
 		PRINT(("no relations for type %s and source %s to show.\n",
-			relationInfo->relationType.String(), relationInfo->source.String()) );
+			relationInfo->relationType.String(), relationInfo->source.String() ));
 			return B_OK;
 	}
 
@@ -194,8 +219,8 @@ TTracker::PrepareRelationTargetWindow(BMessage *message, RelationInfo* relationI
 	relations.FindStrings(SEN_TO_ATTR, &targetIds);
 	if (targetIds.IsEmpty()) {
 		// should never happen
-		ERROR(("no target IDs found for relation %s and source %s!\n"),
-			relationInfo->relationType.String(), relationInfo->source.String());
+		PRINT(("no target IDs found for relation %s and source %s!\n",
+			relationInfo->relationType.String(), relationInfo->source.String() ));
 		return B_ENTRY_NOT_FOUND;
 	}
 
@@ -289,37 +314,37 @@ TTracker::GetRelationTypeAttributeInfo(const char* relationType, BMessage* attrI
 	BMimeType relationMimeType(relationType);
 
 	if (!relationMimeType.IsValid()) {
-		ERROR("invalid MIME type for relation %s.\n", relationType);
+		PRINT(("invalid MIME type for relation %s.\n", relationType));
 		return B_ERROR;
 	}
 	if (!relationMimeType.IsInstalled()) {
-		ERROR("MIME type for relation %s not installed, check config.\n", relationType);
+		PRINT(("MIME type for relation %s not installed, check config.\n", relationType));
 		return B_ERROR;
 	}
 
 	// get defined attributes for MIME type of relation, same for all targets of this relation
 	result = relationMimeType.GetAttrInfo(attrInfo);
 	if (result != B_OK) {
-		ERROR("error reading attribute info for relation with type %s: %s", relationType, strerror(result));
+		PRINT(("error reading attribute info for relation with type %s: %s", relationType, strerror(result)));
 		return result;
 	}
 
 	// get additional attributes from relation supertype
 	BMimeType relationSuperType(SEN_RELATION_SUPERTYPE);
 	if (!relationSuperType.IsInstalled()) {
-		ERROR("MIME supertype for relation %s is not installed, check SEN installation!\n", SEN_RELATION_SUPERTYPE);
+		PRINT(("MIME supertype for relation %s is not installed, check SEN installation!\n", SEN_RELATION_SUPERTYPE));
 		return B_ERROR;
 	}
 	BMessage attrInfoSuperType;
 	result = relationSuperType.GetAttrInfo(&attrInfoSuperType);
 	if (result != B_OK) {
-		ERROR("error reading attribute info for relation super type: %s", strerror(result));
+		PRINT(("error reading attribute info for relation super type: %s", strerror(result) ));
 		return result;
 	}
 	// merge with attributes from supertype (relation)
 	result = attrInfo->Append(attrInfoSuperType);
 	if (result != B_OK) {
-		ERROR("failed to construct attribute info for relation type and supertype: %s", strerror(result));
+		PRINT(("failed to construct attribute info for relation type and supertype: %s", strerror(result) ));
 		return result;
 	}
 	PRINT(("got attributeInfo for type %s and supertype %s:\n", relationType, relationSuperType.Type()) );
@@ -356,7 +381,7 @@ TTracker::PrepareRelationDirectory(BMessage *message, RelationInfo* relationInfo
 
 	BPath relationsDirPath;
 	if ((result = find_directory(B_SYSTEM_TEMP_DIRECTORY, &relationsDirPath)) != B_OK) {
-		ERROR("could not find temp directory: %s\n", strerror(result));
+		PRINT(("could not find temp directory: %s\n", strerror(result) ));
 		return result;
 	}
 	BString relationsDirName(relationsDirPath.Path());
@@ -364,7 +389,7 @@ TTracker::PrepareRelationDirectory(BMessage *message, RelationInfo* relationInfo
 		<< "/" << BPath(src).Leaf() << "\u2192" << relationLabel << " targets";
 
 	if ((result = create_directory(relationsDirName, B_READ_WRITE) != B_OK)) {
-		ERROR("failed to create temp dir at %s: %s\n", relationsDirName.String(), strerror(result));
+		PRINT(("failed to create temp dir at %s: %s\n", relationsDirName.String(), strerror(result) ));
 		return result;
 	}
 

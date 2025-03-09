@@ -34,13 +34,18 @@ All rights reserved.
 #ifndef _COMMANDS_H
 #define _COMMANDS_H
 
+#define SEN_INTEGRATION
 
 #include <MountServer.h>
 #include <SupportDefs.h>
 
 #include <tracker_private.h>
-	// public commands moved here so they may be included by other apps
 
+#ifdef SEN_INTEGRATION
+#include "Sensei.h"
+#endif
+
+// public commands moved here so they may be included by other apps
 
 namespace BPrivate {
 
@@ -51,11 +56,15 @@ const uint32 kDelete = 'Tdel';
 const uint32 kDeleteSelection = kDelete;
 const uint32 kRestoreSelectionFromTrash = kRestoreFromTrash;
 const uint32 kIdentifyEntry = 'Tidt';
-const uint32 kEnrichEntry = 'Tenr';
 const uint32 kOpenSelection = 'Tosl';
 const uint32 kOpenSelectionWith = 'Tosu';
-const uint32 kOpenRelations = 'Tore';
+
+#ifdef SEN_INTEGRATION
+const uint32 kEnrichEntry = SENSEI_CMD_ENRICH;
+const uint32 kOpenRelations = 'Tore';		// Tracker open menu command vs nested relation handling in SEN
 const uint32 kOpenSelfRelations = 'Tosr';
+#endif
+
 const uint32 kCloseAllWindows = 'Tall';
 const uint32 kCloseWindowAndChildren = 'Tcwc';
 const uint32 kCloseAllInWorkspace = 'Tciw';

@@ -426,8 +426,7 @@ TShortcuts::IdentifyLabel()
 BMenuItem*
 TShortcuts::EnrichItem()
 {
-	BMessage* message = new BMessage(kEnrichEntry);
-	BMenuItem* item = new BMenuItem(EnrichLabel(), message);
+	BMenuItem* item = new BMenuItem(EnrichLabel(), new BMessage(kEnrichEntry));
 
 	if (fInWindow)
 		item->SetTarget(PoseView());

@@ -2469,8 +2469,7 @@ BPoseView::MessageReceived(BMessage* message)
 			break;
 
 		case kEnrichEntry:
-			// todo:SEN: call enricher plugin
-			PRINT(("Enrich called.\n"));
+			PRINT(("SEN enrichItem not expexted here.\n"));
 			break;
 
 		case kIdentifyEntry:
