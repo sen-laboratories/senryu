@@ -1981,7 +1981,6 @@ BContainerWindow::MenusBeginning()
 
 	if (fFileMenu != NULL)
 		UpdateMenu(fFileMenu, kFileMenuContext);
-//	fFileMenu->AddSeparatorItem();
 
 	if (fWindowMenu != NULL)
 		UpdateMenu(fWindowMenu, kWindowMenuContext);
@@ -2228,7 +2227,7 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 	messageSelf.ReplaceUInt32(SEN_ACTION_CMD, SEN_RELATIONS_GET_ALL_SELF);
 
 	fOpenSelfRelationsItem = Shortcuts()->OpenSelfRelationsItem(
-		new OpenRelationsMenu(Shortcuts()->OpenSelfRelationsLabel(), &message, this, be_app));
+		new OpenRelationsMenu(Shortcuts()->OpenSelfRelationsLabel(), &messageSelf, this, be_app));
 
 	parent->AddItem(fOpenSelfRelationsItem, menuIndex + 2);
 	Shortcuts()->UpdateOpenSelfRelationsItem(fOpenSelfRelationsItem);
