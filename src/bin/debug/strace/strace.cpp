@@ -243,9 +243,11 @@ patch_syscalls()
 
 		// patch return type handlers
 		const string returnTypeName = syscall->ReturnType()->TypeName();
-		if (returnTypeName == "status_t" || returnTypeName == "ssize_t"
-				|| returnTypeName == "int") {
+		if (returnTypeName == "int" || returnTypeName == "status_t"
+				|| returnTypeName == "area_id") {
 			syscall->ReturnType()->SetHandler(create_status_t_type_handler());
+		} else if (returnTypeName == "ssize_t") {
+			syscall->ReturnType()->SetHandler(create_ssize_t_type_handler());
 		}
 	}
 
