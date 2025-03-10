@@ -139,6 +139,7 @@ DoCatalogs libtracker.so :
 	NavMenu.cpp
 	OpenWithWindow.cpp
 	PoseView.cpp
+    PoseViewSen.cpp
 	QueryContainerWindow.cpp
 	QueryPoseView.cpp
 	RegExp.cpp
@@ -149,6 +150,7 @@ DoCatalogs libtracker.so :
 	TemplatesMenu.cpp
 	TextWidget.cpp
 	Tracker.cpp
+    TrackerSen.cpp
 	TrackerInitialState.cpp
 	TrackerSettingsWindow.cpp
 	VirtualDirectoryWindow.cpp

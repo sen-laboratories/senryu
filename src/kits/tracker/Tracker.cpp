@@ -913,14 +913,7 @@ TTracker::OpenRef(const entry_ref* ref, const node_ref* nodeToClose,
 			entry_ref* senHandlerRef = new entry_ref;
 			BMessage argsMsg;
 			bool senRelation = false;
-			bool selfRelation;
-
-			if ((result = refsReceived.FindBool(SEN_RELATION_IS_SELF, &selfRelation)) != B_OK) {
-				if (result != B_NAME_NOT_FOUND) {
-					PRINT(("failed to retrieve relation type for self relation: %s\n", strerror(result)));
-				}
-				selfRelation = false;
-			}
+			bool selfRelation = refsReceived.GetBool(SEN_RELATION_IS_SELF, false);
 
 			if (selfRelation) {
 				PRINT(("OpenRef: resolving self relation...\n"));

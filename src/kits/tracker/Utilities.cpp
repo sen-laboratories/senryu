@@ -32,6 +32,7 @@ names are registered trademarks or trademarks of their respective holders.
 All rights reserved.
 */
 
+#define DEBUG 1
 
 #include "Utilities.h"
 
@@ -1448,8 +1449,14 @@ DeleteSubmenu(BMenuItem* submenuItem)
 	if (submenu == NULL)
 		return;
 
+	int32 count = submenu->CountItems();
+	if (count <= 0)
+		return;
+
+	PRINT(("remove %d items for submenu %s...\n", count, submenuItem->Label() ));
+
 	// delete all submenu items
-	submenu->RemoveItems(0, submenu->CountItems(), true);
+	submenu->RemoveItems(0, count, true);
 }
 
 

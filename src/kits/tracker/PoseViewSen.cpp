@@ -34,18 +34,15 @@ All rights reserved.
 
 /**
  PoseView SEN integration.
- We use separate message codes for Tracker SEN commands and SEN commands because internally
- they
 */
 
-#include "Commands.h"
+#define DEBUG 1
+
 #include "FSUtils.h"
 #include <Query.h>
 #include <VolumeRoster.h>
-#define DEBUG 1
 
 #include <stdlib.h>
-#include <stdio.h>
 #include <string.h>
 
 #include "PoseView.h"
@@ -55,15 +52,15 @@ All rights reserved.
 bool
 BPoseView::HandleSenMessage(BMessage* message)
 {
-	PRINT(("BPoseView::HandleSenMessage:\n"));
-
 	// filter for SEN messages, in this case SENSEI commands
 	switch(message->what) {
 		case SENSEI_CMD_EXTRACT:
 		case SENSEI_CMD_ENRICH:
 		case SENSEI_CMD_IDENTIFY:
-		case SENSEI_CMD_NAVIGATE:	// fallthrough
+		case SENSEI_CMD_NAVIGATE: { // fallthrough
+			PRINT(("SEN msg detected.\n"));
 			break;	// ok, go on below
+		}
 		default:
 			// not a SEN command message, handle as normal
 			return false;
@@ -80,7 +77,7 @@ BPoseView::HandleSenMessage(BMessage* message)
 
 		case SENSEI_CMD_ENRICH: {
 			PRINT(("PoseView::SENSEI enrich called.\n"));
-			result = EnrichRefsFromMsg(message);
+			result = EnrichRefsFromSelection();
 			break;
 		}
 		case SENSEI_CMD_IDENTIFY:
@@ -109,33 +106,25 @@ BPoseView::HandleSenMessage(BMessage* message)
 }
 
 status_t
-BPoseView::EnrichRefsFromMsg(BMessage* message) {
-	type_code 	type;
-	int32  		count;
+BPoseView::EnrichRefsFromSelection() {
 	status_t    result;
 
-	message->GetInfo("refs", &type, &count);
+	int32 selectCount = CountSelected();
+	for (int32 index = 0; index < selectCount; index++) {
+		BPose* pose = fSelectionList->ItemAt(index);
+		const entry_ref* ref = pose->TargetModel()->ResolveIfLink()->EntryRef();
 
-	for (int32 index = 0; index < count; index++) {
-		entry_ref ref;
-		message->FindRef("refs", index, &ref);
-
-		BEntry entry(&ref, true);
-		if (entry.InitCheck() != B_OK || !entry.Exists()) {
-			PRINT(("skipping ref %s.\n", ref.name));
-			continue;
-		}
 		// call plugin
-		result = EnrichRefWithPlugin(&ref);
+		result = EnrichRefWithPlugin(ref);
 		if (result != B_OK) {
-			PRINT(("problem enriching ref %s, skipping.\n", ref->name));
+			PRINT(("problem enriching ref %s, skipping: %s\n", ref->name, strerror(result)));
 		}
 	}
 	return B_OK;	// in any case, concerning the caller, we've done our best.
 }
 
 status_t
-BPoseView::EnrichRefWithPlugin(entry_ref* ref) {
+BPoseView::EnrichRefWithPlugin(const entry_ref* ref) {
 	// find suitable/default enrichment plugin
 	// todo: migrate to common method from SEN SelfRelations.cpp !
 	BString predicate("SEN:TYPE==meta/x-vnd.sen-meta.plugin && SENSEI:TYPE==enricher");
@@ -158,13 +147,14 @@ BPoseView::EnrichRefWithPlugin(entry_ref* ref) {
         return result;
     }
 
-    BEntry entry;
-    while ((result = query.GetNextEntry(&entry)) == B_OK) {
-        BPath path;
-        entry.GetPath(&path);
-        PRINT(("handling ref %s with plugin at path %s\n", entry.Name(), path.Path() ));
+	BMessage refsMsg(B_REFS_RECEIVED);
+	refsMsg.AddRef("refs", ref);
 
-		result = TrackerLaunch(ref, true);
+    entry_ref pluginRef;
+    while ((result = query.GetNextRef(&pluginRef)) == B_OK) {
+        PRINT(("handling ref %s with plugin %s\n", ref->name, pluginRef.name ));
+
+		result = TrackerLaunch(reinterpret_cast<const entry_ref*>(&pluginRef), &refsMsg, false);
 		if (result == B_OK) {
 			// done
 			break;

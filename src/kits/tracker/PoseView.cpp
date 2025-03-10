@@ -2468,10 +2468,6 @@ BPoseView::MessageReceived(BMessage* message)
 			OpenInfoWindows();
 			break;
 
-		case kEnrichEntry:
-			PRINT(("SEN enrichItem not expexted here.\n"));
-			break;
-
 		case kIdentifyEntry:
 			IdentifySelection(message->GetBool("force", false));
 			break;

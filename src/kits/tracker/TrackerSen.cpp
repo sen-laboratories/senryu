@@ -135,19 +135,14 @@ TTracker::HandleSenMessage(BMessage* message)
 
 bool TTracker::ResolveRelation(const entry_ref* ref, BString* srcId, BString* targetId)
 {
-	BFile relationTarget(ref, B_READ_WRITE);
-	status_t result = relationTarget.InitCheck();
-	if (result != B_OK) {
-		PRINT(("error reading relation target %s: %s\n", ref->name, strerror(result)));
-		return result;
-	}
-
-	BNode relationNode(relationTarget);
+	status_t result;
+	BNode relationNode(ref);
 	BNodeInfo relationNodeInfo(&relationNode);
-	if (result == B_OK) result = relationNodeInfo.InitCheck();
+
+	result = relationNodeInfo.InitCheck();
 	if (result != B_OK) {
-		PRINT(("error accessing relation target %s nodeInfo: %s\n", ref->name, strerror(result)));
-		return result;
+		PRINT(("error accessing nodeInfo for relation target %s: %s\n", ref->name, strerror(result)));
+		return false;
 	}
 	if (result == B_OK) result = relationNode.ReadAttrString(SEN_RELATION_SOURCE_ATTR, srcId);
 	if (result == B_NAME_NOT_FOUND) {
