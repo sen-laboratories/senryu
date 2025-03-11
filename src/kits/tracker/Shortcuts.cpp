@@ -426,7 +426,9 @@ TShortcuts::IdentifyLabel()
 BMenuItem*
 TShortcuts::EnrichItem()
 {
-	BMenuItem* item = new BMenuItem(EnrichLabel(), new BMessage(kEnrichEntry));
+	BMessage* message = new BMessage(kEnrichEntry);
+	BMenuItem* item = new BMenuItem(EnrichLabel(), message);
+	message->AddBool("wipe", (modifiers() & B_SHIFT_KEY) != 0);
 
 	if (fInWindow)
 		item->SetTarget(PoseView());
@@ -438,7 +440,10 @@ TShortcuts::EnrichItem()
 const char*
 TShortcuts::EnrichLabel()
 {
-	return B_TRANSLATE("Enrich");
+	if ((modifiers() & B_SHIFT_KEY) != 0)
+		return B_TRANSLATE("Enrich (Overwrite)");
+	else
+		return B_TRANSLATE("Enrich");
 }
 
 
@@ -873,6 +878,10 @@ TShortcuts::Update(BMenu* menu)
 				UpdateGetInfoItem(item);
 				break;
 
+			case kEnrichEntry:
+				UpdateEnrichItem(item);
+				break;
+
 			case kIdentifyEntry:
 				UpdateIdentifyItem(item);
 				break;
@@ -1241,8 +1250,11 @@ TShortcuts::UpdateEnrichItem(BMenuItem* item)
 	if (item == NULL)
 		return;
 
+	item->SetLabel(EnrichLabel());
+	item->Message()->ReplaceBool("wipe", (modifiers() & B_SHIFT_KEY) != 0);
+
 	if (fInWindow) {
-		item->SetEnabled(true);
+		item->SetEnabled(HasSelection());
 		item->SetTarget(PoseView());
 	}
 }

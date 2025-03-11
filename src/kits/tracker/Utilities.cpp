@@ -1453,8 +1453,6 @@ DeleteSubmenu(BMenuItem* submenuItem)
 	if (count <= 0)
 		return;
 
-	PRINT(("remove %d items for submenu %s...\n", count, submenuItem->Label() ));
-
 	// delete all submenu items
 	submenu->RemoveItems(0, count, true);
 }

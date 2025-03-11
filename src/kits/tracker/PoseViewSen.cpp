@@ -77,7 +77,8 @@ BPoseView::HandleSenMessage(BMessage* message)
 
 		case SENSEI_CMD_ENRICH: {
 			PRINT(("PoseView::SENSEI enrich called.\n"));
-			result = EnrichRefsFromSelection();
+			message->PrintToStream();
+			result = EnrichRefsFromSelection(message->GetBool("wipe", true));
 			break;
 		}
 		case SENSEI_CMD_IDENTIFY:
@@ -106,7 +107,7 @@ BPoseView::HandleSenMessage(BMessage* message)
 }
 
 status_t
-BPoseView::EnrichRefsFromSelection() {
+BPoseView::EnrichRefsFromSelection(bool wipe) {
 	status_t    result;
 
 	int32 selectCount = CountSelected();
@@ -115,7 +116,7 @@ BPoseView::EnrichRefsFromSelection() {
 		const entry_ref* ref = pose->TargetModel()->ResolveIfLink()->EntryRef();
 
 		// call plugin
-		result = EnrichRefWithPlugin(ref);
+		result = EnrichRefWithPlugin(ref, wipe);
 		if (result != B_OK) {
 			PRINT(("problem enriching ref %s, skipping: %s\n", ref->name, strerror(result)));
 		}
@@ -124,7 +125,7 @@ BPoseView::EnrichRefsFromSelection() {
 }
 
 status_t
-BPoseView::EnrichRefWithPlugin(const entry_ref* ref) {
+BPoseView::EnrichRefWithPlugin(const entry_ref* ref, bool wipe) {
 	// find suitable/default enrichment plugin
 	// todo: migrate to common method from SEN SelfRelations.cpp !
 	BString predicate("SEN:TYPE==meta/x-vnd.sen-meta.plugin && SENSEI:TYPE==enricher");
@@ -149,6 +150,7 @@ BPoseView::EnrichRefWithPlugin(const entry_ref* ref) {
 
 	BMessage refsMsg(B_REFS_RECEIVED);
 	refsMsg.AddRef("refs", ref);
+	refsMsg.AddBool("wipe", wipe);
 
     entry_ref pluginRef;
     while ((result = query.GetNextRef(&pluginRef)) == B_OK) {

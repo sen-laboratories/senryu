@@ -184,7 +184,7 @@ AddOnMenuGenerate(const entry_ref* addOnRef, BMenu* menu, BContainerWindow* wind
 	void (*populateMenu)(BMessage*, BMenu*, BHandler*);
 	result = get_image_symbol(addOnImage, "populate_menu", 2, (void**)&populateMenu);
 	if (result != B_OK) {
-		PRINT(("Couldn't get image symbol for addon %s: %s\n", addOnRef->name, strerror(result)));
+//FIXME		PRINT(("Couldn't get image symbol for addon %s: %s\n", addOnRef->name, strerror(result)));
 		unload_add_on(addOnImage);
 		return result;
 	}

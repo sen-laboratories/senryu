@@ -78,6 +78,11 @@ TLiveMixin::UpdateFileMenu(BMenu* menu)
 				case kIdentifyEntry:
 					fWindow->Shortcuts()->UpdateIdentifyItem(item);
 					break;
+
+				// Enrich/Enrich (overwrite)
+				case kEnrichEntry:
+					fWindow->Shortcuts()->UpdateEnrichItem(item);
+					break;
 			}
 		}
 
