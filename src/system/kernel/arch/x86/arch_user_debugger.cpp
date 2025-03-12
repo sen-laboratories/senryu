@@ -10,7 +10,7 @@
 
 #include <debugger.h>
 #include <driver_settings.h>
-#include <int.h>
+#include <interrupts.h>
 #include <team.h>
 #include <thread.h>
 #include <util/AutoLock.h>
@@ -748,9 +748,9 @@ arch_set_debug_cpu_state(const debug_cpu_state* cpuState)
 		// not use these registers (not even indirectly).
 #ifdef __x86_64__
 		Thread* thread = thread_get_current_thread();
-		memcpy(thread->arch_info.fpu_state, &cpuState->extended_registers,
+		memcpy(thread->arch_info.user_fpu_state, &cpuState->extended_registers,
 			sizeof(cpuState->extended_registers));
-		frame->fpu = &thread->arch_info.fpu_state;
+		frame->fpu = &thread->arch_info.user_fpu_state;
 #else
 		if (gHasSSE) {
 			// Since fxrstor requires 16-byte alignment and this isn't
