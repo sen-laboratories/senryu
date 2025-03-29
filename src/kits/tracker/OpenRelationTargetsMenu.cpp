@@ -71,11 +71,13 @@ OpenRelationTargetsMenu::StartBuildingItemList()
 		case SENSEI_MESSAGE_RESULT:	// we are a sub menu of self relations
 		{
 			PRINT(("building self relations submenu from SENSEI_MESSAGE_RESULT in existing sub item msg...\n"));
+			fRelationTargetsReply->what = fEntriesToOpen.what;
 			fRelationTargetsReply = &fEntriesToOpen;
 			return true;
 		}
 		case SEN_RELATIONS_GET_SELF:
 		{
+			fRelationTargetsReply->what = fEntriesToOpen.what;
 			PRINT(("building self relations submenu from SEN_RELATIONS_GET_SELF relation reply...\n"));
 			break;
 		}

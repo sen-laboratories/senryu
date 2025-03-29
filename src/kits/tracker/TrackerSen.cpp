@@ -80,6 +80,7 @@ TTracker::HandleSenMessage(BMessage* message)
 	}
 
 	// handle modifier for differentiating between open relation view and invoke target (dynamic/self relations)
+	// todo: move this to Shortcuts and handle like 'Enrich (Overwrite)'
 	if ((modifiers() & B_SHIFT_KEY) != 0) {
 		PRINT(("modifier SHIFT detected while selecting relation item.\n"));
 		if (message->what == SEN_OPEN_RELATION_TARGET_VIEW) {

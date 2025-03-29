@@ -903,7 +903,7 @@ TTracker::OpenRef(const entry_ref* ref, const node_ref* nodeToClose,
 				refsReceived.what = B_REFS_RECEIVED;
 			}
 			if (DEBUG) {
-				PRINT(("refsReceived is:\n"));
+				PRINT(("Tracker: refsReceived is:\n"));
 				refsReceived.PrintToStream();
 			}
 
@@ -917,11 +917,25 @@ TTracker::OpenRef(const entry_ref* ref, const node_ref* nodeToClose,
 
 			if (selfRelation) {
 				PRINT(("OpenRef: resolving self relation...\n"));
-				// we cannot take the default relation handler since our source is the target file itself
-				// so we need to fetch the plugin ref from the relation message bundled here
+				// pass on attributes from self relation properties
+				result = refsReceived.FindMessage(SEN_OPEN_RELATION_ARGS_KEY, &argsMsg);
+				if (result != B_OK) {
+					if (result != B_NAME_NOT_FOUND) {
+						PRINT(("error getting relf relation arguments from refs msg: %s\n", strerror(result)));
+						return result;
+					}
+				} else {
+					if (DEBUG) {
+						PRINT(("received args for self relation:\n"));
+						argsMsg.PrintToStream();
+					}
+				}
+
+				// get self relation type and fall back to default type if not found
 				BString relationType;
-				result = refsReceived.FindString(SEN_RELATION_TYPE, &relationType);
-				if (result != B_OK) result = refsReceived.FindString(SENSEI_DEFAULT_TYPE_KEY, &relationType);
+				result = argsMsg.FindString("type", &relationType);
+				if (result != B_OK)
+					result = refsReceived.FindString(SENSEI_DEFAULT_TYPE_KEY, &relationType);
 				if (result != B_OK) {
 					if (result == B_NAME_NOT_FOUND) {
 						PRINT(("could not find self relation (default) type in refs msg, falling back to normal launch.\n"));
@@ -953,20 +967,6 @@ TTracker::OpenRef(const entry_ref* ref, const node_ref* nodeToClose,
 				if (result != B_OK) {
 					PRINT(("could not resolve relation handler with signature %s, falling back to normal launch.\n", relationType.String()));
 					goto normal_launch_ref;
-				}
-
-				// pass on attributes from self relation properties
-				result = refsReceived.FindMessage(SEN_OPEN_RELATION_ARGS_KEY, &argsMsg);
-				if (result != B_OK) {
-					if (result != B_NAME_NOT_FOUND) {
-						PRINT(("error getting relf relation arguments from refs msg: %s\n", strerror(result)));
-						return result;
-					}
-				} else {
-					if (DEBUG) {
-						PRINT(("received args for self relation:\n"));
-						argsMsg.PrintToStream();
-					}
 				}
 
 				// self relation has target == source ref
