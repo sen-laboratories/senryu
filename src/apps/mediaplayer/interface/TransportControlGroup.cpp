@@ -31,6 +31,7 @@
 
 enum {
 	MSG_SEEK				= 'seek',
+	MSG_SEEK_HOVER			= 'hovr',
 	MSG_PLAY				= 'play',
 	MSG_STOP				= 'stop',
 	MSG_REWIND				= 'rwnd',
@@ -39,7 +40,7 @@ enum {
 	MSG_SKIP_FORWARD		= 'skpf',
 	MSG_SET_VOLUME			= 'stvl',
 	MSG_SET_MUTE			= 'stmt',
-	MSG_DURATION_TOOLTIP	= 'msdt'
+	MSG_DURATION_TOOLTIP	= 'msdt',
 };
 
 // the range of the volume sliders (in dB)
@@ -83,10 +84,12 @@ TransportControlGroup::TransportControlGroup(BRect frame, bool useSkipButtons,
 
 	// Seek slider
 	fSeekSlider = new SeekSlider("seek slider", new BMessage(MSG_SEEK),
-		0, kPositionFactor);
+		new BMessage(MSG_SEEK_HOVER), 0, kPositionFactor);
 	fSeekLayout->AddView(fSeekSlider);
 
 	fPositionToolTip = new PositionToolTip();
+	fPositionToolTip->SetAlignment(BAlignment(B_ALIGN_CENTER, B_ALIGN_TOP));
+	fPositionToolTip->SetMouseRelativeLocation(BPoint(0, 0));
 	fSeekSlider->SetToolTip(fPositionToolTip);
 
 	// Duration view
@@ -277,10 +280,22 @@ TransportControlGroup::MessageReceived(BMessage* message)
 
 		case MSG_DURATION_TOOLTIP:
 		{
-			BToolTipManager* manager = BToolTipManager::Manager();
 			BPoint tipPoint;
-			GetMouse(&tipPoint, NULL, false);
-			manager->ShowTip(fPositionToolTip, tipPoint, this);
+			fSeekSlider->GetMouse(&tipPoint, NULL, false);
+			tipPoint.y = 0;
+			fSeekSlider->ConvertToScreen(&tipPoint);
+			BToolTipManager::Manager()->ShowTip(fPositionToolTip, tipPoint, this);
+			break;
+		}
+
+		case MSG_SEEK_HOVER:
+		{
+			int32 value;
+			if (message->FindInt32("value", &value) == B_OK) {
+				bigtime_t position = TimePositionFor(value / (float)kPositionFactor);
+				fPositionToolTip->Update(position, fDurationView->TimeDuration());
+				Looper()->PostMessage(MSG_DURATION_TOOLTIP, this);
+			}
 			break;
 		}
 
@@ -310,7 +325,7 @@ void TransportControlGroup::SkipForward() {}
 void TransportControlGroup::VolumeChanged(float value) {}
 void TransportControlGroup::ToggleMute() {}
 void TransportControlGroup::PositionChanged(float value) {}
-
+bigtime_t TransportControlGroup::TimePositionFor(float value) { return 0; }
 
 // #pragma mark -
 
@@ -492,12 +507,10 @@ void
 TransportControlGroup::SetPosition(float value, bigtime_t position,
 	bigtime_t duration)
 {
-	fPositionToolTip->Update(position, duration);
 	fDurationView->Update(position, duration);
 
 	if (fSeekSlider->IsTracking())
 		return;
-
 	fSeekSlider->SetPosition(value);
 }
 

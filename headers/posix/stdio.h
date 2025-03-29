@@ -53,8 +53,8 @@
 
 
 typedef off_t fpos_t;
+typedef struct _IO_FILE FILE;
 
-#include <stdio_pre.h>
 
 extern FILE *stdin;
 extern FILE *stdout;
@@ -120,7 +120,6 @@ extern FILE		*fopencookie(void *cookie, const char *mode, cookie_io_functions_t 
 /* file I/O */
 extern int		fflush(FILE *stream);
 extern int		fflush_unlocked(FILE *stream);
-extern int		fpurge(FILE *stream);
 
 extern int		fgetpos(FILE *stream, fpos_t *position);
 extern int		fsetpos(FILE *stream, const fpos_t *position);
@@ -169,13 +168,15 @@ extern ssize_t	getdelim(char **_line, size_t *_length, int delimiter,
 extern ssize_t	getline(char **_line, size_t *_length, FILE *stream);
 
 /* formatted I/O */
-extern int		printf(char const *format, ...) __PRINTFLIKE(1,2);
+extern int		asprintf(char **ret, char const *format, ...) _PRINTFLIKE(2,3);
+extern int		printf(char const *format, ...) _PRINTFLIKE(1,2);
 #if !defined(_KERNEL_MODE) && !defined(_BOOT_MODE) && !defined(_LOADER_MODE)
-extern int		dprintf(int fd, char const *format, ...) __PRINTFLIKE(2,3);
+extern int		dprintf(int fd, char const *format, ...) _PRINTFLIKE(2,3);
 #endif
-extern int		fprintf(FILE *stream, char const *format, ...) __PRINTFLIKE(2,3);
-extern int		sprintf(char *string, char const *format, ...) __PRINTFLIKE(2,3);
-extern int		snprintf(char *string, size_t size, char const *format, ...) __PRINTFLIKE(3,4);
+extern int		fprintf(FILE *stream, char const *format, ...) _PRINTFLIKE(2,3);
+extern int		sprintf(char *string, char const *format, ...) _PRINTFLIKE(2,3);
+extern int		snprintf(char *string, size_t size, char const *format, ...) _PRINTFLIKE(3,4);
+extern int		vasprintf(char **ret, char const *format, va_list ap);
 extern int		vprintf(char const *format, va_list ap);
 extern int		vfprintf(FILE *stream, char const *format, va_list ap);
 extern int		vsprintf(char *string, char const *format, va_list ap);

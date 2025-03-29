@@ -3,6 +3,8 @@ SubDir HAIKU_TOP src system libroot posix stdlib ;
 UsePrivateHeaders drivers libroot runtime_loader shared ;
 UsePrivateHeaders kernel ;	# for <util/*>
 
+SubDirCcFlags -D_DEFAULT_SOURCE ;
+
 local architectureObject ;
 for architectureObject in [ MultiArchSubDirSetup ] {
 	on $(architectureObject) {
@@ -26,6 +28,7 @@ for architectureObject in [ MultiArchSubDirSetup ] {
 			mktemp.c
 			pty.cpp
 			qsort.c
+			qsort_r.c
 			radixsort.c
 			random.c
 			reallocarray.cpp

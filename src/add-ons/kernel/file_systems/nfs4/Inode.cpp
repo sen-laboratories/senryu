@@ -182,7 +182,7 @@ Inode::RevalidateFileCache()
 		fMaxFileSize = st.st_size;
 	fFileCache = file_cache_create(fFileSystem->DevId(), ID(), fMaxFileSize);
 
-	change = fChange;
+	fChange = change;
 	return B_OK;
 }
 
@@ -1021,5 +1021,21 @@ Inode::EndAIOOp()
 	fAIOCount--;
 	if (fAIOCount == 0)
 		release_sem(fAIOWait);
+}
+
+
+/*! Print the ID, handle, names, and DirectoryCache if applicable.
+	@pre The parent VnodeToInode is locked.
+*/
+void
+Inode::Dump(void (*xprintf)(const char*, ...)) const
+{
+	xprintf("Inode\t%" B_PRIu64 " at %p\n", fInfo.fFileId, this);
+	xprintf("FileHandle\t");
+	fInfo.fHandle.Dump(xprintf);
+	xprintf("InodeNames\t");
+	fInfo.fNames->Dump(xprintf);
+	if (fCache != NULL)
+		fCache->Dump(xprintf);
 }
 

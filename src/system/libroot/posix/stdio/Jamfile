@@ -10,10 +10,12 @@ for architectureObject in [ MultiArchSubDirSetup ] {
 		UsePrivateSystemHeaders ;
 
 		MergeObject <$(architecture)>posix_stdio.o :
-			__freading.cpp
 			_fseek.c
 			remove.c
 			rename.c
+			tempnam.c
+			tmpfile.c
+			tmpnam.c
 			;
 	}
 }
