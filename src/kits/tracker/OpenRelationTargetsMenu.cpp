@@ -175,7 +175,14 @@ OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 
 	PRINT(("adding relation menu target items...\n"));
 
-	while ((result = fRelationTargetsReply->FindRef("refs", index, &ref)) == B_OK) {
+	BMessage relations;
+	result = fRelationTargetsReply->FindMessage(SEN_RELATIONS, &relations);
+	if (result != B_OK) {
+		PRINT(("failed to retrieve relations from result: %s\n", strerror(result)));
+		return result;
+	}
+
+	while ((result = relations.FindRef("refs", index, &ref)) == B_OK) {
 		entry.SetTo(&ref);
 		entry.GetPath(&path);
 

@@ -133,6 +133,7 @@ OpenRelationsMenu::DoneBuildingItemList()
         BMenuItem* item = new BMenuItem("n/a, SEN server not running.", 0);
 		item->SetEnabled(false);
 		AddItem(item);
+
         return;
     }
 
@@ -144,6 +145,7 @@ OpenRelationsMenu::DoneBuildingItemList()
 
 	int32 relationCount = 0;
 	BString source;
+
 	// safe since we added it from the ref above
 	status_t result = fRelationsReply.FindString(SEN_RELATION_SOURCE, &source);
 	if (result != B_OK) {
