@@ -167,10 +167,12 @@ status_t TTracker::PrepareLaunchTarget(
 	BMessage reply;
 	senMessenger.SendMessage(&queryTargetIdMsg, &reply);
 
-	status_t result;
-	if ((result = reply.FindRef("ref", targetRef)) == B_OK) {
+	status_t result = reply.FindRef("ref", targetRef);
+	if (result == B_OK) {
 		PRINT(("got target ref %s\n", targetRef->name));
 		result = ConvertAttributesToMessage(srcRef, params);
+	} else {
+		ERROR("failed to get ref from reply: %s\n", strerror(result));
 	}
 	return result;
 }
@@ -179,7 +181,7 @@ status_t
 TTracker::PrepareRelationWindow(BMessage *message, RelationInfo* relationInfo)
 {
 	//status_t result;
-	return B_ERROR;	// not yet implemented
+	return B_NOT_SUPPORTED;	// not yet implemented
 }
 
 status_t
@@ -209,17 +211,6 @@ TTracker::PrepareRelationTargetWindow(BMessage *message, RelationInfo* relationI
 			return B_OK;
 	}
 
-    // check target ids
-	// todo: handle self relations
-	BStringList targetIds;
-	relations.FindStrings(SEN_TO_ATTR, &targetIds);
-	if (targetIds.IsEmpty()) {
-		// should never happen
-		PRINT(("no target IDs found for relation %s and source %s!\n",
-			relationInfo->relationType.String(), relationInfo->source.String() ));
-		return B_ENTRY_NOT_FOUND;
-	}
-
 	// get MIME type for target relation
 	BMessage attrInfo;
 	if ((result = GetRelationTypeAttributeInfo(relationInfo->relationType, &attrInfo)) != B_OK) {
@@ -229,26 +220,54 @@ TTracker::PrepareRelationTargetWindow(BMessage *message, RelationInfo* relationI
 	PRINT(("got relations for type %s for source %s:\n", relationInfo->relationType.String(), relationInfo->source.String()) );
 	relations.PrintToStream();
 
-	// iterate through targets with their properties and populate relation targets dir
-    // with target files and write relation properties in file attributes for usual visualisation.
-    for (int32 targetIndex = 0; targetIndex < targetIds.CountStrings(); targetIndex++) {
-        PRINT(("handling properties for target ID %s ...\n", targetIds.StringAt(targetIndex).String()) );
+	BMessage relationProperties;
+	result = relations.FindMessage("properties", &relationProperties);
+	if (result != B_OK) {
+		ERROR("no relation properties found for source %s: %s\n", relationInfo->source.String(), strerror(result));
+		// still continue and just create blank relation files
+	}
 
+	BStringList targetIds;
+    result = relationProperties.FindStrings(SEN_TO_ATTR, &targetIds);
+	if (result != B_OK) {
+		ERROR("could not get relation targetIds for source %s: %s\n", relationInfo->source.String(), strerror(result));
+		return result;
+	}
+
+	// get ID lookup map
+	BMessage idToRefMap;
+	result = relations.FindMessage("id_to_ref", &idToRefMap);
+	if (result != B_OK) {
+		ERROR("could not get ref mapping for source %s: %s\n", relationInfo->source.String(), strerror(result));
+		return result;
+	}
+
+	// iterate through all target IDs and get relation properties for each, then populate relation targets dir
+    // with matching target refs, creating files with relation properties in file attributes.
+    for (int32 targetIndex = 0; targetIndex < targetIds.CountStrings(); targetIndex++) {
+		entry_ref ref;
+		const char* targetId = targetIds.StringAt(targetIndex).String();
+		result = idToRefMap.FindRef(targetId, &ref);
+		if (result != B_OK) {
+			PRINT(("no ref found for targetId %s.\n", targetId));
+			continue;	// better luck next time?
+		}
+        PRINT(("handling properties for target %s ...\n", targetId));
+
+		// properties for individual relation to that target
+		// Note: there might be more than one relation to the same target with different properties!
         BMessage properties;
         int32 propertiesIndex = 0;
 
-        while (relations.FindMessage(targetIds.StringAt(targetIndex), propertiesIndex, &properties) == B_OK) {
+        while (relationProperties.FindMessage(targetId, propertiesIndex, &properties) == B_OK) {
             // create a file for each set of properties for all targets
-            entry_ref ref;
-            reply.FindRef("refs", targetIndex, &ref); // has been checked above already
-
-            PRINT(("processing properties #%d for ref %s:\n", propertiesIndex, ref.name));
+            PRINT(("writing property attrs #%d into ref %s:\n", propertiesIndex, ref.name));
             properties.PrintToStream();
 
             BString fileName(ref.name);
             fileName.Append(" #") << propertiesIndex + 1; // human readable 1-based index
 
-            BFile relationTarget(&relationDir, fileName, B_READ_WRITE | B_CREATE_FILE/* | O_APPEND*/);
+            BFile relationTarget(&relationDir, fileName, B_READ_WRITE | B_CREATE_FILE);
             result = relationTarget.InitCheck();
             if (result != B_OK) {
                 ERROR("error creating relation target %s: %s\n", ref.name, strerror(result));
@@ -354,22 +373,18 @@ TTracker::PrepareRelationDirectory(BMessage *message, RelationInfo* relationInfo
 {
 	status_t result = B_OK;
 
-	BString src;
-	if ((result = message->FindString(SEN_RELATION_SOURCE, &src)) != B_OK) {
+	BString src, srcId, relationType, relationLabel;
+
+	result = message->FindString(SEN_RELATION_SOURCE, &src);
+	if (result == B_OK) result = message->FindString(SEN_RELATION_SOURCE_ATTR, &srcId);
+	if (result == B_OK) result = message->FindString(SEN_RELATION_TYPE, &relationType);
+	if (result == B_OK) result = message->FindString(SEN_RELATION_LABEL, &relationLabel);
+
+	if (result != B_OK) {
+		ERROR("PrepareRelationDirectory: could not get required parameter, aborting: %s\n", strerror(result));
 		return result;
 	}
-	BString srcId;
-	if ((result = message->FindString(SEN_RELATION_SOURCE_ATTR, &srcId)) != B_OK) {
-		return result;
-	}
-	BString relationType;
-	if ((result = message->FindString(SEN_RELATION_TYPE, &relationType)) != B_OK) {
-		return result;
-	}
-	BString relationLabel;
-	if ((result = message->FindString(SEN_RELATION_LABEL, &relationLabel)) != B_OK) {
-		return result;
-	}
+
 	BString relationName(relationType);
 	if (relationName.StartsWith(SEN_RELATION_SUPERTYPE "/")) {
 		relationName.Remove(0, sizeof(SEN_RELATION_SUPERTYPE));
@@ -382,7 +397,7 @@ TTracker::PrepareRelationDirectory(BMessage *message, RelationInfo* relationInfo
 	}
 	BString relationsDirName(relationsDirPath.Path());
 	relationsDirName.Append("/sen/") << srcId << "/relations/" << relationName
-		<< "/" << BPath(src).Leaf() << "\u2192" << relationLabel << " targets";
+		<< "/" << BPath(src).Leaf() << "\u2192" << relationLabel << " relations";
 
 	if ((result = create_directory(relationsDirName, B_READ_WRITE) != B_OK)) {
 		PRINT(("failed to create temp dir at %s: %s\n", relationsDirName.String(), strerror(result) ));

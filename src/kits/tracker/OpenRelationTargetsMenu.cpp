@@ -1,3 +1,4 @@
+#include "ContainerWindow.h"
 #define DEBUG 1
 
 #include "Attributes.h"
@@ -149,7 +150,7 @@ OpenRelationTargetsMenu::DoneBuildingItemList()
 			break;
 		}
 	}
-	if (result != B_OK) {
+	if (result != B_OK && result != B_NAME_NOT_FOUND) {	// ignore empty replies / missing relation items
 		PRINT(("error buiding relations menu: %s\n", strerror(result) ));
 		return;
 	}
@@ -167,10 +168,6 @@ OpenRelationTargetsMenu::DoneBuildingItemList()
 status_t
 OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 {
-	entry_ref ref;
-	BEntry entry;
-	BPath path;
-	int32 index = 0;
 	status_t result;
 
 	PRINT(("adding relation menu target items...\n"));
@@ -182,26 +179,38 @@ OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 		return result;
 	}
 
-	while ((result = relations.FindRef("refs", index, &ref)) == B_OK) {
-		entry.SetTo(&ref);
-		entry.GetPath(&path);
-
-		// this will create a menu item similar to folder items and launch with the preferred app,
-		// which in this case is the associated relation handler.
-		// todo: add message with arguments from relation properties!
-		ModelMenuItem* item = new ModelMenuItem(new Model(&ref, true, true), path.Leaf(), NULL);
-		AddItem(item);
-
-		index++;
-		(*targetCount)++;
-	}
-	// check for normal end state of refs processing
-	if (result != B_NAME_NOT_FOUND && result != B_BAD_INDEX) {
-		PRINT(("failed to resolve refs: %s\n", strerror(result)));
+	BMessage idToRef;
+	result = relations.FindMessage("id_to_ref", &idToRef);
+	if (result != B_OK) {
+		PRINT(("failed to retrieve ID/ref mapping for relations: %s\n", strerror(result)));
 		return result;
 	}
 
-	return B_OK;
+	char*       idKey;
+    type_code   typeCode;
+    int32       refCount;
+	entry_ref 	ref;
+
+	for (int i = 0; i < idToRef.CountNames(B_REF_TYPE); i++) {
+		result = idToRef.GetInfo(B_REF_TYPE, i, &idKey, &typeCode, &refCount);
+        if (result == B_OK && typeCode == B_REF_TYPE) {
+			result = idToRef.FindRef(idKey, &ref);
+			if (result == B_OK) {
+				// this will create a menu item similar to folder items and launch with the preferred app,
+				// which in this case is the associated relation handler.
+				// todo: add message with arguments from relation properties!
+				ModelMenuItem* item = new ModelMenuItem(new Model(&ref, true, true), ref.name, NULL);
+				AddItem(item);
+
+				(*targetCount)++;
+			}
+		}
+		if (result != B_OK) {
+			PRINT(("error adding target ref for relation: %s\n", strerror(result) ));
+		}
+	}
+
+	return result;
 }
 
 status_t
@@ -226,7 +235,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 	// get root node
 	result = fRelationTargetsReply->FindMessage("item", &itemMsg);
 	if (result != B_OK) {
-		PRINT(("failed to build self relations menu, could not find root node, unexpected message reply.\n"));
+		PRINT(("could not find any items in reply, skipping.\n"));
 		return result;
 	}
 

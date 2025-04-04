@@ -146,7 +146,6 @@ OpenRelationsMenu::DoneBuildingItemList()
 	int32 relationCount = 0;
 	BString source;
 
-	// safe since we added it from the ref above
 	status_t result = fRelationsReply.FindString(SEN_RELATION_SOURCE, &source);
 	if (result != B_OK) {
 		PRINT(("error parsing SEN relation reply: %s\n", strerror(result) ));
@@ -290,6 +289,7 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const BString* source) {
 		if (fRelationsReply.FindString(SEN_ID_ATTR, &srcId) != B_OK) {
 			srcId.SetTo(SEN_RELATION_IS_SELF);	// todo: align with SEN core
 		}
+
 		BMimeType mime(defaultType.String());
 		if (!mime.IsInstalled()) {
 			PRINT(("skipping relation with unavailable MIME type %s...\n", defaultType.String()));
