@@ -199,8 +199,8 @@ uint32 OpenRelationsMenu::AddRelationItems(const BString* source) {
 		}
 		BMessage *openRelationTargetsMsg = new BMessage(SEN_OPEN_RELATION_TARGET_VIEW);
         openRelationTargetsMsg->AddString(SEN_RELATION_SOURCE, source->String());
-		openRelationTargetsMsg->AddString(SEN_RELATION_SOURCE_ATTR, (new BString(srcId))->String());
-		openRelationTargetsMsg->AddString(SEN_RELATION_TYPE, (new BString(relation))->String());
+		openRelationTargetsMsg->AddString(SEN_RELATION_SOURCE_ATTR, BString(srcId));
+		openRelationTargetsMsg->AddString(SEN_RELATION_TYPE, BString(relation));
 		openRelationTargetsMsg->AddString(SEN_RELATION_LABEL, label);
 
         BMenuItem* item = new IconMenuItem(

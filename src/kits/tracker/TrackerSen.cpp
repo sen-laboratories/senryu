@@ -211,14 +211,14 @@ TTracker::PrepareRelationTargetWindow(BMessage *message, RelationInfo* relationI
 			return B_OK;
 	}
 
+	PRINT(("got relations for type %s for source %s:\n", relationInfo->relationType.String(), relationInfo->source.String()) );
+	relations.PrintToStream();
+
 	// get MIME type for target relation
 	BMessage attrInfo;
 	if ((result = GetRelationTypeAttributeInfo(relationInfo->relationType, &attrInfo)) != B_OK) {
 		return result;
 	}
-
-	PRINT(("got relations for type %s for source %s:\n", relationInfo->relationType.String(), relationInfo->source.String()) );
-	relations.PrintToStream();
 
 	BMessage relationProperties;
 	result = relations.FindMessage("properties", &relationProperties);
@@ -227,8 +227,11 @@ TTracker::PrepareRelationTargetWindow(BMessage *message, RelationInfo* relationI
 		// still continue and just create blank relation files
 	}
 
+	PRINT(("got relation properties:\n"));
+	relationProperties.PrintToStream();
+
 	BStringList targetIds;
-    result = relationProperties.FindStrings(SEN_TO_ATTR, &targetIds);
+    result = relations.FindStrings(SEN_TO_ATTR, &targetIds);
 	if (result != B_OK) {
 		ERROR("could not get relation targetIds for source %s: %s\n", relationInfo->source.String(), strerror(result));
 		return result;
@@ -265,8 +268,9 @@ TTracker::PrepareRelationTargetWindow(BMessage *message, RelationInfo* relationI
             properties.PrintToStream();
 
             BString fileName(ref.name);
-            fileName.Append(" #") << propertiesIndex + 1; // human readable 1-based index
-
+			if (BEntry(fileName).Exists()) {
+				fileName.Append(" #") << propertiesIndex + 2; // human readable 1-based index, first relation is #1
+			}
             BFile relationTarget(&relationDir, fileName, B_READ_WRITE | B_CREATE_FILE);
             result = relationTarget.InitCheck();
             if (result != B_OK) {
@@ -333,35 +337,47 @@ TTracker::GetRelationTypeAttributeInfo(const char* relationType, BMessage* attrI
 		return B_ERROR;
 	}
 	if (!relationMimeType.IsInstalled()) {
-		PRINT(("MIME type for relation %s not installed, check config.\n", relationType));
+		PRINT(("MIME type for relation %s not installed, check ontology config.\n", relationType));
 		return B_ERROR;
 	}
 
 	// get defined attributes for MIME type of relation, same for all targets of this relation
 	result = relationMimeType.GetAttrInfo(attrInfo);
 	if (result != B_OK) {
-		PRINT(("error reading attribute info for relation with type %s: %s", relationType, strerror(result)));
+		PRINT(("error reading attribute info for relation with type %s: %s\n", relationType, strerror(result)));
 		return result;
 	}
 
+	PRINT(("got attrInfo:\n"));
+	attrInfo->PrintToStream();
+
 	// get additional attributes from relation supertype
-	BMimeType relationSuperType(SEN_RELATION_SUPERTYPE);
+	BMimeType relationSuperType;
+	relationMimeType.GetSupertype(&relationSuperType);
+
 	if (!relationSuperType.IsInstalled()) {
 		PRINT(("MIME supertype for relation %s is not installed, check SEN installation!\n", SEN_RELATION_SUPERTYPE));
 		return B_ERROR;
 	}
+
 	BMessage attrInfoSuperType;
 	result = relationSuperType.GetAttrInfo(&attrInfoSuperType);
 	if (result != B_OK) {
-		PRINT(("error reading attribute info for relation super type: %s", strerror(result) ));
+		PRINT(("error reading attribute info for relation super type: %s\n", strerror(result) ));
 		return result;
 	}
+
+	PRINT(("got attrInfo for supertype:\n"));
+	attrInfoSuperType.PrintToStream();
+
 	// merge with attributes from supertype (relation)
 	result = attrInfo->Append(attrInfoSuperType);
+/* fixme: works but check returns 'Bad argument type passed to function' ?!
 	if (result != B_OK) {
-		PRINT(("failed to construct attribute info for relation type and supertype: %s", strerror(result) ));
+		PRINT(("failed to construct attribute info for relation type and supertype: %s\n", strerror(result) ));
 		return result;
 	}
+ */
 	PRINT(("got attributeInfo for type %s and supertype %s:\n", relationType, relationSuperType.Type()) );
 	attrInfo->PrintToStream();
 
