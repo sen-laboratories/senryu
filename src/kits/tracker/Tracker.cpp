@@ -310,6 +310,8 @@ TTracker::~TTracker()
 
 	BPathMonitor::SetWatchingInterface(NULL);
 	delete fWatchingInterface;
+
+	delete fMimeTypeList;
 }
 
 
@@ -1316,6 +1318,22 @@ TTracker::GetDeskWindow() const
 	TRESPASS();
 
 	return NULL;
+}
+
+
+void
+TTracker::PostMessageToAllContainerWindows(BMessage& message) const
+{
+	ASSERT(fWindowList.IsLocked());
+
+	int32 count = fWindowList.CountItems();
+	for (int32 index = 0; index < count; index++) {
+		BContainerWindow* window = dynamic_cast<BContainerWindow*>(
+			fWindowList.ItemAt(index));
+
+		if (window != NULL)
+			window->PostMessage(&message);
+	}
 }
 
 

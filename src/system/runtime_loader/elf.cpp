@@ -18,12 +18,14 @@
 
 #include <OS.h>
 
+#include <commpage_defs.h>
 #include <syscalls.h>
 #include <util/kernel_cpp.h>
 
 #include <locks.h>
 
 #include "add_ons.h"
+#include "commpage.h"
 #include "elf_load_image.h"
 #include "elf_symbol_lookup.h"
 #include "elf_tls.h"
@@ -651,6 +653,8 @@ load_library(char const *path, uint32 flags, bool addOn, void* caller,
 				path, image->id);
 			*_handle = image;
 			return image->id;
+		} else if ((flags & RTLD_NOLOAD) != 0) {
+			return B_NAME_NOT_FOUND;
 		}
 
 		// First of all, find the caller image.
@@ -853,8 +857,18 @@ get_nearest_symbol_at_address(void* address, image_id* _imageID,
 	RecursiveLocker _(sLock);
 
 	image_t* image = find_loaded_image_by_address((addr_t)address);
-	if (image == NULL)
+	if (image == NULL) {
+		addr_t commpageBegin = (addr_t)__gCommPageAddress;
+		addr_t commpageEnd = (addr_t)commpageBegin + COMMPAGE_SIZE;
+
+		// The caller may be looking for a commpage symbol.
+		if ((addr_t)address >= commpageBegin && (addr_t)address < commpageEnd) {
+			return get_nearest_commpage_symbol_at_address_locked(address, _imageID, _imagePath,
+				_imageName, _symbolName, _type, _location, _exactMatch);
+		}
+
 		return B_BAD_VALUE;
+	}
 
 	if (_imageID != NULL)
 		*_imageID = image->id;

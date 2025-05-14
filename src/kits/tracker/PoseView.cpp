@@ -1216,8 +1216,8 @@ BPoseView::InitDirentIterator(const entry_ref* ref)
 		return NULL;
 	}
 
-	TTracker::WatchNode(sourceModel.NodeRef(), B_WATCH_DIRECTORY
-		| B_WATCH_NAME | B_WATCH_STAT | B_WATCH_ATTR, this);
+	TTracker::WatchNode(sourceModel.NodeRef(), B_WATCH_DIRECTORY | B_WATCH_CHILDREN
+		| B_WATCH_NAME | B_WATCH_STAT | B_WATCH_INTERIM_STAT | B_WATCH_ATTR, this);
 
 	return entryList;
 }
@@ -1233,7 +1233,8 @@ BPoseView::ReturnDirentIterator(EntryListBase* iterator)
 uint32
 BPoseView::WatchNewNodeMask()
 {
-	return B_WATCH_STAT | B_WATCH_INTERIM_STAT | B_WATCH_ATTR;
+	// For regular directories, B_WATCH_CHILDREN suffices.
+	return 0;
 }
 
 
@@ -1247,6 +1248,9 @@ BPoseView::WatchNewNode(const node_ref* item)
 status_t
 BPoseView::WatchNewNode(const node_ref* item, uint32 mask, BMessenger messenger)
 {
+	if (mask == 0)
+		return B_OK;
+
 	status_t result = TTracker::WatchNode(item, mask, messenger);
 
 #if DEBUG
@@ -2049,23 +2053,6 @@ bool
 BPoseView::PoseVisible(const Model* model, const PoseInfo* poseInfo)
 {
 	return !poseInfo->fInvisible;
-}
-
-
-bool
-BPoseView::ShouldShowPose(const Model* model, const PoseInfo* poseInfo)
-{
-	if (!PoseVisible(model, poseInfo))
-		return false;
-
-	// check filter before adding item
-	if (fRefFilter == NULL)
-		return true;
-
-	struct stat_beos stat;
-	convert_to_stat_beos(model->StatBuf(), &stat);
-
-	return fRefFilter->Filter(model->EntryRef(), model->Node(), &stat, model->MimeType());
 }
 
 
@@ -5671,14 +5658,6 @@ BPoseView::EntryMoved(const BMessage* message)
 			Model* poseModel = pose->TargetModel();
 			ASSERT(poseModel != NULL);
 			poseModel->UpdateEntryRef(&dirNode, name);
-			// for queries we check for move to trash and remove item if so
-			if (targetModel->IsQuery()) {
-				PoseInfo poseInfo;
-				ReadPoseInfo(poseModel, &poseInfo);
-				if (!ShouldShowPose(poseModel, &poseInfo))
-					return DeletePose(&itemNode, pose, index);
-				return true;
-			}
 
 			BPoint loc(0, index * fListElemHeight);
 			// if we get a rename then we need to assume that we might
@@ -5968,14 +5947,12 @@ BPoseView::ConvertZombieToPose(Model* zombie, int32 index)
 
 	PoseInfo poseInfo;
 	ReadPoseInfo(zombie, &poseInfo);
-
-	if (ShouldShowPose(zombie, &poseInfo)) {
+	if (PoseVisible(zombie, &poseInfo)) {
 		// TODO: handle symlinks here
 		return CreatePose(zombie, &poseInfo);
 	}
 
 	delete zombie;
-
 	return NULL;
 }
 
@@ -10381,11 +10358,13 @@ BPoseView::FilterPose(BPose* pose)
 		return false;
 
 	if (IsRefFiltering()) {
-		PoseInfo poseInfo;
-		ReadPoseInfo(pose->TargetModel(), &poseInfo);
-		if (pose->TargetModel()->OpenNode() != B_OK)
+		Model* model = pose->TargetModel();
+		if (model->OpenNode() != B_OK)
 			return false;
-		if (!ShouldShowPose(pose->TargetModel(), &poseInfo))
+
+		struct stat_beos stat;
+		convert_to_stat_beos(model->StatBuf(), &stat);
+		if (!fRefFilter->Filter(model->EntryRef(), model->Node(), &stat, model->MimeType()))
 			return false;
 	}
 

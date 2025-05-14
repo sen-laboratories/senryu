@@ -1,4 +1,4 @@
-1	ukrainian	x-vnd.Haiku-HaikuDepot	2555742361
+1	ukrainian	x-vnd.Haiku-HaikuDepot	738516210
 Usage conditions download problem	ToLatestUserUsageConditionsWindow		Проблеми при завантаженні Умов користування
 Available packages	MainWindow		Доступні пакети
 It was not possible to create the new user.	UserLoginWindow		Не вдалося створити нового користувача.
@@ -45,11 +45,13 @@ Click a package to view information	PackageInfoView		Клікніть по па�
 Cancel	UserLoginWindow		Скасувати
 Rating not possible	MainWindow		Оцінка неможлива
 Package update error	MainWindow		Помилка оновлення пакета
+Click here	FeaturedPackagesView	Appears in the sentence 'Click here to search all packages.'	Клікніть тут
 %FIRST_PROCESS_DESCRIPTION% +{0, plural, one{# process} other{# processes}}	ProcessCoordinator		%FIRST_PROCESS_DESCRIPTION% +{0, plural, one{# процес} few{# процеси} other{# процесів}}
-Reboot required	PackageManager		Потрібна перезагрузка
 Fetching user ratings for package	PopulatePkgUserRatingsFromServerProcess		Отримую оцінки користувачів для пакета
+Reboot required	PackageManager		Потрібна перезагрузка
 All packages	PackageListView		Усі пакети
 Send	RatePackageWindow		Надіслати
+Creating package list…	FeaturedPackagesView		Створення списку пакетів…
 Start package daemon	App		Запустити демон пакетів
 There are problems in the supplied data:	UserLoginWindow		У наданих даних існують проблеми:
 The user '%Nickname%' has not agreed to any usage conditions.	UserUsageConditions		Користувач «%Nickname%» не погодився з Умовами користування.
@@ -66,8 +68,8 @@ View the usage conditions	UserLoginWindow		Переглянути Умови к�
 An error has arisen downloading the usage conditions required to create a new user. Check the log for details and try again. \nInformation about how to view the logs is available in the HaikuDepot section of the Haiku User Guide.	UserLoginWindow		При завантаженні Умов користування, необхідних для створення нового користувача, виникла помилка. Ознайомтеся з даними журналу та повторіть спробу. \nІнформація про те, як переглядати журнали, доступна у розділі програми HaikuDepot посібника користувача Haiku.
 Usage conditions agreed	ToLatestUserUsageConditionsWindow		Умови користування узгоджені
 Size	PackageListView		Розмір
-Your rating was updated.	RatePackageWindow		Ваша оцінка оновлена.
 All categories	FilterView		Усі категорії
+Your rating was updated.	RatePackageWindow		Ваша оцінка оновлена.
 ignore problem for now	PackageProblem		тимчасово ігнорувати проблему
 n/a	PackageInfoView		немає
 Checking user details	UserDetailVerifierProcess		Перевірка даних користувача
@@ -136,8 +138,8 @@ A network transport error has arisen communicating with the server system: %s	Se
 Rating	PackageListView		Оцінка
 Synchronizing icons	ServerIconExportUpdateProcess		Синхронізація піктограм
 Show	MainWindow		Показати
-Settings…	MainWindow		Налаштування…
 This application writes and reads some working files on your computer in order to function. It appears that there are problems writing a test file at [%TestFilePath%]. Check that there are no issues with your local disk or permissions that might prevent this application from writing files into that directory location. You may choose to acknowledge this problem and continue, but some functionality may be disabled.	App		Ця програма записує та зчитує деякі робочі файли на Вашому комп’ютері, щоб функціонувати. Здається, що запис тестового файлу до [%TestFilePath%] викликає проблеми. Переконайтеся, що все гаразд з Вашим локальним диском або дозволами, які могли б перешкодити цій програмі записувати файли в згадану папку. Ви можете визнати цю проблему і продовжити, але деякі функції можуть бути відключені.
+Settings…	MainWindow		Налаштування…
 <Package contents not available for remote packages>	PackageContentsView		<Вміст пакету недоступний для віддалених пакетів>
 Ratings	PackageInfoView		Оцінки
 The following problems have been encountered. Please select a solution for each:	PackageProblem		Були виявлені наступні проблеми. Будь ласка, виберіть рішення для кожної:
@@ -162,6 +164,7 @@ Contents	PackageInfoView		Вміст пакета
 Share anonymous usage data with HaikuDepotServer	SettingsWindow		Надавати анонімні дані про використання до HaikuDepotServer
 Close	PackageManager		Закрити
 Changelog	PackageInfoView		Журнал змін
+ to search all packages.	FeaturedPackagesView	Appears in the sentence 'Click here to search all packages.'	 щоб знайти усі пакети.
 About	PackageInfoView		Інфо про пакет
 Password requirements download problem	UserLoginWindow		Проблема із завантаженням вимог до пароля
 Password:	UserLoginWindow		Пароль:

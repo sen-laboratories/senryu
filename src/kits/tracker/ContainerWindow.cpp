@@ -37,7 +37,6 @@ All rights reserved.
 #include "OpenRelationsMenu.h"
 
 #include <Alert.h>
-#include <AppFileInfo.h>
 #include <Application.h>
 #include <Catalog.h>
 #include <ControlLook.h>
@@ -122,8 +121,8 @@ struct StaggerOneParams {
 BRect BContainerWindow::sNewWindRect;
 static int32 sWindowStaggerBy;
 
-LockingList<AddOnShortcut, true>* BContainerWindow::fAddOnsList
-	= new LockingList<struct AddOnShortcut, true>(10);
+LockingList<AddOnInfo, true>* BContainerWindow::fAddOnsList
+	= new LockingList<struct AddOnInfo, true>(10);
 
 
 namespace BPrivate {
@@ -165,26 +164,33 @@ ActivateWindowFilter(BMessage*, BHandler** target, BMessageFilter*)
 
 
 static int32
-AddOnMenuGenerate(const entry_ref* addOnRef, BMenu* menu, BContainerWindow* window)
+AddOnMenuGenerate(const struct AddOnInfo* info, BMenu* menu, BContainerWindow* window)
 {
+	if (info->has_populate_menu != B_NO_INIT && info->has_populate_menu != B_OK)
+		return info->has_populate_menu;
+
+	const entry_ref* addOnRef = info->model->EntryRef();
 	BEntry entry(addOnRef);
-	BPath path;
 	status_t result = entry.InitCheck();
 	if (result != B_OK)
 		return result;
 
+	BPath path;
 	result = entry.GetPath(&path);
 	if (result != B_OK)
 		return result;
 
 	image_id addOnImage = load_add_on(path.Path());
-	if (addOnImage < 0)
+	if (addOnImage < 0) {
+		info->has_populate_menu = addOnImage;
 		return addOnImage;
+	}
 
 	void (*populateMenu)(BMessage*, BMenu*, BHandler*);
 	result = get_image_symbol(addOnImage, "populate_menu", 2, (void**)&populateMenu);
 	if (result != B_OK) {
-//FIXME		PRINT(("Couldn't get image symbol for addon %s: %s\n", addOnRef->name, strerror(result)));
+		PRINT(("Couldn't find populate_menu in %s\n", info->model->Name()));
+		info->has_populate_menu = result;
 		unload_add_on(addOnImage);
 		return result;
 	}
@@ -196,6 +202,7 @@ AddOnMenuGenerate(const entry_ref* addOnRef, BMenu* menu, BContainerWindow* wind
 	(*populateMenu)(message, menu, window->PoseView());
 
 	unload_add_on(addOnImage);
+	info->has_populate_menu = B_OK;
 	return B_OK;
 }
 
@@ -255,30 +262,29 @@ end:
 
 
 static void
-AddOneAddOn(const Model* model, const char* name, uint32 shortcut,
-	uint32 modifiers, bool primary, void* context,
-	BContainerWindow* window, BMenu* menu)
+AddOneAddOn(void* context, const struct AddOnInfo* info,
+	bool primary, BContainerWindow* window, BMenu* menu)
 {
 	AddOneAddOnParams* params = (AddOneAddOnParams*)context;
+	BObjectList<BMenuItem>* list = primary ? params->primaryList : params->secondaryList;
+	if (list != NULL) {
+		ModelMenuItem* item;
+		try {
+			item = new ModelMenuItem(info->model, info->model->Name(), NULL,
+				info->key, info->modifiers);
+		} catch (...) {
+			return;
+		}
 
-	ModelMenuItem* item;
-	try {
-		item = new ModelMenuItem(model, name, NULL, (char)shortcut, modifiers);
-	} catch (...) {
-		return;
+		BMessage* message = new BMessage(kLoadAddOn);
+		message->AddRef("refs", info->model->EntryRef());
+		item->SetMessage(message);
+
+		list->AddItem(item);
 	}
 
-	BMessage* message = new BMessage(kLoadAddOn);
-	message->AddRef("refs", model->EntryRef());
-	item->SetMessage(message);
-
-	const entry_ref* addOnRef = model->EntryRef();
-	AddOnMenuGenerate(addOnRef, menu, window);
-
-	if (primary)
-		params->primaryList->AddItem(item);
-	else
-		params->secondaryList->AddItem(item);
+	if (menu != NULL)
+		AddOnMenuGenerate(info, menu, window);
 }
 
 
@@ -372,8 +378,7 @@ AddMimeTypeString(BStringList& list, Model* model)
 }
 
 
-// set the level of transparency by value
-// #pragma mark - BContainerWindow
+//	#pragma mark - BContainerWindow
 
 
 BContainerWindow::BContainerWindow(LockingList<BWindow>* list, uint32 openFlags, window_look look,
@@ -400,10 +405,6 @@ BContainerWindow::BContainerWindow(LockingList<BWindow>* list, uint32 openFlags,
 	fCopyToItem(NULL),
 	fCreateLinkItem(NULL),
 	fOpenWithItem(NULL),
-	fOpenRelationsItem(NULL),
-	fOpenSelfRelationsItem(NULL),
-	fNewRelationItem(NULL),
-	fEnrichItem(NULL),
 	fEditQueryItem(NULL),
 	fMountItem(NULL),
 	fNavigationItem(NULL),
@@ -420,7 +421,6 @@ BContainerWindow::BContainerWindow(LockingList<BWindow>* list, uint32 openFlags,
 	fTaskLoop(NULL),
 	fStateNeedsSaving(false),
 	fBackgroundImage(NULL),
-	fLastMenusBeginningTime(0),
 	fSavedZoomRect(0, 0, -1, -1),
 	fSaveStateIsEnabled(true),
 	fIsWatchingPath(false)
@@ -1015,11 +1015,9 @@ BContainerWindow::SwitchDirectory(const entry_ref* ref)
 		RepopulateMenus();
 	}
 
-	// skip the rest on file panel
 	if (PoseView()->IsFilePanel())
 		return;
 
-	// Tracker add-on menus may have changed
 	RebuildAddOnMenus(fMenuBar);
 
 	TrackerSettings settings;
@@ -1048,7 +1046,6 @@ BContainerWindow::SwitchDirectory(const entry_ref* ref)
 		}
 	}
 
-	// Update window title
 	UpdateTitle();
 }
 
@@ -1485,6 +1482,10 @@ BContainerWindow::MessageReceived(BMessage* message)
 
 		case kLoadAddOn:
 			LoadAddOn(message);
+			break;
+
+		case kRebuildAddOnMenus:
+			RebuildAddOnMenus(fMenuBar);
 			break;
 
 		case kCopySelectionTo:
@@ -1984,14 +1985,6 @@ BContainerWindow::MenusBeginning()
 
 	if (fWindowMenu != NULL)
 		UpdateMenu(fWindowMenu, kWindowMenuContext);
-
-	if (system_time() - fLastMenusBeginningTime > 50000) {
-		// Tracker add-on menus may have changed
-		RebuildAddOnMenus(fMenuBar);
-	}
-
-	// prevent Add-ons from being rebuilt too fast
-	fLastMenusBeginningTime = system_time();
 }
 
 
@@ -2256,8 +2249,9 @@ BContainerWindow::SetupNewTemplatesMenu(BMenu* parent, MenuContext context)
 	TemplatesMenu* newTemplatesMenu = (TemplatesMenu*)fNewTemplatesItem->Submenu();
 	ASSERT(newTemplatesMenu != NULL);
 
-	// update templates menu state
-	newTemplatesMenu->UpdateMenuState();
+	// if no known templates, scan for some now
+	if (newTemplatesMenu->CountTemplates() == 0)
+		newTemplatesMenu->UpdateMenuState();
 
 	// no templates found, update "New folder" instead, bail
 	if (newTemplatesMenu->CountTemplates() == 0)
@@ -2828,56 +2822,36 @@ BContainerWindow::AddTrashContextMenu(BMenu* menu)
 
 
 void
-BContainerWindow::EachAddOn(void (*eachAddOn)(const Model*, const char*,
-		uint32 shortcut, uint32 modifiers, bool primary, void* context,
-		BContainerWindow* window, BMenu* menu),
+BContainerWindow::EachAddOn(void (*eachAddOn)(void* context,
+		const struct AddOnInfo*, bool primary, BContainerWindow* window, BMenu* menu),
 	void* passThru, BStringList& mimeTypes, BMenu* parent)
 {
-	AutoLock<LockingList<AddOnShortcut, true> > lock(fAddOnsList);
+	AutoLock<LockingList<AddOnInfo, true> > lock(fAddOnsList);
 	if (!lock.IsLocked())
 		return;
 
 	for (int i = fAddOnsList->CountItems() - 1; i >= 0; i--) {
-		struct AddOnShortcut* item = fAddOnsList->ItemAt(i);
+		struct AddOnInfo* item = fAddOnsList->ItemAt(i);
 		bool primary = false;
 
-		if (mimeTypes.CountStrings() > 0) {
-			BFile file(item->model->EntryRef(), B_READ_ONLY);
-			if (file.InitCheck() == B_OK) {
-				BAppFileInfo info(&file);
-				if (info.InitCheck() == B_OK) {
-					bool secondary = true;
-
-					// does this add-on has types set at all?
-					BMessage message;
-					if (info.GetSupportedTypes(&message) == B_OK) {
-						type_code typeCode;
-						int32 count;
-						if (message.GetInfo("types", &typeCode, &count) == B_OK)
-							secondary = false;
-					}
-
-					// check all supported types if it has some set
-					if (!secondary) {
-						for (int32 i = mimeTypes.CountStrings(); !primary && i-- > 0;) {
-							BString type = mimeTypes.StringAt(i);
-							if (info.IsSupportedType(type.String())) {
-								BMimeType mimeType(type.String());
-								if (info.Supports(&mimeType))
-									primary = true;
-								else
-									secondary = true;
-							}
-						}
-					}
-
-					if (!secondary && !primary)
-						continue;
+		if (mimeTypes.CountStrings() > 0 && !item->supportedTypes.IsEmpty()) {
+			// check all supported types if it has some set
+			bool secondary = false;
+			for (int32 i = mimeTypes.CountStrings(); !primary && i-- > 0;) {
+				BMimeType mimeType(mimeTypes.StringAt(i));
+				for (int32 j = 0; j < item->supportedTypes.CountStrings(); j++) {
+					BString supportedType = item->supportedTypes.StringAt(j);
+					if (BMimeType(supportedType).Contains(&mimeType))
+						primary = true;
+					else if (supportedType == B_FILE_MIME_TYPE)
+						secondary = true;
 				}
 			}
+
+			if (!secondary && !primary)
+				continue;
 		}
-		((eachAddOn)(item->model, item->model->Name(), item->key,
-			item->modifiers, primary, passThru, this, parent));
+		((eachAddOn)(passThru, item, primary, this, parent));
 	}
 }
 
@@ -2911,23 +2885,13 @@ BContainerWindow::BuildMimeTypeList(BStringList& mimeTypes)
 void
 BContainerWindow::BuildAddOnMenus(BMenuBar* parent)
 {
-	BObjectList<BMenuItem> primaryList;
-	BObjectList<BMenuItem> secondaryList;
-	BStringList mimeTypes(10);
-
 	AddOneAddOnParams params;
-	params.primaryList = &primaryList;
-	params.secondaryList = &secondaryList;
+	params.primaryList = NULL;
+	params.secondaryList = NULL;
+
+	BStringList mimeTypes;
 
 	EachAddOn(AddOneAddOn, &params, mimeTypes, parent);
-
-	primaryList.SortItems(CompareLabels);
-	secondaryList.SortItems(CompareLabels);
-
-	int32 parentCount = parent->CountItems();
-	int32 count = primaryList.CountItems();
-	for (int32 index = 0; index < count; index++)
-		parent->AddItem(primaryList.ItemAt(parentCount + index));
 }
 
 

@@ -3694,6 +3694,16 @@ BWindow::_HandleKeyDown(BMessage* event)
 			return true;
 		}
 
+		// If option is held, then launch the area selector via CLI
+		if ((modifiers & B_OPTION_KEY) != 0) {
+			BMessage message(B_ARGV_RECEIVED);
+			message.AddString("argv", "screenshot");
+			message.AddString("argv", "--area");
+			message.AddInt32("argc", 2);
+			be_roster->Launch("application/x-vnd.haiku-screenshot-cli", &message);
+			return true;
+		}
+
 		// Prepare a message based on the modifier keys pressed and launch the
 		// screenshot GUI
 		BMessage message(B_ARGV_RECEIVED);
@@ -3712,7 +3722,7 @@ BWindow::_HandleKeyDown(BMessage* event)
 		return true;
 	}
 
-	// Handle shortcuts
+	// Special handling for Command+q, Command+Left, Command+Right
 	if ((modifiers & B_COMMAND_KEY) != 0) {
 		// Command+q has been pressed, so, we will quit
 		// the shortcut mechanism doesn't allow handlers outside the window
@@ -3734,9 +3744,7 @@ BWindow::_HandleKeyDown(BMessage* event)
 		}
 	}
 
-	bool foundShortcut = false;
-
-	// Handle B_NO_COMMAND_KEY and B_COMMAND_KEY shortcuts
+	// Handle shortcuts
 	{
 		// Pretend that the user opened a menu, to give the subclass a
 		// chance to update its menus. This may install new shortcuts,
@@ -3744,13 +3752,9 @@ BWindow::_HandleKeyDown(BMessage* event)
 		// a shortcut for the given key.
 		MenusBeginning();
 
-		// look for B_NO_COMMAND_KEY shortcut then B_COMMAND_KEY
-		Shortcut* shortcut = _FindShortcut(key, modifiers | B_NO_COMMAND_KEY);
-		foundShortcut = shortcut != NULL;
-		if (!foundShortcut && (modifiers & B_COMMAND_KEY) != 0)
-			shortcut = _FindShortcut(key, modifiers);
-		foundShortcut = shortcut != NULL;
-		if (foundShortcut) {
+		Shortcut* shortcut = _FindShortcut(key, modifiers
+			| (((modifiers & B_COMMAND_KEY) == 0) ? B_NO_COMMAND_KEY : 0));
+		if (shortcut != NULL) {
 			// TODO: would be nice to move this functionality to
 			//	a Shortcut::Invoke() method - but since BMenu::InvokeItem()
 			//	(and BMenuItem::Invoke()) are private, I didn't want
@@ -3778,9 +3782,12 @@ BWindow::_HandleKeyDown(BMessage* event)
 		}
 
 		MenusEnded();
+
+		if (shortcut != NULL)
+			return true;
 	}
 
-	if ((modifiers & B_COMMAND_KEY) != 0 || foundShortcut) {
+	if ((modifiers & B_COMMAND_KEY) != 0) {
 		// we always eat the event if the command key was pressed
 		return true;
 	}
