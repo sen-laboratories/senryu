@@ -188,7 +188,7 @@ AddOnMenuGenerate(const struct AddOnInfo* info, BMenu* menu, BContainerWindow* w
 
 	void (*populateMenu)(BMessage*, BMenu*, BHandler*);
 	result = get_image_symbol(addOnImage, "populate_menu", 2, (void**)&populateMenu);
-	if (result != B_OK) {
+	if (result < 0) {
 		PRINT(("Couldn't find populate_menu in %s\n", info->model->Name()));
 		info->has_populate_menu = result;
 		unload_add_on(addOnImage);
