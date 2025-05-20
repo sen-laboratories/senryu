@@ -1449,12 +1449,8 @@ DeleteSubmenu(BMenuItem* submenuItem)
 	if (submenu == NULL)
 		return;
 
-	int32 count = submenu->CountItems();
-	if (count <= 0)
-		return;
-
 	// delete all submenu items
-	submenu->RemoveItems(0, count, true);
+	submenu->RemoveItems(0, submenu->CountItems(), true);
 }
 
 

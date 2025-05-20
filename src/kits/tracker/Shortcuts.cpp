@@ -1341,7 +1341,7 @@ TShortcuts::UpdateNewRelationItem(BMenuItem* item)
 		return;
 
 	if (fInWindow) {
-		item->SetEnabled(TargetIsReadOnly() == false);
+		item->SetEnabled(! TargetIsReadOnly());
 		item->SetTarget(PoseView());
 	}
 }
@@ -1354,7 +1354,7 @@ TShortcuts::UpdateNewTemplatesItem(BMenuItem* item)
 		return;
 
 	if (fInWindow) {
-		item->SetEnabled(TargetIsReadOnly() == false);
+		item->SetEnabled(! TargetIsReadOnly());
 		item->SetTarget(PoseView());
 	}
 }

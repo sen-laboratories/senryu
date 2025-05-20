@@ -405,6 +405,10 @@ BContainerWindow::BContainerWindow(LockingList<BWindow>* list, uint32 openFlags,
 	fCopyToItem(NULL),
 	fCreateLinkItem(NULL),
 	fOpenWithItem(NULL),
+	fOpenRelationsItem(NULL),
+	fOpenSelfRelationsItem(NULL),
+	fNewRelationItem(NULL),
+	fEnrichItem(NULL),
 	fEditQueryItem(NULL),
 	fMountItem(NULL),
 	fNavigationItem(NULL),
@@ -566,18 +570,14 @@ BContainerWindow::Quit()
 	if (fEditQueryItem != NULL && fEditQueryItem->Menu() == NULL)
 		delete fEditQueryItem;
 
-	if (fNewRelationItem != NULL && fNewRelationItem->Menu() == NULL) {
-		delete fNewRelationItem;
-	}
-	if (fOpenRelationsItem != NULL && fOpenRelationsItem->Menu() == NULL) {
+	/*if (fNewRelationItem != NULL && fNewRelationItem->Menu() == NULL)
+		delete fNewRelationItem; */
+	if (fOpenRelationsItem != NULL && fOpenRelationsItem->Menu() == NULL)
 		delete fOpenRelationsItem;
-	}
-	if (fOpenSelfRelationsItem != NULL && fOpenSelfRelationsItem->Menu() == NULL) {
+	if (fOpenSelfRelationsItem != NULL && fOpenSelfRelationsItem->Menu() == NULL)
 		delete fOpenSelfRelationsItem;
-	}
-	if (fEnrichItem != NULL && fEnrichItem->Menu() == NULL) {
+	if (fEnrichItem != NULL && fEnrichItem->Menu() == NULL)
 		delete fEnrichItem;
-	}
 
 	if (fNewTemplatesItem != NULL && fNewTemplatesItem->Menu() == NULL)
 		delete fNewTemplatesItem;
@@ -691,18 +691,14 @@ BContainerWindow::DetachSubmenus()
 	if (fEditQueryItem != NULL && fEditQueryItem->Menu() != NULL)
 		fEditQueryItem->Menu()->RemoveItem(fEditQueryItem);
 
-	if (fEnrichItem != NULL && fEnrichItem->Menu() != NULL) {
+	if (fEnrichItem != NULL && fEnrichItem->Menu() != NULL)
 		fEnrichItem->Menu()->RemoveItem(fEnrichItem);
-	}
-	if (fOpenSelfRelationsItem != NULL && fOpenSelfRelationsItem->Menu() != NULL) {
+	if (fOpenSelfRelationsItem != NULL && fOpenSelfRelationsItem->Menu() != NULL)
 		fOpenSelfRelationsItem->Menu()->RemoveItem(fOpenSelfRelationsItem);
-	}
-	if (fOpenRelationsItem != NULL && fOpenRelationsItem->Menu() != NULL) {
+	if (fOpenRelationsItem != NULL && fOpenRelationsItem->Menu() != NULL)
 		fOpenRelationsItem->Menu()->RemoveItem(fOpenRelationsItem);
-	}
-	if (fNewRelationItem != NULL && fNewRelationItem->Menu() != NULL) {
-		fNewRelationItem->Menu()->RemoveItem(fNewRelationItem);
-	}
+	/*if (fNewRelationItem != NULL && fNewRelationItem->Menu() != NULL)
+		fNewRelationItem->Menu()->RemoveItem(fNewRelationItem);*/
 
 	if (fNewTemplatesItem != NULL && fNewTemplatesItem->Menu() != NULL)
 		fNewTemplatesItem->Menu()->RemoveItem(fNewTemplatesItem);
@@ -1996,7 +1992,7 @@ BContainerWindow::MenusEnded()
 	DeleteSubmenu(fCopyToItem);
 	DeleteSubmenu(fMoveToItem);
 	DeleteSubmenu(fOpenWithItem);
-	DeleteSubmenu(fNewRelationItem);
+	//DeleteSubmenu(fNewRelationItem);
 	DeleteSubmenu(fOpenRelationsItem);
 	DeleteSubmenu(fOpenSelfRelationsItem);
 	DeleteSubmenu(fNavigationItem);
@@ -2149,7 +2145,8 @@ BContainerWindow::SetupOpenWithMenu(BMenu* parent, const entry_ref* ref)
 	message.AddMessenger("TrackerViewToken", BMessenger(PoseView()));
 
 	// always build a fresh "Open with..." menu
-	delete fOpenWithItem;
+	if (fOpenWithItem)
+		delete fOpenWithItem;
 	fOpenWithItem = Shortcuts()->OpenWithItem(
 		new OpenWithMenu(Shortcuts()->OpenWithLabel(), &message, this, be_app));
 
@@ -2161,6 +2158,8 @@ BContainerWindow::SetupOpenWithMenu(BMenu* parent, const entry_ref* ref)
 void
 BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 {
+	ASSERT(parent != NULL);
+
 	// remove existing relation items from old menu
 	if (fOpenRelationsItem != NULL && fOpenRelationsItem->Menu() != NULL) {
 		fOpenRelationsItem->Menu()->RemoveItem(fOpenRelationsItem);

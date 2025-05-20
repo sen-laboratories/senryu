@@ -118,6 +118,18 @@ TLiveMixin::UpdateWindowMenu(BMenu* menu)
 					fWindow->Shortcuts()->UpdateOpenParentItem(item);
 					break;
 
+				case kEnrichEntry:
+					fWindow->Shortcuts()->UpdateEnrichItem(item);
+					break;
+
+				case kOpenRelations:
+					fWindow->Shortcuts()->UpdateOpenRelationsItem(item);
+					break;
+
+				case kOpenSelfRelations:
+					fWindow->Shortcuts()->UpdateOpenSelfRelationsItem(item);
+					break;
+
 				// Close/Close all
 				case B_QUIT_REQUESTED:
 				case kCloseAllWindows:

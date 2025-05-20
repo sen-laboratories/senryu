@@ -286,7 +286,7 @@ protected:
 	void LoadAddOn(BMessage*);
 	void EachAddOn(void (*)(void* context, const struct AddOnInfo*,
 			bool primary, BContainerWindow*, BMenu*),
-		void*, BStringList&, BMenu*);
+			void*, BStringList&, BMenu*);
 
 protected:
 	LockingList<BWindow>* fWindowList;
