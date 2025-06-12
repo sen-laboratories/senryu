@@ -208,6 +208,20 @@ Model::AddToHistory(const char* text)
 
 
 void
+Model::ClearHistory()
+{
+	BList items;
+	if (!_LoadHistory(items))
+		return;
+
+	items.RemoveItems(0, items.CountItems());
+
+	_SaveHistory(items);
+	_FreeHistory(items);
+}
+
+
+void
 Model::FillHistoryMenu(BMenu* menu) const
 {
 	BList items;
@@ -224,6 +238,23 @@ Model::FillHistoryMenu(BMenu* menu) const
 	_FreeHistory(items);
 }
 
+
+BString
+Model::GetHistoryItem(int32 index)
+{
+	BList items;
+	if (!_LoadHistory(items))
+		return NULL;
+
+	int32 itemCount = items.CountItems() - 1;
+	if (index > itemCount)
+		return NULL;
+
+	// latest entry is at the end of the BList
+	BString* itemtext = static_cast<BString*>(items.ItemAt(itemCount - index));
+
+	return itemtext->String();
+}
 
 // #pragma mark - private
 

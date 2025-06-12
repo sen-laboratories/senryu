@@ -777,7 +777,7 @@ TShortcuts::SelectLabel()
 BMenuItem*
 TShortcuts::SelectAllItem()
 {
-	return new BMenuItem(SelectAllLabel(), new BMessage(B_SELECT_ALL), 'A', B_SHIFT_KEY);
+	return new BMenuItem(SelectAllLabel(), new BMessage(B_SELECT_ALL), 'A');
 }
 
 

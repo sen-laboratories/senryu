@@ -56,6 +56,7 @@ typedef struct io_context {
 	struct file_descriptor **fds;
 	struct select_info **select_infos;
 	uint8		*fds_close_on_exec;
+	uint8		*fds_close_on_fork;
 	struct list node_monitors;
 	uint32		num_monitors;
 	uint32		max_monitors;
@@ -254,6 +255,7 @@ int			_user_dup2(int ofd, int nfd, int flags);
 status_t	_user_lock_node(int fd);
 status_t	_user_unlock_node(int fd);
 status_t	_user_preallocate(int fd, off_t offset, off_t length);
+status_t	_user_close_range(u_int minFd, u_int maxFd, int flags);
 
 /* socket user prototypes (implementation in socket.cpp) */
 int			_user_socket(int family, int type, int protocol);

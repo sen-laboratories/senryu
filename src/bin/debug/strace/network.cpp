@@ -38,6 +38,8 @@ static const FlagsTypeHandler::FlagInfo kRecvFlagInfos[] = {
 	FLAG_INFO_ENTRY(MSG_MCAST),
 	FLAG_INFO_ENTRY(MSG_EOF),
 	FLAG_INFO_ENTRY(MSG_NOSIGNAL),
+	FLAG_INFO_ENTRY(MSG_CMSG_CLOEXEC),
+	FLAG_INFO_ENTRY(MSG_CMSG_CLOFORK),
 	{ 0, NULL }
 };
 
@@ -82,6 +84,7 @@ static const enum_info kShutdownHow[] = {
 static const FlagsTypeHandler::FlagInfo kSocketFlagInfos[] = {
 	FLAG_INFO_ENTRY(SOCK_NONBLOCK),
 	FLAG_INFO_ENTRY(SOCK_CLOEXEC),
+	FLAG_INFO_ENTRY(SOCK_CLOFORK),
 
 	{ 0, NULL }
 };

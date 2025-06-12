@@ -2303,6 +2303,10 @@ vnode_path_to_vnode(struct vnode* start, char* path, bool traverseLeafLink,
 			lastParentID = vnode->id;
 		}
 
+		// if next path component is empty, check next vnode is actually a directory
+		if (directoryFound && *nextPath == '\0' && !S_ISDIR(nextVnode->Type()))
+			return B_NOT_A_DIRECTORY;
+
 		// decrease the ref count on the old dir we just looked up into
 		vnode.Unset();
 
@@ -2883,6 +2887,7 @@ get_new_fd(struct fd_ops* ops, struct fs_mount* mount, struct vnode* vnode,
 
 	rw_lock_write_lock(&context->lock);
 	fd_set_close_on_exec(context, fd, (openMode & O_CLOEXEC) != 0);
+	fd_set_close_on_fork(context, fd, (openMode & O_CLOFORK) != 0);
 	rw_lock_write_unlock(&context->lock);
 
 	return fd;
@@ -3659,6 +3664,7 @@ free_io_context(io_context* context)
 	remove_node_monitors(context);
 
 	free(context->fds_close_on_exec);
+	free(context->fds_close_on_fork);
 	free(context->select_infos);
 	free(context->fds);
 	free(context);
@@ -4974,7 +4980,8 @@ vfs_new_io_context(const io_context* parentContext, bool purgeCloseOnExec)
 			}
 
 			const bool closeOnExec = fd_close_on_exec(parentContext, i);
-			if (closeOnExec && purgeCloseOnExec)
+			const bool closeOnFork = fd_close_on_fork(parentContext, i);
+			if ((closeOnExec && purgeCloseOnExec) || (closeOnFork && !purgeCloseOnExec))
 				continue;
 
 			TFD(InheritFD(context, i, descriptor, parentContext));
@@ -4986,6 +4993,8 @@ vfs_new_io_context(const io_context* parentContext, bool purgeCloseOnExec)
 
 			if (closeOnExec)
 				fd_set_close_on_exec(context, i, true);
+			if (closeOnFork)
+				fd_set_close_on_fork(context, i, true);
 		}
 
 		parentLocker.Unlock();
@@ -5048,6 +5057,7 @@ vfs_resize_fd_table(struct io_context* context, uint32 newSize)
 	file_descriptor** oldFDs = context->fds;
 	select_info** oldSelectInfos = context->select_infos;
 	uint8* oldCloseOnExecTable = context->fds_close_on_exec;
+	uint8* oldCloseOnForkTable = context->fds_close_on_fork;
 
 	// allocate new tables (separately to reduce the chances of needing a raw allocation)
 	file_descriptor** newFDs = (file_descriptor**)malloc(
@@ -5055,16 +5065,20 @@ vfs_resize_fd_table(struct io_context* context, uint32 newSize)
 	select_info** newSelectInfos = (select_info**)malloc(
 		+ sizeof(select_info**) * newSize);
 	uint8* newCloseOnExecTable = (uint8*)malloc(newCloseOnExitBitmapSize);
-	if (newFDs == NULL || newSelectInfos == NULL || newCloseOnExecTable == NULL) {
+	uint8* newCloseOnForkTable = (uint8*)malloc(newCloseOnExitBitmapSize);
+	if (newFDs == NULL || newSelectInfos == NULL || newCloseOnExecTable == NULL
+		|| newCloseOnForkTable == NULL) {
 		free(newFDs);
 		free(newSelectInfos);
 		free(newCloseOnExecTable);
+		free(newCloseOnForkTable);
 		return B_NO_MEMORY;
 	}
 
 	context->fds = newFDs;
 	context->select_infos = newSelectInfos;
 	context->fds_close_on_exec = newCloseOnExecTable;
+	context->fds_close_on_fork = newCloseOnForkTable;
 	context->table_size = newSize;
 
 	if (oldSize != 0) {
@@ -5075,6 +5089,8 @@ vfs_resize_fd_table(struct io_context* context, uint32 newSize)
 		memcpy(context->select_infos, oldSelectInfos, sizeof(void*) * toCopy);
 		memcpy(context->fds_close_on_exec, oldCloseOnExecTable,
 			min_c(oldCloseOnExitBitmapSize, newCloseOnExitBitmapSize));
+		memcpy(context->fds_close_on_fork, oldCloseOnForkTable,
+			min_c(oldCloseOnExitBitmapSize, newCloseOnExitBitmapSize));
 	}
 
 	// clear additional entries, if the tables grow
@@ -5084,11 +5100,14 @@ vfs_resize_fd_table(struct io_context* context, uint32 newSize)
 			sizeof(void*) * (newSize - oldSize));
 		memset(context->fds_close_on_exec + oldCloseOnExitBitmapSize, 0,
 			newCloseOnExitBitmapSize - oldCloseOnExitBitmapSize);
+		memset(context->fds_close_on_fork + oldCloseOnExitBitmapSize, 0,
+			newCloseOnExitBitmapSize - oldCloseOnExitBitmapSize);
 	}
 
 	free(oldFDs);
 	free(oldSelectInfos);
 	free(oldCloseOnExecTable);
+	free(oldCloseOnForkTable);
 
 	return B_OK;
 }
@@ -6238,9 +6257,10 @@ common_fcntl(int fd, int op, size_t argument, bool kernel)
 		{
 			// Set file descriptor flags
 
-			// O_CLOEXEC is the only flag available at this time
+			// O_CLOEXEC and O_CLOFORK are the only flags available at this time
 			rw_lock_write_lock(&context->lock);
 			fd_set_close_on_exec(context, fd, (argument & FD_CLOEXEC) != 0);
+			fd_set_close_on_fork(context, fd, (argument & FD_CLOFORK) != 0);
 			rw_lock_write_unlock(&context->lock);
 
 			status = B_OK;
@@ -6252,6 +6272,7 @@ common_fcntl(int fd, int op, size_t argument, bool kernel)
 			// Get file descriptor flags
 			rw_lock_read_lock(&context->lock);
 			status = fd_close_on_exec(context, fd) ? FD_CLOEXEC : 0;
+			status |= fd_close_on_fork(context, fd) ? FD_CLOFORK : 0;
 			rw_lock_read_unlock(&context->lock);
 			break;
 		}
@@ -6288,11 +6309,15 @@ common_fcntl(int fd, int op, size_t argument, bool kernel)
 
 		case F_DUPFD:
 		case F_DUPFD_CLOEXEC:
+		case F_DUPFD_CLOFORK:
 		{
 			status = new_fd_etc(context, descriptor.Get(), (int)argument);
 			if (status >= 0) {
 				rw_lock_write_lock(&context->lock);
-				fd_set_close_on_exec(context, status, op == F_DUPFD_CLOEXEC);
+				if (op == F_DUPFD_CLOEXEC)
+					fd_set_close_on_exec(context, status, true);
+				else if (op == F_DUPFD_CLOFORK)
+					fd_set_close_on_fork(context, status, true);
 				rw_lock_write_unlock(&context->lock);
 
 				atomic_add(&descriptor->ref_count, 1);
@@ -9575,7 +9600,7 @@ status_t
 _user_create_pipe(int* userFDs, int flags)
 {
 	// check acceptable flags
-	if ((flags & ~(O_NONBLOCK | O_CLOEXEC)) != 0)
+	if ((flags & ~(O_NONBLOCK | O_CLOEXEC | O_CLOFORK)) != 0)
 		return B_BAD_VALUE;
 
 	// rootfs should support creating FIFOs, but let's be sure

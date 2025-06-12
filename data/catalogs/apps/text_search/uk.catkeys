@@ -1,4 +1,4 @@
-1	ukrainian	x-vnd.Haiku.TextSearch	1757850908
+1	ukrainian	x-vnd.Haiku.TextSearch	1461663588
 Please select the files you wish to have selected for you in Tracker.	GrepWindow		Виберіть файли які Ви маєте виділити у Tracker.
 %appname% : %path%	GrepWindow		%appname% : %path%
 Failed to start xargs program!	Grepper		Не вдалося запустити програму xargs!
@@ -7,17 +7,20 @@ Actions	GrepWindow		Дії
 New window	GrepWindow		Нове вікно
 Encoding	GrepWindow		Кодування
 Set target to parent folder	GrepWindow		Зробити батьківський каталог цільовим
+Clear history	GrepWindow		Очистити історію
 OK	GrepWindow		ОК
 %appname% : %path% : %searchtext%	GrepWindow		%appname% : %path% : %searchtext%
 Close	GrepWindow		Закрити
 Look in sub-folders	GrepWindow		Дивитися в підпапках
+File filter:	GrepWindow		Фільтр файлів:
 %s: Not enough room to escape the filename.	Grepper		%s: Недостатньо місця щоб екранувати ім'я файлу.
+Text files only	GrepWindow		Тільки текстові файли
 Follow symbolic links	GrepWindow		Переходити за символьними посиланнями
 Regular expression	GrepWindow		Регулярний вираз
-Text files only	GrepWindow		Тільки текстові файли
 Quit	GrepWindow		Вийти
 Show files in Tracker	GrepWindow		Показати файли у Tracker
 Please select the files you wish to keep searching.	GrepWindow		Виберіть файли в яких Ви хочете продовжити пошук.
+Only search files matching the given pattern, e.g. \"*.h\".	GrepWindow		Шукати у файлах відібраних за заданим шаблоном, наприклад, \«*.h\».
 Trim to selection	GrepWindow		Обмежитись вибраним
 Set target…	GrepWindow		Вибрати цільовий об'єкт…
 Failed to open input pipe!	Grepper		Збій при відкритті вхідного каналу!
@@ -26,7 +29,7 @@ Copy text to clipboard	GrepWindow		Копіювати текст до буфер
 Show lines	GrepWindow		Показати рядки
 Failed to open errors pipe!	Grepper		Збій при відкритті каналу помилок!
 The unselected files will be removed from the list.	GrepWindow		Файли, які не вибрані, будуть вилучені зі списку.
-Open files in code editor	GrepWindow		Відкрвати файли в редакторі коду
+Open files in code editor	GrepWindow		Відкривати файли у редакторі коду
 Skip folders starting with a dot	GrepWindow		Пропустити папки, що починаються з крапки
 Failed to open output pipe!	Grepper		Збій при відкритті вихідного каналу! 
 Cancel	GrepWindow		Скасувати

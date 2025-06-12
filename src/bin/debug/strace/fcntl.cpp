@@ -38,6 +38,15 @@ static const FlagsTypeHandler::FlagInfo kOpenFlagInfos[] = {
 
 	FLAG_INFO_ENTRY(O_DIRECTORY),
 
+	FLAG_INFO_ENTRY(O_CLOFORK),
+
+	{ 0, NULL }
+};
+
+
+static const FlagsTypeHandler::FlagInfo kCloseRangeFlagInfos[] = {
+	FLAG_INFO_ENTRY(CLOSE_RANGE_CLOEXEC),
+
 	{ 0, NULL }
 };
 
@@ -67,6 +76,7 @@ static const fcntl_info kFcntls[] = {
 };
 
 static FlagsTypeHandler::FlagsList kOpenFlags;
+static FlagsTypeHandler::FlagsList kCloseRangeFlags;
 static EnumTypeHandler::EnumMap kFcntlNames;
 static TypeHandlerSelector::SelectMap kFcntlTypeHandlers;
 
@@ -75,6 +85,10 @@ patch_fcntl()
 {
 	for (int i = 0; kOpenFlagInfos[i].name != NULL; i++) {
 		kOpenFlags.push_back(kOpenFlagInfos[i]);
+	}
+
+	for (int i = 0; kCloseRangeFlagInfos[i].name != NULL; i++) {
+		kCloseRangeFlags.push_back(kCloseRangeFlagInfos[i]);
 	}
 
 	for (int i = 0; kFcntls[i].name != NULL; i++) {
@@ -87,6 +101,9 @@ patch_fcntl()
 
 	Syscall *open = get_syscall("_kern_open");
 	open->GetParameter("openMode")->SetHandler(new FlagsTypeHandler(kOpenFlags));
+
+	Syscall *closeRange = get_syscall("_kern_close_range");
+	closeRange->GetParameter("flags")->SetHandler(new FlagsTypeHandler(kCloseRangeFlags));
 
 	Syscall *fcntl = get_syscall("_kern_fcntl");
 	fcntl->GetParameter("op")->SetHandler(new EnumTypeHandler(kFcntlNames));
