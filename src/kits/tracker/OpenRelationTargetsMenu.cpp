@@ -1,5 +1,6 @@
-#include "ContainerWindow.h"
 #define DEBUG 1
+
+#include "ContainerWindow.h"
 
 #include "Attributes.h"
 #include "AutoLock.h"
@@ -94,12 +95,16 @@ OpenRelationTargetsMenu::StartBuildingItemList()
 			PRINT(("failed to set up messenger for SEN server!\n"));
 			return false;
 		}
-
+		// prepare items with relations result from SEN
         status_t result = fSenMessenger.SendMessage(new BMessage(fEntriesToOpen), fRelationTargetsReply);
 		if (result != B_OK) {
 			PRINT(("failed to communicate with SEN server: %s\n", strerror(result)));
 			return false;
 		}
+		#ifdef DEBUG
+		    PRINT(("got relation targets reply:\n"));
+			fRelationTargetsReply->PrintToStream();
+		#endif
 		return true;
     } else {
         PRINT(("failed to reach SEN server, is it running?\n"));
@@ -132,6 +137,7 @@ OpenRelationTargetsMenu::DoneBuildingItemList()
 	status_t result;
 
 	switch(fRelationTargetsReply->what) {
+		// fixme: this should be handled as SEN_RESULT_RELATIONS but check there for self relation!
 		case SENSEI_MESSAGE_RESULT:
 		{
 			// resolve self relations from SENSEI reply
@@ -169,7 +175,6 @@ status_t
 OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 {
 	status_t result;
-
 	PRINT(("adding relation menu target items...\n"));
 
 	BMessage relations;
@@ -228,7 +233,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 			return result;
 		}	// still continue and hope we get the type from items
 	} else {
-		PRINT(("adding self relation menu target items with default type %s...\n", defaultType.String()));
+		PRINT(("adding SELF relation menu target items with default type %s...\n", defaultType.String()));
 		fDefaultType = defaultType;
 	}
 
@@ -249,6 +254,10 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 	}
 
 	PRINT(("iterating through self relation target message...\n"));
+	#ifdef DEBUG
+	    itemMsg.PrintToStream();
+	#endif
+
 	int32 index = 0;
 	BMessage propertiesMsg;
 	BString label, type;
@@ -384,6 +393,7 @@ status_t OpenRelationTargetsMenu::GetItemMessageInfo(
 	int32 count;
 	int32 itemIndex = 0;
 	type_code typeCode;
+	result = B_OK;	// could be B_NAME_NOT_FOUND from above!
 
 	while (result == B_OK) {
 		result = itemMsg->GetInfo(B_ANY_TYPE, itemIndex, &name,	&typeCode, &count);

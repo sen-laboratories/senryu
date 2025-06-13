@@ -248,8 +248,8 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const BString* source) {
 		return 0;
 	}
 
-	PRINT(("got self relations config:\n"));
-	typesPlugins.PrintToStream();
+	PRINT(("got SELF relations config:\n"));
+	pluginConfig.PrintToStream();
 
 	int32 pluginCount;
 	char *fileType[B_MIME_TYPE_LENGTH];
@@ -281,9 +281,6 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const BString* source) {
 		// add default type (the self relation type shown in the menu)
 		message.AddString(SENSEI_DEFAULT_TYPE_KEY, defaultType);
 
-		PRINT(("message for get self relation targets:\n"));
-		message.PrintToStream();
-
 		// message for the relation menu itself (to open targets in separate Tracker window)
 		BString srcId;
 		if (fRelationsReply.FindString(SEN_ID_ATTR, &srcId) != B_OK) {
@@ -306,7 +303,7 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const BString* source) {
 			PRINT(("got MIME type %s, relation is %s and %s:\n",
 				defaultType.String(),
 				isDynamic ? "dynamic" : "static",
-				isSelf ? "self-referencing" : "outward"));
+				isSelf ? "inward" : "outward"));
 		}
 		char label[B_ATTR_NAME_LENGTH];
 		if (mime.GetShortDescription(label) != B_OK) {
