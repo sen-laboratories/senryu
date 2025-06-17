@@ -33,29 +33,10 @@
 #include <strings.h>
 
 OpenRelationTargetsMenu::OpenRelationTargetsMenu(const char* label, const BMessage* entriesToOpen,
-	BWindow* parentWindow, BHandler* target)
-	:
-	BSlowMenu(label),
-	fEntriesToOpen(*entriesToOpen),
-	target(target),
-	fParentWindow(parentWindow),
-	fRelationTargetsReply(new BMessage())
-{
-	InitIconPreloader();
-
-	SetFont(be_plain_font);
-
-	// too long to have triggers
-	SetTriggersEnabled(false);
-}
-
-
-OpenRelationTargetsMenu::OpenRelationTargetsMenu(const char* label, const BMessage* entriesToOpen,
 	BWindow* parentWindow, const BMessenger &messenger)
 	:
 	BSlowMenu(label),
 	fEntriesToOpen(*entriesToOpen),
-	target(NULL),
 	fMessenger(messenger),
 	fParentWindow(parentWindow),
 	fRelationTargetsReply(new BMessage())
@@ -83,6 +64,11 @@ OpenRelationTargetsMenu::StartBuildingItemList()
 			PRINT(("building self relations submenu from SEN_RELATIONS_GET_SELF relation reply...\n"));
 			break;
 		}
+		case SEN_RELATIONS_GET_COMPATIBLE_TYPES:
+		{
+			PRINT(("building relations submenu for compatible NEW targets...\n"));
+			break;
+		}
 		default:
 		{
 			PRINT(("relations submenu: start building items...\n"));
@@ -95,7 +81,7 @@ OpenRelationTargetsMenu::StartBuildingItemList()
 			PRINT(("failed to set up messenger for SEN server!\n"));
 			return false;
 		}
-		// prepare items with relations result from SEN
+		// prepare items with relation targets result from SEN
         status_t result = fSenMessenger.SendMessage(new BMessage(fEntriesToOpen), fRelationTargetsReply);
 		if (result != B_OK) {
 			PRINT(("failed to communicate with SEN server: %s\n", strerror(result)));
@@ -105,6 +91,7 @@ OpenRelationTargetsMenu::StartBuildingItemList()
 		    PRINT(("got relation targets reply:\n"));
 			fRelationTargetsReply->PrintToStream();
 		#endif
+
 		return true;
     } else {
         PRINT(("failed to reach SEN server, is it running?\n"));
@@ -128,10 +115,7 @@ void
 OpenRelationTargetsMenu::DoneBuildingItemList()
 {
 	// target the menu
-	if (target != NULL)
-		SetTargetForItems(target);
-	else
-		SetTargetForItems(fMessenger);
+	SetTargetForItems(fMessenger);
 
 	uint32 targets = 0;
 	status_t result;
@@ -146,7 +130,10 @@ OpenRelationTargetsMenu::DoneBuildingItemList()
 		}
 		case SEN_RESULT_RELATIONS:
 		{
-			result = AddRelationTargetItems(&targets);
+			if (fEntriesToOpen.what == SEN_RELATIONS_GET_COMPATIBLE_TYPES)
+				result = AddNewRelationTargetItems(&targets);
+			else
+				result = AddRelationTargetItems(&targets);
 			break;
 		}
 		default:
@@ -171,8 +158,49 @@ OpenRelationTargetsMenu::DoneBuildingItemList()
 	}
 }
 
-status_t
-OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
+status_t OpenRelationTargetsMenu::AddNewRelationTargetItems(uint32* targetCount)
+{
+	status_t result;
+	PRINT(("adding NEW relation target items...\n"));
+
+	// here we got MIME types for compatible target types
+	BStringList targetTypes;
+	result = fRelationTargetsReply->FindStrings(SEN_MSG_TYPES, &targetTypes);
+	if (result != B_OK) {
+		PRINT(("failed to retrieve target types for relation: %s\n", strerror(result)));
+		return result;
+	}
+
+	BMimeType mimeType;
+	for (int32 i = 0; i < targetTypes.CountStrings(); i++) {
+		BString mimeString(targetTypes.StringAt(i));
+		result = mimeType.SetTo(mimeString.String());
+		if (result == B_OK) {
+			char label[B_ATTR_NAME_LENGTH];
+			if (mimeType.GetShortDescription(label) != B_OK) {
+				PRINT(("could not get MIME type for relation %s", mimeString.String()));
+				mimeString.CopyInto(label, 0, mimeString.Length());
+			}
+			BMessage *targetMsg = new BMessage(SEN_RELATIONS_GET_NEW_TARGET);
+			targetMsg->AddString("type", mimeString.String());
+			targetMsg->AddMessenger("TrackerViewToken", fMessenger);
+
+			IconMenuItem* item = new IconMenuItem(label,
+												  targetMsg,
+												  mimeType.Type());
+			item->SetTarget(be_app_messenger);
+			AddItem(item);
+			(*targetCount)++;
+		} else {
+			PRINT(("invalid target MIME type %s: %s", mimeString.String(), strerror(result) ));
+			return result;
+		}
+	}
+	return result;
+}
+
+// todo: use simpler method refs method from AddNewRelationTargetItems
+status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 {
 	status_t result;
 	PRINT(("adding relation menu target items...\n"));
@@ -203,7 +231,7 @@ OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 			if (result == B_OK) {
 				// this will create a menu item similar to folder items and launch with the preferred app,
 				// which in this case is the associated relation handler.
-				// todo: add message with arguments from relation properties!
+				// todo: add message with arguments from relation properties as with self relations!
 				ModelMenuItem* item = new ModelMenuItem(new Model(&ref, true, true), ref.name, NULL);
 				AddItem(item);
 

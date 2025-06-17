@@ -176,6 +176,7 @@ protected:
 	bool HandleSenMessage(BMessage*);
 	bool ResolveRelation(const entry_ref*, BString*, BString*);
 
+	status_t ResolveTemplate(const char* mimeType, entry_ref* ref);
 	status_t PrepareLaunchTarget(const entry_ref* srcRef, const char* targetId, entry_ref* targetRef, BMessage* params);
 	status_t PrepareRelationWindow(BMessage *message, RelationInfo* relationInfo);
 	status_t PrepareRelationTargetWindow(BMessage *message, RelationInfo* relationInfo);

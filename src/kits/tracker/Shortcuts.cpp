@@ -561,7 +561,7 @@ TShortcuts::NewFolderLabel()
 BMenuItem*
 TShortcuts::NewRelationItem()
 {
-	return new BMenuItem(NewRelationLabel(), new BMessage(kNewRelation), 'N');
+	return new BMenuItem(NewRelationLabel(), new BMessage(kNewRelation), 'N', B_SHIFT_KEY);
 }
 
 
@@ -575,7 +575,7 @@ TShortcuts::NewRelationItem(BMenu* menu)
 const char*
 TShortcuts::NewRelationLabel()
 {
-	return B_TRANSLATE("New related");
+	return B_TRANSLATE("New related" B_UTF8_ELLIPSIS);
 }
 
 
@@ -631,7 +631,7 @@ TShortcuts::OpenParentLabel()
 BMenuItem*
 TShortcuts::OpenRelationsItem()
 {
-	return new BMenuItem(OpenRelationsLabel(), new BMessage(kOpenRelations));
+	return new BMenuItem(OpenRelationsLabel(), new BMessage(kOpenRelations), 'O', B_SHIFT_KEY);
 }
 
 
@@ -1335,19 +1335,6 @@ TShortcuts::UpdateNewFolderItem(BMenuItem* item)
 
 
 void
-TShortcuts::UpdateNewRelationItem(BMenuItem* item)
-{
-	if (item == NULL)
-		return;
-
-	if (fInWindow) {
-		item->SetEnabled(! TargetIsReadOnly());
-		item->SetTarget(PoseView());
-	}
-}
-
-
-void
 TShortcuts::UpdateNewTemplatesItem(BMenuItem* item)
 {
 	if (item == NULL)
@@ -1387,12 +1374,23 @@ TShortcuts::UpdateOpenParentItem(BMenuItem* item)
 
 
 void
-TShortcuts::UpdateOpenRelationsItem(BMenuItem* item)
+TShortcuts::UpdateNewRelationItem(BMenuItem* item)
 {
 	if (item == NULL)
 		return;
 
-	item->SetShortcut('R', B_COMMAND_KEY | B_CONTROL_KEY);
+	if (fInWindow) {
+		item->SetEnabled(HasSelection());
+		item->SetTarget(PoseView());
+	}
+}
+
+
+void
+TShortcuts::UpdateOpenRelationsItem(BMenuItem* item)
+{
+	if (item == NULL)
+		return;
 
 	if (fInWindow) {
 		item->SetEnabled(HasSelection());
@@ -1407,8 +1405,6 @@ TShortcuts::UpdateOpenSelfRelationsItem(BMenuItem* item)
 	if (item == NULL)
 		return;
 
-	item->SetShortcut('R', B_COMMAND_KEY | B_SHIFT_KEY);
-
 	if (fInWindow) {
 		item->SetEnabled(HasSelection());
 		item->SetTarget(PoseView());
@@ -1422,7 +1418,7 @@ TShortcuts::UpdateOpenWithItem(BMenuItem* item)
 	if (item == NULL)
 		return;
 
-	item->SetShortcut('O', B_COMMAND_KEY | B_CONTROL_KEY);
+//	item->SetShortcut('O', B_COMMAND_KEY | B_CONTROL_KEY);
 
 	if (fInWindow) {
 		item->SetEnabled(HasSelection());

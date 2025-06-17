@@ -33,11 +33,11 @@
 #include <strings.h>
 
 OpenRelationsMenu::OpenRelationsMenu(const char* label, const BMessage* entriesToOpen,
-	BWindow* parentWindow, BHandler* target)
+	BWindow* parentWindow, const BMessenger& target)
 	:
 	BSlowMenu(label),
 	fEntriesToOpen(*entriesToOpen),
-	target(target),
+	fTrackerMessenger(target),
 	fParentWindow(parentWindow)
 {
 	InitIconPreloader();
@@ -49,68 +49,68 @@ OpenRelationsMenu::OpenRelationsMenu(const char* label, const BMessage* entriesT
 }
 
 
-OpenRelationsMenu::OpenRelationsMenu(const char* label, const BMessage* entriesToOpen,
-	BWindow* parentWindow, const BMessenger &messenger)
-	:
-	BSlowMenu(label),
-	fEntriesToOpen(*entriesToOpen),
-	target(NULL),
-	fMessenger(messenger),
-	fParentWindow(parentWindow)
-{
-	InitIconPreloader();
-
-	SetFont(be_plain_font);
-
-	// too long to have triggers - TODO; what does it mean?
-	SetTriggersEnabled(false);
-}
-
 bool
 OpenRelationsMenu::StartBuildingItemList()
 {
-    if (be_roster->IsRunning(SEN_SERVER_SIGNATURE)) {
-		fSenMessenger = BMessenger(SEN_SERVER_SIGNATURE);
-
-        // get all relations for refs received, what field contains relation type (ALL or SELF)
-        BMessage* message = new BMessage(fEntriesToOpen);
-
-		// use SEN action as new message type for passing on to SEN
-		uint32 senCmd = 0;
-		status_t result = message->FindUInt32(SEN_ACTION_CMD, &senCmd);
-
-		if (result != B_OK) {
-			senCmd = SEN_RELATIONS_GET_ALL;
-			PRINT(("failed to get SEN ActionCmd, fall back to GetAllRelations: %s\n", strerror(result) ));
-		}
-		message->what = senCmd;
-
-        //TODO: support multi-selection - when SEN is adapted
-        entry_ref ref;
-        fEntriesToOpen.FindRef("refs", &ref);
-        BEntry entry(&ref);
-        BPath path;
-        entry.GetPath(&path);
-
-        PRINT(("Tracker->SEN: getting relations for path %s\n", path.Path()));
-        message->AddString(SEN_RELATION_SOURCE, path.Path());
-		message->PrintToStream();
-
-        fSenMessenger.SendMessage(new BMessage(*message), &fRelationsReply);
-
-        PRINT(("SEN->Tracker: received reply:\n"));
-
-		fRelationsReply.AddRef("refs", new entry_ref(ref));
-        // also add source to reply for later use in building relation target menu
-		// todo: migrate to native refs internally and use source path only for external scripting!
-        fRelationsReply.AddString(SEN_RELATION_SOURCE, path.Path());
-		fRelationsReply.PrintToStream();
-
-        return true;
-    } else {
+    if (! be_roster->IsRunning(SEN_SERVER_SIGNATURE)) {
         PRINT(("failed to reach SEN server, please start process '%s' first.\n", SEN_SERVER_SIGNATURE));
         return false;
     }
+	fSenMessenger = BMessenger(SEN_SERVER_SIGNATURE);
+
+	// get all relations for refs received, what field contains relation type (ALL or SELF)
+	BMessage message(fEntriesToOpen);
+
+	// use SEN action as new message type for passing on to SEN
+	status_t result = message.FindUInt32(SEN_ACTION_CMD, &fSenCmd);
+
+	if (result != B_OK) {
+		fSenCmd = SEN_RELATIONS_GET_ALL;
+		PRINT(("failed to get SEN ActionCmd, fall back to GetAllRelations: %s\n", strerror(result) ));
+	}
+	message.what = fSenCmd;
+
+	//TODO: support multi-selection - when SEN is adapted
+	entry_ref ref;
+	fEntriesToOpen.FindRef("refs", &ref);
+
+	BEntry entry(&ref);
+	BPath path;
+	entry.GetPath(&path);
+
+	BString relationType;
+	switch(fSenCmd) {
+		case SEN_RELATIONS_GET_ALL:
+			relationType = "ALL";
+			break;
+		case SEN_RELATIONS_GET_ALL_SELF:
+			relationType = "SELF";
+			break;
+		case SEN_RELATIONS_GET_COMPATIBLE:
+			relationType = "COMPATIBLE";
+			break;
+		default:
+			relationType = "UNKNOWN";
+	}
+	PRINT(("Tracker->SEN: getting %s relations for path %s\n",
+		relationType.String(),
+		path.Path()));
+
+	// TODO: remove string param and only use ref
+	message.AddString(SEN_RELATION_SOURCE, (new BString(path.Path()))->String());
+	message.PrintToStream();
+
+	fSenMessenger.SendMessage(new BMessage(message), &fRelationsReply);
+
+	PRINT(("SEN->Tracker: received reply:\n"));
+
+	fRelationsReply.AddRef("refs", new entry_ref(ref));
+	// also add source to reply for later use in building relation target menu
+	// todo: migrate to native refs internally and use source path only for external scripting!
+	fRelationsReply.AddString(SEN_RELATION_SOURCE, path.Path());
+	fRelationsReply.PrintToStream();
+
+	return true;
 }
 
 bool OpenRelationsMenu::AddNextItem()
@@ -138,10 +138,7 @@ OpenRelationsMenu::DoneBuildingItemList()
     }
 
 	// target the menu
-	if (target != NULL)
-		SetTargetForItems(target);
-	else
-		SetTargetForItems(fMessenger);
+	SetTargetForItems(fTrackerMessenger);
 
 	int32 relationCount = 0;
 	BString source;
@@ -152,16 +149,19 @@ OpenRelationsMenu::DoneBuildingItemList()
 		// still continue and build empty relations menu for a more consistent behavior
 	}
 
-	// check for self relations and handle them separately
-	// todo: use relation flags for better classification!
-	if (fRelationsReply.what == SENSEI_MESSAGE_RESULT) {
-		PRINT(("building dynamic/self relations menu.\n"));
-		relationCount = AddSelfRelationItems(&source);
-	} else {
-		PRINT(("building relations menu.\n"));
-		relationCount = AddRelationItems(&source);
+	// check for desired relation type and build suitable items
+	switch (fSenCmd) {
+		case SEN_RELATIONS_GET_ALL_SELF:
+			PRINT(("building dynamic/self relations menu.\n"));
+			relationCount = AddSelfRelationItems(&source);
+			break;
+		case SEN_RELATIONS_GET_COMPATIBLE:
+			PRINT(("add NEW relations:\n"));
+			// fallthrough
+		default:
+			PRINT(("building relations menu.\n"));
+			relationCount = AddRelationItems(&source);	// also handles new relation with compatible types
 	}
-
 	if (relationCount == 0) {
 		BMenuItem* item = new BMenuItem("no relations found.", 0);
 		item->SetEnabled(false);
@@ -175,17 +175,27 @@ uint32 OpenRelationsMenu::AddRelationItems(const BString* source) {
 	BString relation;
     int index = 0;
 
+	BString srcId;
+	if (fRelationsReply.FindString(SEN_ID_ATTR, &srcId) != B_OK) {
+		srcId.SetTo("");
+	}
+
+	uint32 msgCmd;
+	if (fSenCmd == SEN_RELATIONS_GET_COMPATIBLE) {
+		msgCmd = SEN_RELATIONS_GET_COMPATIBLE_TYPES;
+	} else {
+		msgCmd = fSenCmd;
+	}
+
     while (fRelationsReply.FindString(SEN_RELATIONS, index, &relation) == B_OK) {
 		// message for relation menu items
-        BMessage* message = new BMessage(SEN_RELATIONS_GET);
+        BMessage* message = new BMessage();
+		message->what = msgCmd;
+
         message->AddString(SEN_RELATION_SOURCE, (new BString(*source))->String());
         message->AddString(SEN_RELATION_TYPE, (new BString(relation))->String());
 
 		// message for the relation menu itself (to open targets in separate Tracker window)
-		BString srcId;
-		if (fRelationsReply.FindString(SEN_ID_ATTR, &srcId) != B_OK) {
-			srcId.SetTo("");
-		}
 		BMimeType mime(relation.String());
 		if (!mime.IsInstalled()) {
 			ERROR("skipping relation with unavailable MIME type %s...\n", relation.String());
@@ -199,12 +209,13 @@ uint32 OpenRelationsMenu::AddRelationItems(const BString* source) {
 		}
 		BMessage *openRelationTargetsMsg = new BMessage(SEN_OPEN_RELATION_TARGET_VIEW);
         openRelationTargetsMsg->AddString(SEN_RELATION_SOURCE, source->String());
+		// todo: add new srcId if adding first relation via Tracker later!
 		openRelationTargetsMsg->AddString(SEN_RELATION_SOURCE_ATTR, BString(srcId));
 		openRelationTargetsMsg->AddString(SEN_RELATION_TYPE, BString(relation));
 		openRelationTargetsMsg->AddString(SEN_RELATION_LABEL, label);
 
         BMenuItem* item = new IconMenuItem(
-            new OpenRelationTargetsMenu(label, message, fParentWindow, be_app_messenger),
+            new OpenRelationTargetsMenu(label, message, fParentWindow, fTrackerMessenger),
             openRelationTargetsMsg,
 			(new BString(relation))->String()
         );
@@ -216,6 +227,7 @@ uint32 OpenRelationsMenu::AddRelationItems(const BString* source) {
 	return index;
 }
 
+// TODO: move to SEN and reuse AddRelationItems with just different SEN command
 uint32 OpenRelationsMenu::AddSelfRelationItems(const BString* source) {
 	BMessage pluginConfig;
 	int relationsAdded = 0;

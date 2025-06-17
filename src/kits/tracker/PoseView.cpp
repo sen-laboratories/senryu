@@ -2434,11 +2434,12 @@ BPoseView::MessageReceived(BMessage* message)
 			be_app->PostMessage(message);
 			break;
 
-		case kNewEntryFromTemplate:
+		case kNewEntryFromTemplate:{
+			PRINT(("Tracker received NEW from Template:\n"));
 			if (message->HasRef("refs_template"))
 				NewFileFromTemplate(message);
 			break;
-
+		}
 		case kNewFolder:
 			NewFolder(message);
 			break;

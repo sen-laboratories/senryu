@@ -58,6 +58,10 @@ TTracker::HandleSenMessage(BMessage* message)
 			PRINT(("TrackerSen::Open (Self) Relations called.\n"));
 			break;
 
+		case SEN_RELATIONS_GET_NEW_TARGET:
+			PRINT(("TrackerSen::get NEW target template called.\n"));
+			break;
+
 		case SENSEI_CMD_EXTRACT:
 			PRINT(("TrackerSen::SENSEI extract called.\n"));
 			break;
@@ -82,7 +86,6 @@ TTracker::HandleSenMessage(BMessage* message)
 	// handle modifier for differentiating between open relation view and invoke target (dynamic/self relations)
 	// todo: move this to Shortcuts and handle like 'Enrich (Overwrite)'
 	if ((modifiers() & B_SHIFT_KEY) != 0) {
-		PRINT(("modifier SHIFT detected while selecting relation item.\n"));
 		if (message->what == SEN_OPEN_RELATION_TARGET_VIEW) {
 			PRINT(("switching from open target view to open ref.\n"));
 			message->what = B_REFS_RECEIVED;
@@ -110,6 +113,42 @@ TTracker::HandleSenMessage(BMessage* message)
 		{
 			PRINT(("open (self) relations top level view not yet implemented. Please check back later.\n"));
 			break;
+		}
+		case SEN_RELATIONS_GET_NEW_TARGET:
+		{
+			BString targetType;
+			result = message->FindString("type", &targetType);
+			if (result != B_OK) {
+				PRINT(("SEN_RELATIONS_GET_NEW_TARGET: could not find target type: %s\n", strerror(result) ));
+				return true;	// abort
+			}
+			entry_ref targetRef;
+			result = ResolveTemplate(targetType.String(), &targetRef);
+			if (result != B_OK) {
+				PRINT(("SEN_RELATIONS_GET_NEW_TARGET: could not resolve template for target type %s: %s\n",
+						targetType.String(), strerror(result) ));
+				return true;	// abort
+			}
+
+			BMessage msgCreateNewFromTemplate(kNewEntryFromTemplate);
+			msgCreateNewFromTemplate.AddRef("refs_template", &targetRef);
+			msgCreateNewFromTemplate.AddString("name", targetRef.name);
+
+			PRINT(("created new template msg:\n"));
+			msgCreateNewFromTemplate.PrintToStream();
+
+			BMessenger trackerMessenger;
+			result = message->FindMessenger("TrackerViewToken", &trackerMessenger);
+			if (result == B_OK) {
+				PRINT(("sending tracker new from template msg.\n"));
+				trackerMessenger.SendMessage(&msgCreateNewFromTemplate);
+			} else {
+				PRINT(("could not get messenger, falling back to be_app_messenger.\n"));
+				be_app_messenger.SendMessage(&msgCreateNewFromTemplate);
+			}
+			// we are done here
+			// todo: clean up if branch below for better uniform handling
+			return true;
 		}
 		default:
 		{
@@ -154,6 +193,69 @@ bool TTracker::ResolveRelation(const entry_ref* ref, BString* srcId, BString* ta
 	if (result == B_NAME_NOT_FOUND) return false;
 
 	return (result == B_OK);
+}
+
+status_t TTracker::ResolveTemplate(const char* mimeType, entry_ref* ref)
+{
+	// TODO: search Tracker templates for matching template
+	// LATER: relation specific templates to use depending on relation ends, e.g. Person->Note vs Movie->Note etc.
+	//        this could be added like a filter as separate (non indexed) attributes in Tracker relation templates
+
+	// create new tmp file of given type to act as template for now
+	BPath templatePath;
+	status_t result;
+
+	if (find_directory(B_SYSTEM_TEMP_DIRECTORY, &templatePath) != B_OK)
+	{
+		PRINT(("could not find user settings directory, falling back to /tmp.\n"));
+		templatePath.SetTo("/tmp");
+	}
+	// build simple MIME path
+	BMimeType mime(mimeType);
+	if ((result = mime.InitCheck()) != B_OK) {
+		PRINT(("invalid MIME type %s: %s\n", mimeType, strerror(result)));
+		return result;
+	}
+
+	templatePath.Append("sen");
+	templatePath.Append(SEN_ENTITY_SUPERTYPE);
+
+	BDirectory outputDir;
+	result = outputDir.CreateDirectory(templatePath.Path(), NULL);
+	if (result != B_OK && result != B_FILE_EXISTS) {
+		PRINT(("failed to set up template directory: %s\n", strerror(result) ));
+		return result;
+	}
+
+	// create template with MIME path, possibly reuse existing one
+	BFile templateFile;
+	char shortDesc[B_MIME_TYPE_LENGTH];
+	mime.GetShortDescription(shortDesc);
+	templatePath.Append(shortDesc);
+
+	outputDir.CreateFile(templatePath.Path(), &templateFile);
+
+	result = templateFile.InitCheck();
+	if (result != B_OK && result != B_FILE_EXISTS) {
+		PRINT(("failed to create template at path %s: %s\n", mimeType, strerror(result) ));
+		return result;
+	}
+
+	// set type
+	BNodeInfo templateInfo(&templateFile);
+	if ((result = templateInfo.InitCheck()) == B_OK) {
+		result = templateInfo.SetType(mimeType);
+		if (result == B_OK) {
+			// get ref of our temp template
+			templateFile.Sync();
+			BEntry templateEntry(templatePath.Path());
+			if ((result = templateEntry.InitCheck()) == B_OK) {
+				templateEntry.GetRef(ref);
+				PRINT(("got ref %s in %s for Tracker New.\n", ref->name, templatePath.Path() ));
+			}
+		}
+	}
+	return result;
 }
 
 status_t TTracker::PrepareLaunchTarget(

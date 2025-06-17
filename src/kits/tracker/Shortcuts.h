@@ -196,9 +196,9 @@ public:
 			void				UpdateMoveToItem(BMenuItem*);
 			void				UpdateMoveToTrashItem(BMenuItem*);
 			void				UpdateNewFolderItem(BMenuItem*);
-			void				UpdateNewRelationItem(BMenuItem*);
 			void				UpdateNewTemplatesItem(BMenuItem*);
 			void				UpdateOpenItem(BMenuItem*);
+			void				UpdateNewRelationItem(BMenuItem*);
 			void				UpdateOpenRelationsItem(BMenuItem*);
 			void				UpdateOpenParentItem(BMenuItem*);
 			void				UpdateOpenSelfRelationsItem(BMenuItem*);
