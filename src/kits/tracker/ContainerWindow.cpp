@@ -2205,10 +2205,6 @@ BContainerWindow::SetupNewRelationMenu(BMenu* parent, const entry_ref* ref)
 		message.AddRef("refs", pose->TargetModel()->EntryRef());
 	}
 
-	// add Tracker token so that refs received recipients can script us
-	message.AddMessenger("TrackerViewToken", BMessenger(PoseView()) );
-	PRINT(("Tracker messenger setup with team %d\n", BMessenger(PoseView()).Team() ));
-
 	// add desired SEN relations command, handed through to SEN
 	message.AddUInt32(SEN_ACTION_CMD, SEN_RELATIONS_GET_COMPATIBLE);
 
@@ -2220,7 +2216,8 @@ BContainerWindow::SetupNewRelationMenu(BMenu* parent, const entry_ref* ref)
 	// different command to get all relations compatible to selected file(s) )
 	// similar to self relations: specialized handling happens in OpenRelationsMenu
 	fNewRelationItem = Shortcuts()->NewRelationItem(
-		new OpenRelationsMenu(Shortcuts()->NewRelationLabel(), &message, this, be_app));
+		new OpenRelationsMenu(Shortcuts()->NewRelationLabel(), &message, this,
+		BMessenger(PoseView())) );	// we need to target the PoseView here later
 
 	parent->AddItem(fNewRelationItem, menuIndex);
 	Shortcuts()->UpdateNewRelationItem(fNewRelationItem);

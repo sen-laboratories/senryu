@@ -8176,11 +8176,6 @@ BPoseView::OpenSelectionCommon(BPose* clickedPose, int32* poseIndex, bool openWi
 	// dispatch scripting calls from apps to the PoseView
 	message.AddMessenger("TrackerViewToken", BMessenger(this));
 
-#if DEBUG
-	PRINT(("PostView::OpenSelectionCommon called with refs msg:\n"));
-	message.PrintToStream();
-#endif
-
 	if (fSelectionHandler)
 		fSelectionHandler->PostMessage(&message);
 

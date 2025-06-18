@@ -144,7 +144,17 @@ TTracker::HandleSenMessage(BMessage* message)
 			result = message->FindMessenger("TrackerViewToken", &trackerMessenger);
 
 			if (result == B_OK) {
+				BLooper* targetLooper;
+				BHandler* targetHandler;
+				targetHandler = trackerMessenger.Target(&targetLooper);
+				PRINT(("TrackerSEN::Messenger team ID is %d\n", trackerMessenger.Team() ));
+				if (targetHandler != NULL)
+					PRINT((  "targetHandler is: %s\n", targetHandler->Name() ));
+				if (targetLooper != NULL)
+					PRINT((  "targetLooper is: %s\n", targetLooper->Name() ));
+
 				PRINT(("sending newFromTemplate msg to Tracker with team %d...\n", trackerMessenger.Team() ));
+				result = trackerMessenger.SendMessage(&msgCreateNewFromTemplate);
 			} else {
 				PRINT(("could not get messenger, falling back to be_app_messenger.\n"));
 				result = be_app_messenger.SendMessage(&msgCreateNewFromTemplate);

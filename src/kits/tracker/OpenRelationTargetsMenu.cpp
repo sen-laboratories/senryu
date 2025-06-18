@@ -161,7 +161,6 @@ OpenRelationTargetsMenu::DoneBuildingItemList()
 status_t OpenRelationTargetsMenu::AddNewRelationTargetItems(uint32* targetCount)
 {
 	status_t result;
-	PRINT(("adding NEW relation target items...\n"));
 
 	// here we got MIME types for compatible target types
 	BStringList targetTypes;
