@@ -46,6 +46,7 @@ All rights reserved.
 
 #include "Commands.h"
 #include "Sen.h"
+#include "TemplatesMenu.h"
 #include "Tracker.h"
 
 bool
@@ -119,13 +120,26 @@ TTracker::HandleSenMessage(BMessage* message)
 			BString targetType;
 			result = message->FindString("type", &targetType);
 			if (result != B_OK) {
-				PRINT(("SEN_RELATIONS_GET_NEW_TARGET: could not find target type: %s\n", strerror(result) ));
+				PRINT(("could not find target type: %s\n", strerror(result) ));
 				return true;	// abort
 			}
+
 			entry_ref targetRef;
-			result = ResolveTemplate(targetType.String(), &targetRef);
+			BMessage  templateTypeToRef;
+			result =  CollectInstalledTemplates(NULL, &templateTypeToRef);
+
+			PRINT(("templateTargetType->Ref map msg is:\n"));
+			templateTypeToRef.PrintToStream();
+
+			if (result == B_OK) {
+				result =  templateTypeToRef.FindRef(targetType.String(), &targetRef);
+				if (result == B_NAME_NOT_FOUND) {
+					// no template for type, let's create an empty one on the fly
+					result = ResolveTemplateForType(targetType.String(), &targetRef);
+				}
+			}
 			if (result != B_OK) {
-				PRINT(("SEN_RELATIONS_GET_NEW_TARGET: could not resolve template for target type %s: %s\n",
+				PRINT(("could not resolve template for target type %s: %s\n",
 						targetType.String(), strerror(result) ));
 				return true;	// abort
 			}
@@ -134,33 +148,14 @@ TTracker::HandleSenMessage(BMessage* message)
 			msgCreateNewFromTemplate.AddRef("refs_template", &targetRef);
 			msgCreateNewFromTemplate.AddString("name", targetRef.name);
 
-			PRINT(("created new template msg:\n"));
-			msgCreateNewFromTemplate.PrintToStream();
-
-			message->what = kNewEntryFromTemplate; // needed?
-			message->Append(msgCreateNewFromTemplate);
-
 			BMessenger trackerMessenger;
 			result = message->FindMessenger("TrackerViewToken", &trackerMessenger);
 
 			if (result == B_OK) {
-				BLooper* targetLooper;
-				BHandler* targetHandler;
-				targetHandler = trackerMessenger.Target(&targetLooper);
-				PRINT(("TrackerSEN::Messenger team ID is %d\n", trackerMessenger.Team() ));
-				if (targetHandler != NULL)
-					PRINT((  "targetHandler is: %s\n", targetHandler->Name() ));
-				if (targetLooper != NULL)
-					PRINT((  "targetLooper is: %s\n", targetLooper->Name() ));
-
-				PRINT(("sending newFromTemplate msg to Tracker with team %d...\n", trackerMessenger.Team() ));
 				result = trackerMessenger.SendMessage(&msgCreateNewFromTemplate);
-			} else {
-				PRINT(("could not get messenger, falling back to be_app_messenger.\n"));
-				result = be_app_messenger.SendMessage(&msgCreateNewFromTemplate);
 			}
 			if (result != B_OK) {
-				PRINT(("failed to send newFromTemplate msg to Tracker: %s\n", strerror(result) ));
+				PRINT(("failed to send newFromTemplate message to Tracker: %s\n", strerror(result) ));
 			}
 			// we are done here
 			// todo: clean up if branch below for better uniform handling
@@ -211,7 +206,7 @@ bool TTracker::ResolveRelation(const entry_ref* ref, BString* srcId, BString* ta
 	return (result == B_OK);
 }
 
-status_t TTracker::ResolveTemplate(const char* mimeType, entry_ref* ref)
+status_t TTracker::ResolveTemplateForType(const char* mimeType, entry_ref* ref)
 {
 	// TODO: search Tracker templates for matching template
 	// LATER: relation specific templates to use depending on relation ends, e.g. Person->Note vs Movie->Note etc.
@@ -268,6 +263,61 @@ status_t TTracker::ResolveTemplate(const char* mimeType, entry_ref* ref)
 			if ((result = templateEntry.InitCheck()) == B_OK) {
 				templateEntry.GetRef(ref);
 				PRINT(("got ref %s in %s for Tracker New.\n", ref->name, templatePath.Path() ));
+			}
+		}
+	}
+	return result;
+}
+
+// TODO: cache and watch templates dir for changes using WatchNode(), then update
+status_t TTracker::CollectInstalledTemplates(const char* path, BMessage *templatesMsg)
+{
+	BEntry entry;
+	BPath templatePath;
+	status_t result = B_OK;
+
+	if (path == NULL) {
+		status_t result;
+
+		if ((result = find_directory(B_USER_SETTINGS_DIRECTORY, &templatePath)) != B_OK)
+		{
+			PRINT(("could not find user settings directory (using default): %s\n", strerror(result)));
+			templatePath.SetTo("/boot/home/config/settings");
+		}
+
+		templatePath.Append(kTemplatesDirectory);
+		path = templatePath.Path();
+	}
+	PRINT(("  >> entering templates path %s...\n", path ));
+
+	BDirectory templatesDir(path);
+
+	while (templatesDir.GetNextEntry(&entry) == B_OK) {
+		BNode node(&entry);
+		BNodeInfo nodeInfo(&node);
+		char fileName[B_FILE_NAME_LENGTH];
+
+		entry.GetName(fileName);
+		if (nodeInfo.InitCheck() == B_OK) {
+			char mimeType[B_MIME_TYPE_LENGTH];
+			nodeInfo.GetType(mimeType);
+
+			BMimeType mime(mimeType);
+			if (mime.IsValid()) {
+				entry_ref ref;
+				entry.GetRef(&ref);
+
+				// Check if the template is a directory
+				BDirectory dir(&entry);
+				if (dir.InitCheck() == B_OK) {
+					BPath subdirPath;
+					if (entry.GetPath(&subdirPath) == B_OK) {
+						result = CollectInstalledTemplates(subdirPath.Path(), templatesMsg);
+					}
+					continue;
+				}
+				// add type + ref to result
+				templatesMsg->AddRef(mimeType, &ref);
 			}
 		}
 	}
