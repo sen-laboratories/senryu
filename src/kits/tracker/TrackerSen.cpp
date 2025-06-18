@@ -137,14 +137,20 @@ TTracker::HandleSenMessage(BMessage* message)
 			PRINT(("created new template msg:\n"));
 			msgCreateNewFromTemplate.PrintToStream();
 
+			message->what = kNewEntryFromTemplate; // needed?
+			message->Append(msgCreateNewFromTemplate);
+
 			BMessenger trackerMessenger;
 			result = message->FindMessenger("TrackerViewToken", &trackerMessenger);
+
 			if (result == B_OK) {
-				PRINT(("sending tracker new from template msg.\n"));
-				trackerMessenger.SendMessage(&msgCreateNewFromTemplate);
+				PRINT(("sending newFromTemplate msg to Tracker with team %d...\n", trackerMessenger.Team() ));
 			} else {
 				PRINT(("could not get messenger, falling back to be_app_messenger.\n"));
-				be_app_messenger.SendMessage(&msgCreateNewFromTemplate);
+				result = be_app_messenger.SendMessage(&msgCreateNewFromTemplate);
+			}
+			if (result != B_OK) {
+				PRINT(("failed to send newFromTemplate msg to Tracker: %s\n", strerror(result) ));
 			}
 			// we are done here
 			// todo: clean up if branch below for better uniform handling
@@ -221,7 +227,7 @@ status_t TTracker::ResolveTemplate(const char* mimeType, entry_ref* ref)
 	templatePath.Append(SEN_ENTITY_SUPERTYPE);
 
 	BDirectory outputDir;
-	result = outputDir.CreateDirectory(templatePath.Path(), NULL);
+	result = create_directory(templatePath.Path(), B_CREATE_FILE);
 	if (result != B_OK && result != B_FILE_EXISTS) {
 		PRINT(("failed to set up template directory: %s\n", strerror(result) ));
 		return result;

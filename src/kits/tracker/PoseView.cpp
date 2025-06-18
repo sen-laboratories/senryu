@@ -648,6 +648,8 @@ BPoseView::SetupDefaultColumnsIfNeeded()
 	if (CountColumns() != 0)
 		return;
 
+	// TODO: SEN: setup relation columns if in RelationContext!
+
 	AddColumn(new BColumn(B_TRANSLATE("Name"), 145,
 		B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));
 	AddColumn(new BColumn(B_TRANSLATE("Size"), 80,

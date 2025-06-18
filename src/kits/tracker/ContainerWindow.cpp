@@ -2206,7 +2206,8 @@ BContainerWindow::SetupNewRelationMenu(BMenu* parent, const entry_ref* ref)
 	}
 
 	// add Tracker token so that refs received recipients can script us
-	message.AddMessenger("TrackerViewToken", BMessenger(PoseView()));
+	message.AddMessenger("TrackerViewToken", BMessenger(PoseView()) );
+	PRINT(("Tracker messenger setup with team %d\n", BMessenger(PoseView()).Team() ));
 
 	// add desired SEN relations command, handed through to SEN
 	message.AddUInt32(SEN_ACTION_CMD, SEN_RELATIONS_GET_COMPATIBLE);
