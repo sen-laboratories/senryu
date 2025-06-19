@@ -80,6 +80,9 @@ OpenRelationsMenu::StartBuildingItemList()
 
 	BString relationType;
 	switch(fSenCmd) {
+		case SEN_RELATIONS_GET:
+			relationType = "EXISTING";
+			break;
 		case SEN_RELATIONS_GET_ALL:
 			relationType = "ALL";
 			break;
@@ -90,7 +93,7 @@ OpenRelationsMenu::StartBuildingItemList()
 			relationType = "COMPATIBLE";
 			break;
 		default:
-			relationType = "UNKNOWN";
+			relationType = "UNKNOWN/UNEXPECTED";
 	}
 	PRINT(("Tracker->SEN: getting %s relations for path %s\n",
 		relationType.String(),
@@ -102,12 +105,12 @@ OpenRelationsMenu::StartBuildingItemList()
 
 	fSenMessenger.SendMessage(new BMessage(message), &fRelationsReply);
 
-	PRINT(("SEN->Tracker: received reply:\n"));
-
 	fRelationsReply.AddRef("refs", new entry_ref(ref));
 	// also add source to reply for later use in building relation target menu
 	// todo: migrate to native refs internally and use source path only for external scripting!
 	fRelationsReply.AddString(SEN_RELATION_SOURCE, path.Path());
+
+	PRINT(("SEN->Tracker: received reply:\n"));
 	fRelationsReply.PrintToStream();
 
 	return true;
@@ -151,15 +154,24 @@ OpenRelationsMenu::DoneBuildingItemList()
 
 	// check for desired relation type and build suitable items
 	switch (fSenCmd) {
+		case SEN_RELATIONS_GET:
+			PRINT(("building relation targets menu.\n"));
+			relationCount = AddRelationItems(&source);
+			break;
+		case SEN_RELATIONS_GET_ALL:
+			PRINT(("building relations menu.\n"));
+			relationCount = AddRelationItems(&source);
+			break;
 		case SEN_RELATIONS_GET_ALL_SELF:
-			PRINT(("building dynamic/self relations menu.\n"));
+			PRINT(("building contained relations menu.\n"));
 			relationCount = AddSelfRelationItems(&source);
 			break;
 		case SEN_RELATIONS_GET_COMPATIBLE:
-			PRINT(("add NEW relations:\n"));
-			// fallthrough
+			PRINT(("building NEW relations menu.\n"));
+			relationCount = AddRelationItems(&source);
+			break;
 		default:
-			PRINT(("building relations menu.\n"));
+			PRINT(("MISSING/UNEXPECTED fSenCmd %u, building relations menu.\n", fSenCmd));
 			relationCount = AddRelationItems(&source);	// also handles new relation with compatible types
 	}
 	if (relationCount == 0) {
@@ -181,17 +193,21 @@ uint32 OpenRelationsMenu::AddRelationItems(const BString* source) {
 	}
 
 	uint32 msgCmd;
-	if (fSenCmd == SEN_RELATIONS_GET_COMPATIBLE) {
-		msgCmd = SEN_RELATIONS_GET_COMPATIBLE_TYPES;
-	} else {
-		msgCmd = fSenCmd;
+	switch (fSenCmd) {
+		case SEN_RELATIONS_GET_COMPATIBLE:
+			msgCmd = SEN_RELATIONS_GET_COMPATIBLE_TYPES;
+			break;
+		case SEN_RELATIONS_GET_ALL: {
+			msgCmd = SEN_RELATIONS_GET;
+			break;
+		}
+		default:
+			msgCmd = fSenCmd;
 	}
 
     while (fRelationsReply.FindString(SEN_RELATIONS, index, &relation) == B_OK) {
 		// message for relation menu items
-        BMessage* message = new BMessage();
-		message->what = msgCmd;
-
+        BMessage* message = new BMessage(msgCmd);
         message->AddString(SEN_RELATION_SOURCE, (new BString(*source))->String());
         message->AddString(SEN_RELATION_TYPE, (new BString(relation))->String());
 

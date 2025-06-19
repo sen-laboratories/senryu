@@ -50,28 +50,34 @@ OpenRelationTargetsMenu::OpenRelationTargetsMenu(const char* label, const BMessa
 bool
 OpenRelationTargetsMenu::StartBuildingItemList()
 {
+	PRINT(("building items for target menu with input message:\n"));
+	fEntriesToOpen.PrintToStream();
+
 	switch(fEntriesToOpen.what) {
 		case SENSEI_MESSAGE_RESULT:	// we are a sub menu of self relations
 		{
 			PRINT(("building self relations submenu from SENSEI_MESSAGE_RESULT in existing sub item msg...\n"));
-			fRelationTargetsReply->what = fEntriesToOpen.what;
 			fRelationTargetsReply = &fEntriesToOpen;
 			return true;
 		}
 		case SEN_RELATIONS_GET_SELF:
 		{
-			fRelationTargetsReply->what = fEntriesToOpen.what;
 			PRINT(("building self relations submenu from SEN_RELATIONS_GET_SELF relation reply...\n"));
 			break;
 		}
 		case SEN_RELATIONS_GET_COMPATIBLE_TYPES:
 		{
-			PRINT(("building relations submenu for compatible NEW targets...\n"));
+			PRINT(("building relations targets submenu for compatible NEW targets...\n"));
+			break;
+		}
+		case SEN_RELATIONS_GET:
+		{
+			PRINT(("building relation targets submenu for existing targets...\n"));
 			break;
 		}
 		default:
 		{
-			PRINT(("relations submenu: start building items...\n"));
+			PRINT(("relation targets submenu: UNKNOWN/UNEXPECTED type, start building items...\n"));
 		}
 	}
 
