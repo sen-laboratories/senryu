@@ -2437,7 +2437,6 @@ BPoseView::MessageReceived(BMessage* message)
 			break;
 
 		case kNewEntryFromTemplate:{
-			PRINT(("Tracker received NEW from Template:\n"));
 			if (message->HasRef("refs_template"))
 				NewFileFromTemplate(message);
 			break;
@@ -3425,6 +3424,31 @@ BPoseView::NewFileFromTemplate(const BMessage* message)
 
 	BEntry entry(&destDir, fileName);
 	entry.GetRef(&destEntryRef);
+
+	// add SEN relation to original file if coming from "New related..."
+	entry_ref originalRef;
+	BString	  relationType;
+	status_t result = message->FindRef(SEN_RELATION_SOURCE_REF, &originalRef);
+	if (result == B_OK)
+			 result = message->FindString(SEN_RELATION_TYPE, &relationType);
+
+	if (result == B_OK) {
+		// send SEN scripting message to add relation of desired type
+		BMessage senAddRelationMsg(SEN_RELATION_ADD);
+		senAddRelationMsg.AddRef(SEN_RELATION_SOURCE_REF, new entry_ref(originalRef));
+		senAddRelationMsg.AddRef(SEN_RELATION_TARGET_REF, new entry_ref(destEntryRef));
+		senAddRelationMsg.AddString(SEN_RELATION_TYPE, relationType);
+
+		PRINT(("add relation %s for new target %s...", relationType.String(), fileName));
+		senAddRelationMsg.PrintToStream();
+
+		BMessenger senMsgr(SEN_SERVER_SIGNATURE);
+		if (senMsgr.IsValid()) {
+			senMsgr.SendMessage(&senAddRelationMsg);
+		} else {
+			PRINT(("could not reach sen_server."));
+		}
+	}
 
 	// try to place new item at click point or under mouse if possible
 	PlaceFolder(&destEntryRef, message);

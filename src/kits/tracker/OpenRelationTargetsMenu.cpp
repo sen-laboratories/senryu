@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <strings.h>
+#include <vector>
 
 OpenRelationTargetsMenu::OpenRelationTargetsMenu(const char* label, const BMessage* entriesToOpen,
 	BWindow* parentWindow, const BMessenger &messenger)
@@ -168,6 +169,39 @@ status_t OpenRelationTargetsMenu::AddNewRelationTargetItems(uint32* targetCount)
 {
 	status_t result;
 
+	/* get source ref(s) - TODO: move to utility class, together with refs refactor
+	std::vector<entry_ref> refs;
+	entry_ref ref;
+	int32 refCount = 0;
+	while ((result = fEntriesToOpen.FindRef("refs", refCount, &ref)) == B_OK) {
+		refs.push_back(ref);
+		refCount++;
+	}
+
+	PRINT(("got %d refs.\n", refCount));
+	*/
+	BString	  source;
+	result = fEntriesToOpen.FindString(SEN_RELATION_SOURCE, &source);
+	if (result != B_OK) {
+		PRINT(("failed to retrieve relation source: %s\n", strerror(result)));
+		return result;
+	}
+	entry_ref srcRef;
+	BEntry sourceEntry(source.String());
+	result = sourceEntry.GetRef(&srcRef);
+	if (result != B_OK) {
+		PRINT(("failed to retrieve relation source ref: %s\n", strerror(result)));
+		return result;
+	}
+
+	// get relationType for later
+	BString relationType;
+	result = fEntriesToOpen.FindString(SEN_RELATION_TYPE, &relationType);
+	if (result != B_OK) {
+		PRINT(("failed to retrieve relation type: %s\n", strerror(result)));
+		return result;
+	}
+
 	// here we got MIME types for compatible target types
 	BStringList targetTypes;
 	result = fRelationTargetsReply->FindStrings(SEN_MSG_TYPES, &targetTypes);
@@ -187,7 +221,9 @@ status_t OpenRelationTargetsMenu::AddNewRelationTargetItems(uint32* targetCount)
 				mimeString.CopyInto(label, 0, mimeString.Length());
 			}
 			BMessage *targetMsg = new BMessage(SEN_RELATIONS_GET_NEW_TARGET);
-			targetMsg->AddString("type", mimeString.String());
+			targetMsg->AddRef("refs", new entry_ref(srcRef));
+			targetMsg->AddString("type", mimeString);
+			targetMsg->AddString(SEN_RELATION_TYPE, relationType);
 			targetMsg->AddMessenger("TrackerViewToken", fMessenger);
 
 			IconMenuItem* item = new IconMenuItem(label,

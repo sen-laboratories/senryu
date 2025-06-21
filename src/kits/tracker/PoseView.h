@@ -47,6 +47,7 @@ All rights reserved.
 #include "Model.h"
 #include "PendingNodeMonitorCache.h"
 #include "PoseList.h"
+#include "Sen.h"
 #include "TitleView.h"
 #include "Utilities.h"
 #include "ViewState.h"

@@ -117,10 +117,24 @@ TTracker::HandleSenMessage(BMessage* message)
 		}
 		case SEN_RELATIONS_GET_NEW_TARGET:
 		{
+			BString relationType;
+			result = message->FindString(SEN_RELATION_TYPE, &relationType);
+			if (result != B_OK) {
+				PRINT(("could not find relation type: %s\n", strerror(result) ));
+				return true;	// abort
+			}
+
 			BString targetType;
 			result = message->FindString("type", &targetType);
 			if (result != B_OK) {
 				PRINT(("could not find target type: %s\n", strerror(result) ));
+				return true;	// abort
+			}
+
+			entry_ref sourceRef;
+			result = message->FindRef("refs", &sourceRef);
+			if (result != B_OK) {
+				PRINT(("could not get source ref: %s\n", strerror(result) ));
 				return true;	// abort
 			}
 
@@ -145,6 +159,8 @@ TTracker::HandleSenMessage(BMessage* message)
 			}
 
 			BMessage msgCreateNewFromTemplate(kNewEntryFromTemplate);
+			msgCreateNewFromTemplate.AddString(SEN_RELATION_TYPE, relationType);
+			msgCreateNewFromTemplate.AddRef(SEN_RELATION_SOURCE_REF, &sourceRef);
 			msgCreateNewFromTemplate.AddRef("refs_template", &targetRef);
 			msgCreateNewFromTemplate.AddString("name", targetRef.name);
 
@@ -158,7 +174,7 @@ TTracker::HandleSenMessage(BMessage* message)
 				PRINT(("failed to send newFromTemplate message to Tracker: %s\n", strerror(result) ));
 			}
 			// we are done here
-			// todo: clean up if branch below for better uniform handling
+			// todo: clean up 'if' branch below for better uniform handling
 			return true;
 		}
 		default:
