@@ -253,6 +253,7 @@ protected:
 	virtual void PopulateMoveCopyNavMenu(BNavMenu*, uint32,
 		const entry_ref*, bool);
 
+	virtual void SetupNewAssociationMenu(BMenu* parent, const entry_ref* ref);
 	virtual void SetupNewRelationMenu(BMenu*, const entry_ref* ref = NULL);
 	virtual void SetupOpenRelationsMenu(BMenu*, const entry_ref* ref = NULL);
 	virtual void SetupOpenWithMenu(BMenu*, const entry_ref* ref = NULL);
@@ -322,6 +323,7 @@ protected:
 	BMenuItem* fOpenWithItem;
 	BMenuItem* fOpenRelationsItem;
 	BMenuItem* fOpenSelfRelationsItem;
+	BMenuItem* fNewAssociationItem;
 	BMenuItem* fNewRelationItem;
 	BMenuItem* fEnrichItem;
 	BMenuItem* fEditQueryItem;

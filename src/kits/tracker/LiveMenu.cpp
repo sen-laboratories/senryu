@@ -122,6 +122,10 @@ TLiveMixin::UpdateWindowMenu(BMenu* menu)
 					fWindow->Shortcuts()->UpdateEnrichItem(item);
 					break;
 
+				case kNewAssociation:
+					fWindow->Shortcuts()->UpdateNewAssociationItem(item);
+					break;
+
 				case kOpenRelations:
 					fWindow->Shortcuts()->UpdateOpenRelationsItem(item);
 					break;

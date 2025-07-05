@@ -407,6 +407,7 @@ BContainerWindow::BContainerWindow(LockingList<BWindow>* list, uint32 openFlags,
 	fOpenWithItem(NULL),
 	fOpenRelationsItem(NULL),
 	fOpenSelfRelationsItem(NULL),
+	fNewAssociationItem(NULL),
 	fNewRelationItem(NULL),
 	fEnrichItem(NULL),
 	fEditQueryItem(NULL),
@@ -570,6 +571,8 @@ BContainerWindow::Quit()
 	if (fEditQueryItem != NULL && fEditQueryItem->Menu() == NULL)
 		delete fEditQueryItem;
 
+	if (fNewAssociationItem != NULL && fNewAssociationItem->Menu() == NULL)
+		delete fNewAssociationItem;
 	if (fNewRelationItem != NULL && fNewRelationItem->Menu() == NULL)
 		delete fNewRelationItem;
 	if (fOpenRelationsItem != NULL && fOpenRelationsItem->Menu() == NULL)
@@ -697,6 +700,8 @@ BContainerWindow::DetachSubmenus()
 		fOpenSelfRelationsItem->Menu()->RemoveItem(fOpenSelfRelationsItem);
 	if (fOpenRelationsItem != NULL && fOpenRelationsItem->Menu() != NULL)
 		fOpenRelationsItem->Menu()->RemoveItem(fOpenRelationsItem);
+	if (fNewAssociationItem != NULL && fNewAssociationItem->Menu() != NULL)
+		fNewAssociationItem->Menu()->RemoveItem(fNewAssociationItem);
 	if (fNewRelationItem != NULL && fNewRelationItem->Menu() != NULL)
 		fNewRelationItem->Menu()->RemoveItem(fNewRelationItem);
 
@@ -1958,8 +1963,7 @@ BContainerWindow::AddShortcuts()
 	AddShortcut('U', B_COMMAND_KEY, new BMessage(kUnmountVolume), PoseView());
 	AddShortcut(B_UP_ARROW, B_COMMAND_KEY, new BMessage(kOpenParentDir), PoseView());
 	AddShortcut('O', B_COMMAND_KEY | B_CONTROL_KEY, new BMessage(kOpenSelectionWith), PoseView());
-	AddShortcut('R', B_COMMAND_KEY | B_CONTROL_KEY,
-		new BMessage(kOpenRelations), PoseView());
+	AddShortcut('R', B_COMMAND_KEY | B_CONTROL_KEY, new BMessage(kOpenRelations), PoseView());
 
 	BMessage* decreaseSize = new BMessage(kIconMode);
 	decreaseSize->AddInt32("scale", 0);
@@ -1999,6 +2003,7 @@ BContainerWindow::MenusEnded()
 	DeleteSubmenu(fCopyToItem);
 	DeleteSubmenu(fMoveToItem);
 	DeleteSubmenu(fOpenWithItem);
+	DeleteSubmenu(fNewAssociationItem);
 	DeleteSubmenu(fNewRelationItem);
 	DeleteSubmenu(fOpenRelationsItem);
 	DeleteSubmenu(fOpenSelfRelationsItem);
@@ -2221,6 +2226,69 @@ BContainerWindow::SetupNewRelationMenu(BMenu* parent, const entry_ref* ref)
 
 	parent->AddItem(fNewRelationItem, menuIndex);
 	Shortcuts()->UpdateNewRelationItem(fNewRelationItem);
+}
+
+
+void
+BContainerWindow::SetupNewAssociationMenu(BMenu* parent, const entry_ref* ref)
+{
+	ASSERT(parent != NULL);
+
+	// remove existing relation items from old menu
+	if (fNewAssociationItem != NULL && fNewAssociationItem->Menu() != NULL) {
+		fNewAssociationItem->Menu()->RemoveItem(fNewAssociationItem);
+	}
+
+	int32 count = PoseView()->CountSelected();
+	if (count == 0) {
+		// no selection, nothing to open
+		return;
+	}
+
+	if (TargetModel()->IsRoot()) {
+		// don't add ourselves if we are root
+		return;
+	}
+
+	// if ref unset assume window ref
+	if (ref == NULL)
+		ref = TargetModel()->EntryRef();
+
+	ASSERT(ref != NULL);
+
+	// add next to related "create Link" menu item
+	int32 menuIndex = parent->IndexOf(fCreateLinkItem);
+	if (menuIndex == B_ERROR) {
+		LOG(("SetupNewRelationMenu: no suitable menu index found!\n"));
+		return;
+	}
+	menuIndex++;	// insert right after "Create link"
+
+	// build a list of all selected files to show relations for
+	// todo: support intersection of supported sources and types
+	BMessage message(B_REFS_RECEIVED);
+	for (int32 index = 0; index < count; index++) {
+		BPose* pose = PoseView()->SelectionList()->ItemAt(index);
+		message.AddRef("refs", pose->TargetModel()->EntryRef());
+	}
+
+	// add SEN relations command with special label relation used for classification
+	message.AddUInt32(SEN_ACTION_CMD, SEN_RELATIONS_GET_COMPATIBLE);
+	message.AddString(SEN_RELATION_TYPE, SEN_LABEL_RELATION_TYPE);
+
+	// always build a fresh menu
+	//if (fNewAssociationItem)
+	//	delete fNewAssociationItem;
+
+	// reuse OpenRelationsMenu (because it's the same, really, only uses
+	// different command to get all relations compatible to selected file(s) )
+	// similar to self relations: specialized handling happens in OpenRelationsMenu
+	fNewAssociationItem = Shortcuts()->NewAssociationItem(
+		new OpenRelationsMenu(Shortcuts()->NewAssociationLabel(), &message, this,
+		BMessenger(PoseView())) );	// we need to target the PoseView here later
+
+	parent->AddItem(fNewAssociationItem, menuIndex);
+	Shortcuts()->UpdateNewAssociationItem(fNewAssociationItem);
 }
 
 
@@ -3134,8 +3202,11 @@ BContainerWindow::UpdateFileMenuOrPoseContextMenu(BMenu* menu, MenuContext conte
 		SetupEditQueryItem(menu, ref);
 
 	// "Move To", "Copy To", "Create Link" menus inserted after "Move to Trash"
-	if (ShouldHaveMoveCopyMenus(ref))
+	if (ShouldHaveMoveCopyMenus(ref)) {
 		SetupMoveCopyMenus(menu, ref);
+		// add "Associate with..." menu for classification here, after related copy/move menus have been set up
+		SetupNewAssociationMenu(menu, ref);
+	}
 
 	if (ShouldHaveAddOnMenus())
 		BuildAddOnsMenu(menu);

@@ -558,6 +558,7 @@ TShortcuts::NewFolderLabel()
 	return B_TRANSLATE("New folder");
 }
 
+
 BMenuItem*
 TShortcuts::NewRelationItem()
 {
@@ -576,6 +577,27 @@ const char*
 TShortcuts::NewRelationLabel()
 {
 	return B_TRANSLATE("New related" B_UTF8_ELLIPSIS);
+}
+
+
+BMenuItem*
+TShortcuts::NewAssociationItem()
+{
+	return new BMenuItem(NewAssociationLabel(), new BMessage(kNewAssociation), 'N', B_OPTION_KEY);
+}
+
+
+BMenuItem*
+TShortcuts::NewAssociationItem(BMenu* menu)
+{
+	return new BMenuItem(menu, new BMessage(kNewAssociation));
+}
+
+
+const char*
+TShortcuts::NewAssociationLabel()
+{
+	return B_TRANSLATE("Associate with" B_UTF8_ELLIPSIS);
 }
 
 
@@ -1368,6 +1390,19 @@ TShortcuts::UpdateOpenParentItem(BMenuItem* item)
 
 	if (fInWindow) {
 		item->SetEnabled(PoseView()->CanOpenParent());
+		item->SetTarget(PoseView());
+	}
+}
+
+
+void
+TShortcuts::UpdateNewAssociationItem(BMenuItem* item)
+{
+	if (item == NULL)
+		return;
+
+	if (fInWindow) {
+		item->SetEnabled(HasSelection());
 		item->SetTarget(PoseView());
 	}
 }

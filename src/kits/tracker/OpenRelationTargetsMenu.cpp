@@ -12,6 +12,7 @@
 #include "MimeTypes.h"
 #include "StopWatch.h"
 #include "Tracker.h"
+#include "TemplateUtils.h"
 
 #include <Alert.h>
 #include <Button.h>
@@ -51,8 +52,10 @@ OpenRelationTargetsMenu::OpenRelationTargetsMenu(const char* label, const BMessa
 bool
 OpenRelationTargetsMenu::StartBuildingItemList()
 {
-	PRINT(("building items for target menu with input message:\n"));
-	fEntriesToOpen.PrintToStream();
+	#ifdef DEBUG
+		PRINT(("building items for target menu with input message:\n"));
+		fEntriesToOpen.PrintToStream();
+	#endif
 
 	switch(fEntriesToOpen.what) {
 		case SENSEI_MESSAGE_RESULT:	// we are a sub menu of self relations
@@ -68,7 +71,7 @@ OpenRelationTargetsMenu::StartBuildingItemList()
 		}
 		case SEN_RELATIONS_GET_COMPATIBLE_TYPES:
 		{
-			PRINT(("building relations targets submenu for compatible NEW targets...\n"));
+			PRINT(("building relations targets submenu for compatible targets...\n"));
 			break;
 		}
 		case SEN_RELATIONS_GET:
@@ -138,7 +141,7 @@ OpenRelationTargetsMenu::DoneBuildingItemList()
 		case SEN_RESULT_RELATIONS:
 		{
 			if (fEntriesToOpen.what == SEN_RELATIONS_GET_COMPATIBLE_TYPES)
-				result = AddNewRelationTargetItems(&targets);
+				result = AddCompatibleRelationTargetItems(&targets);
 			else
 				result = AddRelationTargetItems(&targets);
 			break;
@@ -165,27 +168,17 @@ OpenRelationTargetsMenu::DoneBuildingItemList()
 	}
 }
 
-status_t OpenRelationTargetsMenu::AddNewRelationTargetItems(uint32* targetCount)
+status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targetCount)
 {
 	status_t result;
-
-	/* get source ref(s) - TODO: move to utility class, together with refs refactor
-	std::vector<entry_ref> refs;
-	entry_ref ref;
-	int32 refCount = 0;
-	while ((result = fEntriesToOpen.FindRef("refs", refCount, &ref)) == B_OK) {
-		refs.push_back(ref);
-		refCount++;
-	}
-
-	PRINT(("got %d refs.\n", refCount));
-	*/
 	BString	  source;
+
 	result = fEntriesToOpen.FindString(SEN_RELATION_SOURCE, &source);
 	if (result != B_OK) {
 		PRINT(("failed to retrieve relation source: %s\n", strerror(result)));
 		return result;
 	}
+
 	entry_ref srcRef;
 	BEntry sourceEntry(source.String());
 	result = sourceEntry.GetRef(&srcRef);
@@ -194,13 +187,72 @@ status_t OpenRelationTargetsMenu::AddNewRelationTargetItems(uint32* targetCount)
 		return result;
 	}
 
-	// get relationType for later
 	BString relationType;
 	result = fEntriesToOpen.FindString(SEN_RELATION_TYPE, &relationType);
 	if (result != B_OK) {
 		PRINT(("failed to retrieve relation type: %s\n", strerror(result)));
 		return result;
 	}
+
+	PRINT(("collecting compatible items for type %s...\n", relationType.String() ));
+
+	// handle meta relations for associations
+	if (relationType.StartsWith(SEN_META_SUPERTYPE "/")) {
+		PRINT(("building META targets for association %s...\n", relationType.String() ));
+
+		// get matching meta templates
+		BMimeType sourceMimeType(relationType);
+		BMessage matchingRefs;
+
+		result = TemplateUtils::GetInstalledTemplates(NULL, &sourceMimeType, &matchingRefs);
+
+		if (result == B_OK) {
+			PRINT(("got matching templates for meta type %s:\n", relationType.String()));
+			matchingRefs.PrintToStream();
+		} else {
+			PRINT(("failed to retrieve meta relation target refs for source type %s: %s\n",
+				relationType.String(), strerror(result)));
+			return result;
+		}
+		// for meta relations, we only need to add the association relation and are done
+		// we got all matching meta entities for the given relation MIME type here, so just get the refs
+		entry_ref destRef;
+		int32     refCount;
+
+		result = matchingRefs.GetInfo(sourceMimeType.Type(), NULL, &refCount);
+		if (result != B_OK) {
+			PRINT(("error: could not resolve ref count in template result for entity type %s: %s\n",
+					sourceMimeType.Type(), strerror(result) ));
+			return result;
+		}
+
+		for (int32 i = 0; i < refCount; i++) {
+			result = matchingRefs.FindRef(sourceMimeType.Type(), i, &destRef);
+
+			if (result == B_OK) {
+				BMessage* senAddRelationMsg = new BMessage(SEN_RELATION_ADD);
+				senAddRelationMsg->AddRef(SEN_RELATION_SOURCE_REF, new entry_ref(srcRef));
+				senAddRelationMsg->AddRef(SEN_RELATION_TARGET_REF, new entry_ref(destRef));
+				senAddRelationMsg->AddString(SEN_RELATION_TYPE, SEN_LABEL_RELATION_TYPE);
+
+				IconMenuItem* item = new IconMenuItem(destRef.name,
+													  senAddRelationMsg,
+													  sourceMimeType.Type());
+				item->SetTarget(BMessenger(SEN_SERVER_SIGNATURE));
+				AddItem(item);
+
+				(*targetCount)++;
+			} else {
+				PRINT(("could not resolve ref #%d for source type %s: %s\n",
+					i, sourceMimeType.Type(), strerror(result) ));
+			}
+		}
+		return result;	// done
+	} else {
+		PRINT(("source %s is a normal relation, continuing normal flow.\n", relationType.String() ));
+	}
+
+	// else, handle new relations from compatible templates
 
 	// here we got MIME types for compatible target types
 	BStringList targetTypes;
@@ -254,7 +306,7 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 	}
 
 	BMessage idToRef;
-	result = relations.FindMessage("id_to_ref", &idToRef);
+	result = relations.FindMessage(SEN_ID_TO_REF_MAP, &idToRef);
 	if (result != B_OK) {
 		PRINT(("failed to retrieve ID/ref mapping for relations: %s\n", strerror(result)));
 		return result;

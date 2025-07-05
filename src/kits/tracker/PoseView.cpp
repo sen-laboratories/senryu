@@ -3430,7 +3430,7 @@ BPoseView::NewFileFromTemplate(const BMessage* message)
 	BString	  relationType;
 	status_t result = message->FindRef(SEN_RELATION_SOURCE_REF, &originalRef);
 	if (result == B_OK)
-			 result = message->FindString(SEN_RELATION_TYPE, &relationType);
+		result = message->FindString(SEN_RELATION_TYPE, &relationType);
 
 	if (result == B_OK) {
 		// send SEN scripting message to add relation of desired type

@@ -167,11 +167,11 @@ OpenRelationsMenu::DoneBuildingItemList()
 			relationCount = AddSelfRelationItems(&source);
 			break;
 		case SEN_RELATIONS_GET_COMPATIBLE:
-			PRINT(("building NEW relations menu.\n"));
+			PRINT(("building compatible relations menu.\n"));
 			relationCount = AddRelationItems(&source);
 			break;
 		default:
-			PRINT(("MISSING/UNEXPECTED fSenCmd %u, building relations menu.\n", fSenCmd));
+			PRINT(("MISSING/UNEXPECTED command %u, building standard relations menu.\n", fSenCmd));
 			relationCount = AddRelationItems(&source);	// also handles new relation with compatible types
 	}
 	if (relationCount == 0) {
@@ -184,14 +184,12 @@ OpenRelationsMenu::DoneBuildingItemList()
 }
 
 uint32 OpenRelationsMenu::AddRelationItems(const BString* source) {
-	BString relation;
-    int index = 0;
-
 	BString srcId;
 	if (fRelationsReply.FindString(SEN_ID_ATTR, &srcId) != B_OK) {
 		srcId.SetTo("");
 	}
 
+	// update command for followup action in relation menu items
 	uint32 msgCmd;
 	switch (fSenCmd) {
 		case SEN_RELATIONS_GET_COMPATIBLE:
@@ -205,24 +203,45 @@ uint32 OpenRelationsMenu::AddRelationItems(const BString* source) {
 			msgCmd = fSenCmd;
 	}
 
-    while (fRelationsReply.FindString(SEN_RELATIONS, index, &relation) == B_OK) {
+	BString relationType(SEN_RELATIONS);	// handle normal relations
+
+	// handle meta relations
+	BString relation;
+    int index = 0;
+	if (fRelationsReply.FindString(SEN_RELATION_TYPE, &relation) == B_OK) {
+		if (relation == SEN_LABEL_RELATION_TYPE) {
+			relationType = "types";		// use the meta relation types as relations here
+		}
+	}
+
+    while (fRelationsReply.FindString(relationType.String(), index++, &relation) == B_OK) {
+		// only show associations for existing relations, not for new ones (handled separately)
+		/*
+		if (relation == SEN_LABEL_RELATION_TYPE) {
+			if (fSenCmd != SEN_RELATIONS_GET && fSenCmd != SEN_RELATIONS_GET_COMPATIBLE_TYPES) {
+				PRINT(("  > skipping Association relation.\n"));
+				continue;
+			}
+		}
+		*/
 		// message for relation menu items
         BMessage* message = new BMessage(msgCmd);
-        message->AddString(SEN_RELATION_SOURCE, (new BString(*source))->String());
-        message->AddString(SEN_RELATION_TYPE, (new BString(relation))->String());
+        message->AddString(SEN_RELATION_SOURCE, BString(*source));
+        message->AddString(SEN_RELATION_TYPE, BString(relation));
 
 		// message for the relation menu itself (to open targets in separate Tracker window)
 		BMimeType mime(relation.String());
 		if (!mime.IsInstalled()) {
 			ERROR("skipping relation with unavailable MIME type %s...\n", relation.String());
-			index++;
 			continue;
 		}
+
 		char label[B_ATTR_NAME_LENGTH];
 		if (mime.GetShortDescription(label) != B_OK) {
 			PRINT(("could not get MIME type for relation %s", relation.String()));
 			relation.CopyInto(label, 0, relation.Length());
 		}
+
 		BMessage *openRelationTargetsMsg = new BMessage(SEN_OPEN_RELATION_TARGET_VIEW);
         openRelationTargetsMsg->AddString(SEN_RELATION_SOURCE, source->String());
 		// todo: add new srcId if adding first relation via Tracker later!
@@ -238,8 +257,8 @@ uint32 OpenRelationsMenu::AddRelationItems(const BString* source) {
 		// redirect open relation targets message to Tracker app directly
 		item->SetTarget(be_app_messenger);
 		AddItem(item);
-        index++;
     }
+
 	return index;
 }
 

@@ -119,6 +119,10 @@ public:
 			BMenuItem*			NewFolderItem();
 			const char*			NewFolderLabel();
 
+			BMenuItem*			NewAssociationItem();
+			BMenuItem*			NewAssociationItem(BMenu*);
+			const char*			NewAssociationLabel();
+
 			BMenuItem*			NewRelationItem();
 			BMenuItem*			NewRelationItem(BMenu*);
 			const char*			NewRelationLabel();
@@ -198,6 +202,7 @@ public:
 			void				UpdateNewFolderItem(BMenuItem*);
 			void				UpdateNewTemplatesItem(BMenuItem*);
 			void				UpdateOpenItem(BMenuItem*);
+			void				UpdateNewAssociationItem(BMenuItem*);
 			void				UpdateNewRelationItem(BMenuItem*);
 			void				UpdateOpenRelationsItem(BMenuItem*);
 			void				UpdateOpenParentItem(BMenuItem*);

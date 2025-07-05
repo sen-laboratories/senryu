@@ -47,12 +47,16 @@ All rights reserved.
 #include "Commands.h"
 #include "Sen.h"
 #include "TemplatesMenu.h"
+#include "TemplateUtils.h"
 #include "Tracker.h"
 
 bool
 TTracker::HandleSenMessage(BMessage* message)
 {
 	switch (message->what) {
+		case kNewAssociation:
+			PRINT(("TrackerSen::AssociateWith()  called\n"));
+			break;
 		case kOpenRelations:
 		case kOpenSelfRelations:
 		case SEN_OPEN_RELATION_TARGET_VIEW:	// fallthrough
@@ -115,6 +119,7 @@ TTracker::HandleSenMessage(BMessage* message)
 			PRINT(("open (self) relations top level view not yet implemented. Please check back later.\n"));
 			break;
 		}
+		case kNewAssociation:
 		case SEN_RELATIONS_GET_NEW_TARGET:
 		{
 			BString relationType;
@@ -139,23 +144,53 @@ TTracker::HandleSenMessage(BMessage* message)
 			}
 
 			entry_ref targetRef;
+			BMimeType filterType(SEN_ENTITY_SUPERTYPE);
 			BMessage  templateTypeToRef;
-			result =  CollectInstalledTemplates(NULL, &templateTypeToRef);
-
-			PRINT(("templateTargetType->Ref map msg is:\n"));
-			templateTypeToRef.PrintToStream();
+			result =  TemplateUtils::GetInstalledTemplates(NULL, &filterType, &templateTypeToRef);
 
 			if (result == B_OK) {
+				PRINT(("got templates:\n"));
+				templateTypeToRef.PrintToStream();
+
 				result =  templateTypeToRef.FindRef(targetType.String(), &targetRef);
 				if (result == B_NAME_NOT_FOUND) {
+					PRINT(("could not find template for type %s, creating a temporary one...\n",
+						targetType.String() ));
 					// no template for type, let's create an empty one on the fly
-					result = ResolveTemplateForType(targetType.String(), &targetRef);
+					result = TemplateUtils::GetTemplateForType(targetType.String(), &targetRef);
+				} else {
+					PRINT(("got target template ref %s for creating new type %s.\n",
+						targetRef.name, targetType.String() ));
 				}
 			}
 			if (result != B_OK) {
 				PRINT(("could not resolve template for target type %s: %s\n",
 						targetType.String(), strerror(result) ));
 				return true;	// abort
+			}
+
+			// associations are handled the same until here, where we never create a new target in that case
+			if (relationType == SEN_LABEL_RELATION_TYPE) {
+				// just add a relation to the existing association meta entity
+				PRINT(("adding relation to META entity for association %s of type %s\n",
+					targetRef.name, targetType.String() ));
+
+				// send SEN scripting message to add relation of desired type
+				BMessage senAddRelationMsg(SEN_RELATION_ADD);
+				senAddRelationMsg.AddRef(SEN_RELATION_SOURCE_REF, new entry_ref(sourceRef));
+				senAddRelationMsg.AddRef(SEN_RELATION_TARGET_REF, new entry_ref(targetRef));
+				senAddRelationMsg.AddString(SEN_RELATION_TYPE, relationType);
+
+				senAddRelationMsg.PrintToStream();
+
+				BMessenger senMsgr(SEN_SERVER_SIGNATURE);
+				if (senMsgr.IsValid()) {
+					senMsgr.SendMessage(&senAddRelationMsg);
+				} else {
+					PRINT(("could not reach sen_server."));
+				}
+
+				return true;	// done
 			}
 
 			BMessage msgCreateNewFromTemplate(kNewEntryFromTemplate);
@@ -220,124 +255,6 @@ bool TTracker::ResolveRelation(const entry_ref* ref, BString* srcId, BString* ta
 	if (result == B_NAME_NOT_FOUND) return false;
 
 	return (result == B_OK);
-}
-
-status_t TTracker::ResolveTemplateForType(const char* mimeType, entry_ref* ref)
-{
-	// TODO: search Tracker templates for matching template
-	// LATER: relation specific templates to use depending on relation ends, e.g. Person->Note vs Movie->Note etc.
-	//        this could be added like a filter as separate (non indexed) attributes in Tracker relation templates
-
-	// create new tmp file of given type to act as template for now
-	BPath templatePath;
-	status_t result;
-
-	if (find_directory(B_SYSTEM_TEMP_DIRECTORY, &templatePath) != B_OK)
-	{
-		PRINT(("could not find user settings directory, falling back to /tmp.\n"));
-		templatePath.SetTo("/tmp");
-	}
-	// build simple MIME path
-	BMimeType mime(mimeType);
-	if ((result = mime.InitCheck()) != B_OK) {
-		PRINT(("invalid MIME type %s: %s\n", mimeType, strerror(result)));
-		return result;
-	}
-
-	templatePath.Append("sen");
-	templatePath.Append(SEN_ENTITY_SUPERTYPE);
-
-	BDirectory outputDir;
-	result = create_directory(templatePath.Path(), B_CREATE_FILE);
-	if (result != B_OK && result != B_FILE_EXISTS) {
-		PRINT(("failed to set up template directory: %s\n", strerror(result) ));
-		return result;
-	}
-
-	// create template with MIME path, possibly reuse existing one
-	BFile templateFile;
-	char shortDesc[B_MIME_TYPE_LENGTH];
-	mime.GetShortDescription(shortDesc);
-	templatePath.Append(shortDesc);
-
-	outputDir.CreateFile(templatePath.Path(), &templateFile);
-
-	result = templateFile.InitCheck();
-	if (result != B_OK && result != B_FILE_EXISTS) {
-		PRINT(("failed to create template at path %s: %s\n", mimeType, strerror(result) ));
-		return result;
-	}
-
-	// set type
-	BNodeInfo templateInfo(&templateFile);
-	if ((result = templateInfo.InitCheck()) == B_OK) {
-		result = templateInfo.SetType(mimeType);
-		if (result == B_OK) {
-			// get ref of our temp template
-			templateFile.Sync();
-			BEntry templateEntry(templatePath.Path());
-			if ((result = templateEntry.InitCheck()) == B_OK) {
-				templateEntry.GetRef(ref);
-				PRINT(("got ref %s in %s for Tracker New.\n", ref->name, templatePath.Path() ));
-			}
-		}
-	}
-	return result;
-}
-
-// TODO: cache and watch templates dir for changes using WatchNode(), then update
-status_t TTracker::CollectInstalledTemplates(const char* path, BMessage *templatesMsg)
-{
-	BEntry entry;
-	BPath templatePath;
-	status_t result = B_OK;
-
-	if (path == NULL) {
-		status_t result;
-
-		if ((result = find_directory(B_USER_SETTINGS_DIRECTORY, &templatePath)) != B_OK)
-		{
-			PRINT(("could not find user settings directory (using default): %s\n", strerror(result)));
-			templatePath.SetTo("/boot/home/config/settings");
-		}
-
-		templatePath.Append(kTemplatesDirectory);
-		path = templatePath.Path();
-	}
-	PRINT(("  >> entering templates path %s...\n", path ));
-
-	BDirectory templatesDir(path);
-
-	while (templatesDir.GetNextEntry(&entry) == B_OK) {
-		BNode node(&entry);
-		BNodeInfo nodeInfo(&node);
-		char fileName[B_FILE_NAME_LENGTH];
-
-		entry.GetName(fileName);
-		if (nodeInfo.InitCheck() == B_OK) {
-			char mimeType[B_MIME_TYPE_LENGTH];
-			nodeInfo.GetType(mimeType);
-
-			BMimeType mime(mimeType);
-			if (mime.IsValid()) {
-				entry_ref ref;
-				entry.GetRef(&ref);
-
-				// Check if the template is a directory
-				BDirectory dir(&entry);
-				if (dir.InitCheck() == B_OK) {
-					BPath subdirPath;
-					if (entry.GetPath(&subdirPath) == B_OK) {
-						result = CollectInstalledTemplates(subdirPath.Path(), templatesMsg);
-					}
-					continue;
-				}
-				// add type + ref to result
-				templatesMsg->AddRef(mimeType, &ref);
-			}
-		}
-	}
-	return result;
 }
 
 status_t TTracker::PrepareLaunchTarget(
@@ -423,7 +340,7 @@ TTracker::PrepareRelationTargetWindow(BMessage *message, RelationInfo* relationI
 
 	// get ID lookup map
 	BMessage idToRefMap;
-	result = relations.FindMessage("id_to_ref", &idToRefMap);
+	result = relations.FindMessage(SEN_ID_TO_REF_MAP, &idToRefMap);
 	if (result != B_OK) {
 		ERROR("could not get ref mapping for source %s: %s\n", relationInfo->source.String(), strerror(result));
 		return result;

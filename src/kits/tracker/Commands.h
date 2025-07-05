@@ -34,16 +34,11 @@ All rights reserved.
 #ifndef _COMMANDS_H
 #define _COMMANDS_H
 
-#define SEN_INTEGRATION
-
 #include <MountServer.h>
 #include <SupportDefs.h>
 
 #include <tracker_private.h>
-
-#ifdef SEN_INTEGRATION
 #include "Sensei.h"
-#endif
 
 // public commands moved here so they may be included by other apps
 
@@ -59,11 +54,10 @@ const uint32 kIdentifyEntry = 'Tidt';
 const uint32 kOpenSelection = 'Tosl';
 const uint32 kOpenSelectionWith = 'Tosu';
 
-#ifdef SEN_INTEGRATION
-const uint32 kEnrichEntry = SENSEI_CMD_ENRICH;
-const uint32 kOpenRelations = 'Tore';		// Tracker open menu command vs nested relation handling in SEN
+const uint32 kEnrichEntry = SENSEI_CMD_ENRICH;	// reuse SENSEI definition for better interop
+const uint32 kNewAssociation = 'Tnas';			// new meta relation
+const uint32 kOpenRelations = 'Tore';			// Tracker open menu command vs nested relation handling in SEN
 const uint32 kOpenSelfRelations = 'Tosr';
-#endif
 
 const uint32 kCloseAllWindows = 'Tall';
 const uint32 kCloseWindowAndChildren = 'Tcwc';
