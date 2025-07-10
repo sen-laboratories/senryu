@@ -3435,19 +3435,22 @@ BPoseView::NewFileFromTemplate(const BMessage* message)
 	if (result == B_OK) {
 		// send SEN scripting message to add relation of desired type
 		BMessage senAddRelationMsg(SEN_RELATION_ADD);
-		senAddRelationMsg.AddRef(SEN_RELATION_SOURCE_REF, new entry_ref(originalRef));
-		senAddRelationMsg.AddRef(SEN_RELATION_TARGET_REF, new entry_ref(destEntryRef));
+		senAddRelationMsg.AddRef(SEN_RELATION_SOURCE_REF, &originalRef);
+		senAddRelationMsg.AddRef(SEN_RELATION_TARGET_REF, &destEntryRef);
 		senAddRelationMsg.AddString(SEN_RELATION_TYPE, relationType);
+		// todo: add possible relation properties from template!
 
-		PRINT(("add relation %s for new target %s...", relationType.String(), fileName));
+		PRINT(("add relation '%s' for new target '%s'...\n", relationType.String(), fileName));
 		senAddRelationMsg.PrintToStream();
 
 		BMessenger senMsgr(SEN_SERVER_SIGNATURE);
 		if (senMsgr.IsValid()) {
 			senMsgr.SendMessage(&senAddRelationMsg);
 		} else {
-			PRINT(("could not reach sen_server."));
+			PRINT(("could not reach sen_server.\n"));
 		}
+	} else {
+		PRINT(("abort add SEN relation, error: %s\n", strerror(result) ));
 	}
 
 	// try to place new item at click point or under mouse if possible

@@ -28,8 +28,8 @@ private:
 	virtual void DoneBuildingItemList();
 	virtual void ClearMenuBuildingState();
 
-	uint32 AddRelationItems(const BString* source);
-	uint32 AddSelfRelationItems(const BString* source);
+	uint32 AddRelationItems(const entry_ref* sourceRef);
+	uint32 AddSelfRelationItems(const entry_ref* sourceRef);
 
 	BMessage    fEntriesToOpen;
 	BMessenger  fTrackerMessenger;

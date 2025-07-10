@@ -45,11 +45,16 @@ All rights reserved.
 #include "TemplatesMenu.h"
 
 // LATER: cache and watch templates dir for changes using WatchNode()
-status_t TemplateUtils::GetInstalledTemplates(const char* path, const BMimeType* mimeFilter, BMessage* templatesMsg)
+int32 TemplateUtils::GetInstalledTemplates(
+    const char* path,
+	const BStringList* mimeIncludes,
+    const BStringList* mimeExcludes,
+	BMessage* templatesMsg)
 {
 	BEntry entry;
 	BPath templatePath;
 	status_t result = B_OK;
+	int32 templatesCount = 0;
 
 	if (path == NULL) {
 		status_t result;
@@ -87,23 +92,68 @@ status_t TemplateUtils::GetInstalledTemplates(const char* path, const BMimeType*
 				if (dir.InitCheck() == B_OK) {
 					BPath subdirPath;
 					if (entry.GetPath(&subdirPath) == B_OK) {
-						result = GetInstalledTemplates(subdirPath.Path(), mimeFilter, templatesMsg);
+						int32 subDirResult = GetInstalledTemplates(subdirPath.Path(), mimeIncludes, mimeExcludes, templatesMsg);
+						if (subDirResult < 0)
+							return subDirResult;	// return error
+						else
+							templatesCount += subDirResult;
 					}
 					continue;
 				}
 
-				// filter for supplied MIME Type
-				if (! mime.Contains(mimeFilter)) {
-					PRINT(("skipping MIME Type %s, no match for filter %s.\n", mime.Type(), mimeFilter->Type() ));
-					continue;
+				// filter for included/excluded MIME types
+				// filters are optional, but IF incldue filter is given, the element MUST be included,
+				// so use a designated negative index (different from `-1` for "not found") as default for that.
+				int32 indexInclude = -2, indexExclude = -1;
+
+				if (mimeIncludes != NULL && ! mimeIncludes->IsEmpty()) {
+					// type MUST be included in filter
+					// we need to check every element to support partial names as patterns, e.g. just a supertype
+					indexInclude = FindPartialMatch(mimeType, mimeIncludes);
 				}
 
-				// add type + ref to result
-				templatesMsg->AddRef(mimeType, &ref);
+				// type could still be excluded below
+				// Note: (partial) type may be included in both lists, e.g. include "entity" but exclude "entity/blah"
+				//       in that case, the item will be excluded
+				if (mimeExcludes != NULL && ! mimeExcludes->IsEmpty()) {
+					// type MAY be included in filter
+					// we need to check every element to support partial names as patterns, e.g. just a supertype
+					indexExclude = FindPartialMatch(mimeType, mimeExcludes);
+				}
+
+				if (indexInclude != -1 && indexExclude == -1) {
+					// add type + ref to result
+					PRINT(("  > ADD MIME Type %s.\n", mimeType ));
+					templatesMsg->AddRef(mimeType, &ref);
+					templatesCount++;
+				} else {
+					PRINT(("  > SKIP MIME Type %s.\n", mimeType ));
+					continue;
+				}
 			}
 		}
 	}
-	return result;
+	PRINT(("%d matching templates found.\n", templatesCount));
+
+	if (templatesCount >= 0)
+		return templatesCount;
+	else
+		return result;
+}
+
+int32 TemplateUtils::FindPartialMatch(const char* nameToFind, const BStringList* names)
+{
+	if (names == NULL || names->IsEmpty())
+		return -1;
+
+	BString nameStr(nameToFind);
+
+	for (int32 i = 0; i < names->CountStrings(); i++) {
+		if (nameStr.StartsWith(names->StringAt(i))) {
+			return i;
+		}
+	}
+	return -1;
 }
 
 status_t TemplateUtils::GetTemplateForType(const char* mimeType, entry_ref* ref)

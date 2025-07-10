@@ -130,42 +130,23 @@ TTracker::HandleSenMessage(BMessage* message)
 			}
 
 			BString targetType;
-			result = message->FindString("type", &targetType);
+			result = message->FindString(SEN_RELATION_TARGET_TYPE, &targetType);
 			if (result != B_OK) {
 				PRINT(("could not find target type: %s\n", strerror(result) ));
 				return true;	// abort
 			}
 
 			entry_ref sourceRef;
-			result = message->FindRef("refs", &sourceRef);
+			result = message->FindRef(SEN_RELATION_SOURCE_REF, &sourceRef);
 			if (result != B_OK) {
 				PRINT(("could not get source ref: %s\n", strerror(result) ));
 				return true;	// abort
 			}
 
 			entry_ref targetRef;
-			BMimeType filterType(SEN_ENTITY_SUPERTYPE);
-			BMessage  templateTypeToRef;
-			result =  TemplateUtils::GetInstalledTemplates(NULL, &filterType, &templateTypeToRef);
-
-			if (result == B_OK) {
-				PRINT(("got templates:\n"));
-				templateTypeToRef.PrintToStream();
-
-				result =  templateTypeToRef.FindRef(targetType.String(), &targetRef);
-				if (result == B_NAME_NOT_FOUND) {
-					PRINT(("could not find template for type %s, creating a temporary one...\n",
-						targetType.String() ));
-					// no template for type, let's create an empty one on the fly
-					result = TemplateUtils::GetTemplateForType(targetType.String(), &targetRef);
-				} else {
-					PRINT(("got target template ref %s for creating new type %s.\n",
-						targetRef.name, targetType.String() ));
-				}
-			}
+			result = message->FindRef(SEN_RELATION_TARGET_REF, &targetRef);
 			if (result != B_OK) {
-				PRINT(("could not resolve template for target type %s: %s\n",
-						targetType.String(), strerror(result) ));
+				PRINT(("could not get target ref: %s\n", strerror(result) ));
 				return true;	// abort
 			}
 
@@ -175,35 +156,29 @@ TTracker::HandleSenMessage(BMessage* message)
 				PRINT(("adding relation to META entity for association %s of type %s\n",
 					targetRef.name, targetType.String() ));
 
-				// send SEN scripting message to add relation of desired type
-				BMessage senAddRelationMsg(SEN_RELATION_ADD);
-				senAddRelationMsg.AddRef(SEN_RELATION_SOURCE_REF, new entry_ref(sourceRef));
-				senAddRelationMsg.AddRef(SEN_RELATION_TARGET_REF, new entry_ref(targetRef));
-				senAddRelationMsg.AddString(SEN_RELATION_TYPE, relationType);
-
-				senAddRelationMsg.PrintToStream();
+				// adapt and send as SEN scripting message to add relation of desired type
+				message->what = SEN_RELATION_ADD;
+				message->PrintToStream();
 
 				BMessenger senMsgr(SEN_SERVER_SIGNATURE);
 				if (senMsgr.IsValid()) {
-					senMsgr.SendMessage(&senAddRelationMsg);
+					senMsgr.SendMessage(message);
 				} else {
-					PRINT(("could not reach sen_server."));
+					PRINT(("could not reach sen_server.\n"));
 				}
 
 				return true;	// done
 			}
-
-			BMessage msgCreateNewFromTemplate(kNewEntryFromTemplate);
-			msgCreateNewFromTemplate.AddString(SEN_RELATION_TYPE, relationType);
-			msgCreateNewFromTemplate.AddRef(SEN_RELATION_SOURCE_REF, &sourceRef);
-			msgCreateNewFromTemplate.AddRef("refs_template", &targetRef);
-			msgCreateNewFromTemplate.AddString("name", targetRef.name);
+			// else, adapt and forward as "new from template" message to Tracker
+			message->what = kNewEntryFromTemplate;
+			message->AddRef("refs_template", &targetRef);
+			message->AddString("name", targetRef.name);	// becomes e.g. "New Label"
 
 			BMessenger trackerMessenger;
 			result = message->FindMessenger("TrackerViewToken", &trackerMessenger);
 
 			if (result == B_OK) {
-				result = trackerMessenger.SendMessage(&msgCreateNewFromTemplate);
+				result = trackerMessenger.SendMessage(message);
 			}
 			if (result != B_OK) {
 				PRINT(("failed to send newFromTemplate message to Tracker: %s\n", strerror(result) ));

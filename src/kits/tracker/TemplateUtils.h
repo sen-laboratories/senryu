@@ -35,17 +35,22 @@ All rights reserved.
 #ifndef _TEMPLATE_UTILS_H
 #define _TEMPLATE_UTILS_H
 
-#include <MimeType.h>
+#include <Message.h>
+#include <StringList.h>
 #include <SupportDefs.h>
 
 class TemplateUtils {
 public:
-    static status_t GetInstalledTemplates(const char* path = NULL, const BMimeType* mimeFilter = NULL,
+    static int32    GetInstalledTemplates(const char* path = NULL,
+										  const BStringList* mimeIncludes = NULL,
+										  const BStringList* mimeExcludes = NULL,
                                           BMessage *templatesMsg = new BMessage());
     static status_t GetTemplateForType(const char* mimeType, entry_ref* ref);
 
     // only static access allowed
     TemplateUtils() = delete;
+private:
+	static int32    FindPartialMatch(const char* nameToFind, const BStringList* names);
 };
 
 #endif  // _TEMPLATE_UTILS_H
