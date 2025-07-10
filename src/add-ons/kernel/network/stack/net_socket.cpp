@@ -886,6 +886,8 @@ int
 socket_accept(net_socket* socket, struct sockaddr* address,
 	socklen_t* _addressLength, net_socket** _acceptedSocket)
 {
+	if (socket->type != SOCK_STREAM)
+		return B_NOT_SUPPORTED;
 	if ((socket->options & SO_ACCEPTCONN) == 0)
 		return B_BAD_VALUE;
 
@@ -963,8 +965,10 @@ socket_getpeername(net_socket* _socket, struct sockaddr* address,
 	net_socket_private* socket = (net_socket_private*)_socket;
 	BReference<net_socket_private> parent = socket->parent.GetReference();
 
-	if ((!parent.IsSet() && !socket->is_connected) || socket->peer.ss_len == 0)
+	if ((!parent.IsSet() && !socket->is_connected) || socket->peer.ss_len == 0
+		|| socket->peer.ss_family == AF_UNSPEC) {
 		return ENOTCONN;
+	}
 
 	memcpy(address, &socket->peer, min_c(*_addressLength, socket->peer.ss_len));
 	*_addressLength = socket->peer.ss_len;

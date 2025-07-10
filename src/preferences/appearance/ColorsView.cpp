@@ -109,59 +109,37 @@ void
 ColorsView::MessageReceived(BMessage* message)
 {
 	if (message->WasDropped()) {
-		// Received from color preview when dropped on
 		char* name;
 		type_code type;
 		rgb_color* color;
 		ssize_t size;
 		if (message->GetInfo(B_RGB_COLOR_TYPE, 0, &name, &type) == B_OK
 			&& message->FindData(name, type, (const void**)&color, &size) == B_OK) {
-			_SetCurrentColor(*color);
-			Window()->PostMessage(kMsgUpdate);
-		}
+			BPoint dropLoc = message->DropPoint();
+			if (fAttrList->Bounds().Contains(fAttrList->ConvertFromScreen(dropLoc))) {
+				// dropped on color list view
+				int32 index = fAttrList->IndexOf(fAttrList->ConvertFromScreen(dropLoc));
+				bool selected = index == fAttrList->CurrentSelection();
+				if (index < 0 || index >= fAttrList->CountItems() || selected)
+					_SetCurrentColor(*color);
+				else
+					_SetColor(index, *color);
 
-		return BView::MessageReceived(message);
-	}
-
-	switch (message->what) {
-		// Received from color preview when dropped on
-		case COLOR_DROPPED:
-		// Received from the color list view when color changes
-		case BColorListView::B_MESSAGE_SET_CURRENT_COLOR:
-		{
-			char* name;
-			type_code type;
-			rgb_color* color;
-			ssize_t size;
-
-			if (message->GetInfo(B_RGB_COLOR_TYPE, 0, &name, &type) == B_OK
-				&& message->FindData(name, type, (const void**)&color, &size) == B_OK) {
+				Window()->PostMessage(kMsgUpdate);
+			} else if (fColorPreview->Bounds().Contains(fColorPreview->ConvertFromScreen(dropLoc))
+				|| fPicker->Bounds().Contains(fPicker->ConvertFromScreen(dropLoc))) {
+				// dropped on color preview or color control
 				_SetCurrentColor(*color);
 				Window()->PostMessage(kMsgUpdate);
 			}
-			break;
 		}
+	}
 
-		case BColorListView::B_MESSAGE_SET_COLOR:
-		{
-			char* name;
-			type_code type;
-			rgb_color* color;
-			ssize_t size;
-			color_which which;
-
-			if (message->GetInfo(B_RGB_COLOR_TYPE, 0, &name, &type) == B_OK
-				&& message->FindData(name, type, (const void**)&color, &size) == B_OK
-				&& message->FindUInt32("which", (uint32*)&which) == B_OK) {
-				_SetColor(which, *color);
-				Window()->PostMessage(kMsgUpdate);
-			}
-			break;
-		}
-
+	switch (message->what) {
 		case UPDATE_COLOR:
 		{
 			// Received from the color fPicker when its color changes
+
 			rgb_color color = fPicker->ValueAsColor();
 			_SetCurrentColor(color);
 			Window()->PostMessage(kMsgUpdate);
@@ -172,11 +150,16 @@ ColorsView::MessageReceived(BMessage* message)
 		{
 			// Received when the user chooses a GUI fAttribute from the list
 
-			BColorItem* item
-				= static_cast<BColorItem*>(fAttrList->ItemAt(fAttrList->CurrentSelection()));
-			fWhich = item->ColorWhich();
-			rgb_color color = ui_color(fWhich);
-			_SetCurrentColor(color);
+			int32 index = fAttrList->CurrentSelection();
+			if (index < 0 || index >= fAttrList->CountItems())
+				break;
+
+			BColorItem* item = dynamic_cast<BColorItem*>(fAttrList->ItemAt(index));
+			if (item != NULL) {
+				fWhich = item->ColorWhich();
+				rgb_color color = ui_color(fWhich);
+				_SetCurrentColor(color);
+			}
 			break;
 		}
 
@@ -306,17 +289,21 @@ ColorsView::_SetUIColors(const BMessage& colors)
 void
 ColorsView::_SetCurrentColor(rgb_color color)
 {
-	_SetColor(fWhich, color);
-
-	int32 currentIndex = fAttrList->CurrentSelection();
-	BColorItem* item = static_cast<BColorItem*>(fAttrList->ItemAt(currentIndex));
-	if (item != NULL) {
-		item->SetColor(color);
-		fAttrList->InvalidateItem(currentIndex);
-	}
-
+	_SetColor(fAttrList->CurrentSelection(), color);
 	fPicker->SetValue(color);
 	fColorPreview->SetColor(color);
+}
+
+
+void
+ColorsView::_SetColor(int32 index, rgb_color color)
+{
+	BColorItem* item = dynamic_cast<BColorItem*>(fAttrList->ItemAt(index));
+	if (item != NULL) {
+		item->SetColor(color);
+		fAttrList->InvalidateItem(index);
+		_SetColor(item->ColorWhich(), color);
+	}
 }
 
 
@@ -336,15 +323,15 @@ ColorsView::_SetColor(color_which which, rgb_color color)
 		const bool isDark = color.IsDark();
 
 		_SetOneColor(B_MENU_BACKGROUND_COLOR, color);
-		_SetOneColor(B_SCROLL_BAR_THUMB_COLOR, color);
 
 		const rgb_color menuSelectedBackground
 			= tint_color(color, isDark ? 0.8 /* lighten "< 1" */ : B_DARKEN_2_TINT);
 		_SetOneColor(B_MENU_SELECTED_BACKGROUND_COLOR, menuSelectedBackground);
 
-		const rgb_color controlBackground = tint_color(color, isDark
-			? 0.8 /* lighten "< 1" */ : 0.25 /* lighten "> 2" */);
+		const rgb_color controlBackground = tint_color(color,
+			0.84 /* lighten "< 1" */);
 		_SetOneColor(B_CONTROL_BACKGROUND_COLOR, controlBackground);
+		_SetOneColor(B_SCROLL_BAR_THUMB_COLOR, controlBackground);
 
 		const rgb_color controlBorder
 			= tint_color(color, isDark ? 0.4875 : 1.20 /* lighten/darken "1.5" */);

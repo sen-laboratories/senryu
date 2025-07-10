@@ -2915,7 +2915,7 @@ BContainerWindow::AddWindowContextMenu(BMenu* menu)
 		menu->AddSeparatorItem();
 	}
 
-	if (!(TargetModel()->IsPrintersDir() || TargetModel()->IsVolume() || TargetModel()->IsRoot()
+	if (!(TargetModel()->IsPrintersDir() || TargetModel()->IsRoot()
 			|| TargetModel()->IsTrash() || TargetModel()->InTrash())) {
 		menu->AddItem(Shortcuts()->PasteItem());
 		menu->AddSeparatorItem();

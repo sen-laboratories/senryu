@@ -27,10 +27,15 @@ static const size_t kPageSize = B_PAGE_SIZE;
 static const size_t kLargestUsefulChunk = 512 * kPageSize;
 
 /*! Amount of virtual address space to reserve when creating new areas. */
-static const size_t kReserveAddressSpace = 128 * 1024 * 1024;
+/* (The Haiku kernel will ignore reservations if there's no other address
+ * space left, so using a large value here should not hurt.) */
+static const size_t kReserveAddressSpace = 1 * 1024 * 1024 * 1024;
 
 /*! Cache up to this many percentage points of free memory (compared to used.) */
 static const size_t kFreePercentage = 25;
+
+/*! Always forbid more free memory than this, even if it's below kFreePercentage. */
+static const size_t kFreeMaximum = 128 * 1024 * 1024;
 
 /*! Always allow this much free memory, even if it's above kFreePercentage. */
 static const size_t kFreeMinimum = 128 * kPageSize;
@@ -252,6 +257,7 @@ public:
 				}
 				chunk = previousChunk;
 			}
+
 			status_t status = _UnlockingRemoveAndUnmap(chunk);
 			if (status != B_OK)
 				return status;
@@ -320,6 +326,8 @@ private:
 		size_t freeLimit = ((fUsed * kFreePercentage) / 100);
 		if (freeLimit < kFreeMinimum)
 			freeLimit = kFreeMinimum;
+		else if (freeLimit > kFreeMaximum)
+			freeLimit = kFreeMaximum;
 		else
 			freeLimit = (freeLimit + (kPageSize - 1)) & ~(kPageSize - 1);
 		return freeLimit;

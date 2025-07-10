@@ -165,7 +165,7 @@ struct fssh_fs_vnode_ops {
 				fssh_fs_cookie cookie, uint8_t event, fssh_selectsync *sync);
 	fssh_status_t (*deselect)(fssh_fs_volume *volume, fssh_fs_vnode *vnode,
 				fssh_fs_cookie cookie, uint8_t event, fssh_selectsync *sync);
-	fssh_status_t (*fsync)(fssh_fs_volume *volume, fssh_fs_vnode *vnode);
+	fssh_status_t (*fsync)(fssh_fs_volume *volume, fssh_fs_vnode *vnode, bool dataOnly);
 
 	fssh_status_t (*read_symlink)(fssh_fs_volume *volume, fssh_fs_vnode *link,
 				char *buffer, fssh_size_t *_bufferSize);
@@ -364,6 +364,9 @@ extern fssh_fs_volume* fssh_volume_for_vnode(fssh_fs_vnode *vnode);
 extern fssh_status_t fssh_check_access_permissions(int accessMode,
 				fssh_mode_t mode, fssh_gid_t nodeGroupID,
 				fssh_uid_t nodeUserID);
+extern fssh_status_t fssh_check_write_stat_permissions(fssh_gid_t nodeGroupID,
+				fssh_uid_t nodeUserID, fssh_mode_t nodeMode, uint32_t mask,
+				const struct fssh_stat* stat);
 
 extern fssh_status_t fssh_read_pages(int fd, fssh_off_t pos,
 				const struct fssh_iovec *vecs, fssh_size_t count,

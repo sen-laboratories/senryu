@@ -24,6 +24,7 @@
 #include "fssh_fs_volume.h"
 #include "fssh_kernel_export.h"
 #include "fssh_module.h"
+#include "fssh_node_monitor.h"
 #include "fssh_stat.h"
 #include "fssh_stdio.h"
 #include "fssh_string.h"
@@ -638,7 +639,7 @@ free_vnode(struct vnode *vnode, bool reenter)
 	// will be discarded
 
 	if (!vnode->remove && HAS_FS_CALL(vnode, fsync))
-		FS_CALL_NO_PARAMS(vnode, fsync);
+		FS_CALL(vnode, fsync, false);
 
 	if (!vnode->unpublished) {
 		if (vnode->remove)
@@ -2167,6 +2168,54 @@ fssh_check_access_permissions(int accessMode, fssh_mode_t mode,
 }
 
 
+extern "C" fssh_status_t
+fssh_check_write_stat_permissions(fssh_gid_t nodeGroupID, fssh_uid_t nodeUserID,
+	fssh_mode_t nodeMode, uint32_t mask, const struct fssh_stat* stat)
+{
+	uid_t uid = fssh_geteuid();
+
+	// root has all permissions
+	if (uid == 0)
+		return FSSH_B_OK;
+
+	const bool hasWriteAccess = fssh_check_access_permissions(FSSH_W_OK,
+		nodeMode, nodeGroupID, nodeUserID) == FSSH_B_OK;
+
+	if ((mask & FSSH_B_STAT_SIZE) != 0) {
+		if (!hasWriteAccess)
+			return FSSH_B_NOT_ALLOWED;
+	}
+
+	if ((mask & FSSH_B_STAT_UID) != 0) {
+		if (nodeUserID == uid && stat->fssh_st_uid == uid) {
+			// No change.
+		} else
+			return FSSH_B_NOT_ALLOWED;
+	}
+
+	if ((mask & FSSH_B_STAT_GID) != 0) {
+		if (nodeUserID != uid)
+			return FSSH_B_NOT_ALLOWED;
+
+		if (fssh_getegid() != stat->fssh_st_gid)
+			return FSSH_B_NOT_ALLOWED;
+	}
+
+	if ((mask & FSSH_B_STAT_MODE) != 0) {
+		if (nodeUserID != uid)
+			return FSSH_B_NOT_ALLOWED;
+	}
+
+	if ((mask & (FSSH_B_STAT_CREATION_TIME | FSSH_B_STAT_MODIFICATION_TIME
+			| FSSH_B_STAT_CHANGE_TIME)) != 0) {
+		if (!hasWriteAccess && nodeUserID != uid)
+			return FSSH_B_NOT_ALLOWED;
+	}
+
+	return FSSH_B_OK;
+}
+
+
 //! Works directly on the host's file system
 extern "C" fssh_status_t
 fssh_read_pages(int fd, fssh_off_t pos, const fssh_iovec *vecs,
@@ -3619,7 +3668,7 @@ common_fcntl(int fd, int op, uint32_t argument, bool kernel)
 
 
 static fssh_status_t
-common_sync(int fd, bool kernel)
+common_sync(int fd, bool dataOnly, bool kernel)
 {
 	struct file_descriptor *descriptor;
 	struct vnode *vnode;
@@ -3632,7 +3681,7 @@ common_sync(int fd, bool kernel)
 		return FSSH_B_FILE_ERROR;
 
 	if (HAS_FS_CALL(vnode, fsync))
-		status = FS_CALL_NO_PARAMS(vnode, fsync);
+		status = FS_CALL(vnode, fsync, dataOnly);
 	else
 		status = FSSH_EOPNOTSUPP;
 
@@ -4904,7 +4953,7 @@ fs_sync(fssh_dev_t device)
 				put_vnode(previousVnode);
 
 			if (HAS_FS_CALL(vnode, fsync))
-				FS_CALL_NO_PARAMS(vnode, fsync);
+				FS_CALL(vnode, fsync, false);
 
 			// the next vnode might change until we lock the vnode list again,
 			// but this vnode won't go away since we keep a reference to it.
@@ -5245,7 +5294,7 @@ _kern_fcntl(int fd, int op, uint32_t argument)
 fssh_status_t
 _kern_fsync(int fd)
 {
-	return common_sync(fd, true);
+	return common_sync(fd, false, true);
 }
 
 

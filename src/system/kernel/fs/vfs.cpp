@@ -51,6 +51,7 @@
 #include <syscalls.h>
 #include <syscall_restart.h>
 #include <tracing.h>
+#include <usergroup.h>
 #include <util/atomic.h>
 #include <util/AutoLock.h>
 #include <util/ThreadAutoLock.h>
@@ -988,7 +989,7 @@ free_vnode(struct vnode* vnode, bool reenter)
 	// will be discarded
 
 	if (!vnode->IsRemoved() && HAS_FS_CALL(vnode, fsync))
-		FS_CALL_NO_PARAMS(vnode, fsync);
+		FS_CALL(vnode, fsync, false);
 
 	// Note: If this vnode has a cache attached, there will still be two
 	// references to that cache at this point. The last one belongs to the vnode
@@ -3622,23 +3623,6 @@ common_file_io_vec_pages(struct vnode* vnode, void* cookie,
 }
 
 
-static bool
-is_user_in_group(gid_t gid)
-{
-	if (gid == getegid())
-		return true;
-
-	gid_t groups[NGROUPS_MAX];
-	int groupCount = getgroups(NGROUPS_MAX, groups);
-	for (int i = 0; i < groupCount; i++) {
-		if (gid == groups[i])
-			return true;
-	}
-
-	return false;
-}
-
-
 static status_t
 free_io_context(io_context* context)
 {
@@ -4011,7 +3995,7 @@ check_access_permissions(int accessMode, mode_t mode, gid_t nodeGroupID,
 	} else if (uid == nodeUserID) {
 		// user is node owner
 		permissions = userPermissions;
-	} else if (is_user_in_group(nodeGroupID)) {
+	} else if (is_in_group(thread_get_current_thread()->team, nodeGroupID)) {
 		// user is in owning group
 		permissions = groupPermissions;
 	} else {
@@ -4020,6 +4004,53 @@ check_access_permissions(int accessMode, mode_t mode, gid_t nodeGroupID,
 	}
 
 	return (accessMode & ~permissions) == 0 ? B_OK : B_PERMISSION_DENIED;
+}
+
+
+extern "C" status_t
+check_write_stat_permissions(gid_t nodeGroupID, uid_t nodeUserID, mode_t nodeMode,
+	uint32 mask, const struct stat* stat)
+{
+	uid_t uid = geteuid();
+
+	// root has all permissions
+	if (uid == 0)
+		return B_OK;
+
+	const bool hasWriteAccess = check_access_permissions(W_OK,
+		nodeMode, nodeGroupID, nodeUserID) == B_OK;
+
+	if ((mask & B_STAT_SIZE) != 0) {
+		if (!hasWriteAccess)
+			return B_NOT_ALLOWED;
+	}
+
+	if ((mask & B_STAT_UID) != 0) {
+		if (nodeUserID == uid && stat->st_uid == uid) {
+			// No change.
+		} else
+			return B_NOT_ALLOWED;
+	}
+
+	if ((mask & B_STAT_GID) != 0) {
+		if (nodeUserID != uid)
+			return B_NOT_ALLOWED;
+
+		if (!is_in_group(thread_get_current_thread()->team, stat->st_gid))
+			return B_NOT_ALLOWED;
+	}
+
+	if ((mask & B_STAT_MODE) != 0) {
+		if (nodeUserID != uid)
+			return B_NOT_ALLOWED;
+	}
+
+	if ((mask & (B_STAT_CREATION_TIME | B_STAT_MODIFICATION_TIME | B_STAT_CHANGE_TIME)) != 0) {
+		if (!hasWriteAccess && nodeUserID != uid)
+			return B_NOT_ALLOWED;
+	}
+
+	return B_OK;
 }
 
 
@@ -6416,9 +6447,9 @@ common_fcntl(int fd, int op, size_t argument, bool kernel)
 
 
 static status_t
-common_sync(int fd, bool kernel)
+common_sync(int fd, bool dataOnly, bool kernel)
 {
-	FUNCTION(("common_fsync: entry. fd %d kernel %d\n", fd, kernel));
+	FUNCTION(("common_sync: entry. fd %d kernel %d, data only %d\n", fd, kernel, dataOnly));
 
 	struct vnode* vnode;
 	FileDescriptorPutter descriptor(get_fd_and_vnode(fd, &vnode, kernel));
@@ -6427,7 +6458,7 @@ common_sync(int fd, bool kernel)
 
 	status_t status;
 	if (HAS_FS_CALL(vnode, fsync))
-		status = FS_CALL_NO_PARAMS(vnode, fsync);
+		status = FS_CALL(vnode, fsync, dataOnly);
 	else
 		status = B_UNSUPPORTED;
 
@@ -8439,9 +8470,9 @@ _kern_fcntl(int fd, int op, size_t argument)
 
 
 status_t
-_kern_fsync(int fd)
+_kern_fsync(int fd, bool dataOnly)
 {
-	return common_sync(fd, true);
+	return common_sync(fd, dataOnly, true);
 }
 
 
@@ -9272,9 +9303,9 @@ _user_fcntl(int fd, int op, size_t argument)
 
 
 status_t
-_user_fsync(int fd)
+_user_fsync(int fd, bool dataOnly)
 {
-	return common_sync(fd, false);
+	return common_sync(fd, dataOnly, false);
 }
 
 

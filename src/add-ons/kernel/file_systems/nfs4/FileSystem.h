@@ -22,6 +22,8 @@ class Inode;
 class RootInode;
 
 struct MountConfiguration {
+	bool		fReadOnly;
+
 	bool		fHard;
 	int			fRetryLimit;
 	bigtime_t	fRequestTimeout;
@@ -82,6 +84,7 @@ public:
 
 	inline	mutex&				CreateFileLock();
 
+			status_t			TrashStaleNode(ino_t ino);
 			void				EnsureNoCollision(ino_t newID, const FileHandle& handle);
 
 			void				Dump(void (*xprintf)(const char*, ...) = dprintf);

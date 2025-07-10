@@ -188,6 +188,7 @@ struct ipv4_protocol : net_protocol {
 // protocol flags
 #define IP_FLAG_HEADER_INCLUDED		0x01
 #define IP_FLAG_RECEIVE_DEST_ADDR	0x02
+#define IP_FLAG_DONT_FRAGMENT		0x04
 
 
 static const int kDefaultTTL = 254;
@@ -1203,6 +1204,10 @@ ipv4_getsockopt(net_protocol* _protocol, int level, int option, void* value,
 			return get_int_option(value, *_length,
 				(protocol->flags & IP_FLAG_RECEIVE_DEST_ADDR) != 0);
 		}
+		if (option == IP_DONTFRAG) {
+			return get_int_option(value, *_length,
+				(protocol->flags & IP_FLAG_DONT_FRAGMENT) != 0);
+		}
 		if (option == IP_TTL)
 			return get_int_option(value, *_length, protocol->time_to_live);
 		if (option == IP_TOS)
@@ -1299,6 +1304,21 @@ ipv4_setsockopt(net_protocol* _protocol, int level, int option,
 				protocol->flags |= IP_FLAG_RECEIVE_DEST_ADDR;
 			else
 				protocol->flags &= ~IP_FLAG_RECEIVE_DEST_ADDR;
+
+			return B_OK;
+		}
+		if (option == IP_DONTFRAG) {
+			int headerIncluded;
+			if (length != sizeof(int))
+				return B_BAD_VALUE;
+			if (user_memcpy(&headerIncluded, value, sizeof(headerIncluded))
+					!= B_OK)
+				return B_BAD_ADDRESS;
+
+			if (headerIncluded)
+				protocol->flags |= IP_FLAG_DONT_FRAGMENT;
+			else
+				protocol->flags &= ~IP_FLAG_DONT_FRAGMENT;
 
 			return B_OK;
 		}
@@ -1521,7 +1541,9 @@ ipv4_send_routed_data(net_protocol* _protocol, struct net_route* route,
 		header->total_length = htons(buffer->size);
 		header->id = htons(atomic_add(&sPacketID, 1));
 		header->fragment_offset = 0;
-		if (protocol) {
+		if (protocol != NULL) {
+			if ((protocol->flags & IP_FLAG_DONT_FRAGMENT) != 0)
+				header->fragment_offset |= htons(IP_DONT_FRAGMENT);
 			header->time_to_live = (buffer->msg_flags & MSG_MCAST) != 0
 				? protocol->multicast_time_to_live : protocol->time_to_live;
 		} else {
@@ -1546,8 +1568,9 @@ ipv4_send_routed_data(net_protocol* _protocol, struct net_route* route,
 			header->source = source.sin_addr.s_addr;
 			header->checksum = 0;
 			header.Sync();
-		} else
+		} else if (header->checksum != 0) {
 			checksumNeeded = false;
+		}
 
 		TRACE("  Header was already supplied:");
 		TRACE_ONLY(dump_ipv4_header(*header));
@@ -1601,6 +1624,9 @@ ipv4_send_routed_data(net_protocol* _protocol, struct net_route* route,
 
 	uint32 mtu = route->mtu ? route->mtu : interface->device->mtu;
 	if (buffer->size > mtu) {
+		if (protocol != NULL && (protocol->flags & IP_FLAG_DONT_FRAGMENT) != 0)
+			return EMSGSIZE;
+
 		// we need to fragment the packet
 		return send_fragments(protocol, route, buffer, mtu);
 	}
@@ -1877,7 +1903,7 @@ ipv4_deliver_data(net_protocol* _protocol, net_buffer* buffer)
 
 
 status_t
-ipv4_error_received(net_error error, net_buffer* buffer)
+ipv4_error_received(net_error error, net_error_data* errorData, net_buffer* buffer)
 {
 	TRACE("  ipv4_error_received(error %d, buffer %p [%" B_PRIu32 " bytes])",
 		(int)error, buffer, buffer->size);
@@ -1919,6 +1945,10 @@ ipv4_error_received(net_error error, net_buffer* buffer)
 		return B_ERROR;
 	}
 
+	if (error == B_NET_ERROR_REDIRECT_HOST) {
+		// TODO: Update the routing table!
+	}
+
 	buffer->protocol = header.protocol;
 
 	bufferHeader.Remove(headerLength);
@@ -1928,7 +1958,7 @@ ipv4_error_received(net_error error, net_buffer* buffer)
 		return B_ERROR;
 
 	// propagate error
-	return protocol->error_received(error, buffer);
+	return protocol->error_received(error, errorData, buffer);
 }
 
 

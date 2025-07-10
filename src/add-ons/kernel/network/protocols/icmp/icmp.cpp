@@ -148,16 +148,38 @@ icmp_to_net_error(uint8 type, uint8 code)
 	switch (type) {
 		case ICMP_TYPE_UNREACH:
 			switch (code) {
-				case ICMP_CODE_FRAGMENTATION_NEEDED:
-					return B_NET_ERROR_MESSAGE_SIZE;
-				case ICMP_CODE_NET_UNREACH:
+				case ICMP_CODE_UNREACH_NET:
 					return B_NET_ERROR_UNREACH_NET;
-				case ICMP_CODE_HOST_UNREACH:
+				case ICMP_CODE_UNREACH_HOST:
 					return B_NET_ERROR_UNREACH_HOST;
-				case ICMP_CODE_PROTOCOL_UNREACH:
+				case ICMP_CODE_UNREACH_PROTOCOL:
 					return B_NET_ERROR_UNREACH_PROTOCOL;
-				case ICMP_CODE_PORT_UNREACH:
+				case ICMP_CODE_UNREACH_PORT:
 					return B_NET_ERROR_UNREACH_PORT;
+				case ICMP_CODE_UNREACH_FRAGMENTATION_NEEDED:
+					return B_NET_ERROR_MESSAGE_SIZE;
+				case ICMP_CODE_UNREACH_SOURCE_ROUTE_FAIL:
+					return B_NET_ERROR_UNREACH_SOURCE_FAIL;
+				case ICMP_CODE_UNREACH_NET_UNKNOWN:
+					return B_NET_ERROR_UNREACH_NET_UNKNOWN;
+				case ICMP_CODE_UNREACH_HOST_UNKNOWN:
+					return B_NET_ERROR_UNREACH_HOST_UNKNOWN;
+				case ICMP_CODE_UNREACH_ISOLATED:
+					return B_NET_ERROR_UNREACH_ISOLATED;
+				case ICMP_CODE_UNREACH_NET_PROHIBITED:
+					return B_NET_ERROR_UNREACH_NET_PROHIBITED;
+				case ICMP_CODE_UNREACH_HOST_PROHIBITED:
+					return B_NET_ERROR_UNREACH_HOST_PROHIBITED;
+				case ICMP_CODE_UNREACH_NET_TOS:
+					return B_NET_ERROR_UNREACH_NET_TOS;
+				case ICMP_CODE_UNREACH_HOST_TOS:
+					return B_NET_ERROR_UNREACH_HOST_TOS;
+				case ICMP_CODE_UNREACH_FILTER_PROHIBITED:
+					return B_NET_ERROR_UNREACH_FILTER_PROHIBITED;
+				case ICMP_CODE_UNREACH_HOST_PRECEDENCE:
+					return B_NET_ERROR_UNREACH_HOST_PRECEDENCE;
+				case ICMP_CODE_UNREACH_PRECEDENCE_CUTOFF:
+					return B_NET_ERROR_UNREACH_PRECEDENCE_CUTOFF;
 			}
 			break;
 
@@ -200,23 +222,67 @@ net_error_to_icmp(net_error error, uint8& type, uint8& code)
 		// unreach
 		case B_NET_ERROR_UNREACH_NET:
 			type = ICMP_TYPE_UNREACH;
-			code = ICMP_CODE_NET_UNREACH;
+			code = ICMP_CODE_UNREACH_NET;
 			break;
 		case B_NET_ERROR_UNREACH_HOST:
 			type = ICMP_TYPE_UNREACH;
-			code = ICMP_CODE_HOST_UNREACH;
+			code = ICMP_CODE_UNREACH_HOST;
 			break;
 		case B_NET_ERROR_UNREACH_PROTOCOL:
 			type = ICMP_TYPE_UNREACH;
-			code = ICMP_CODE_PROTOCOL_UNREACH;
+			code = ICMP_CODE_UNREACH_PROTOCOL;
 			break;
 		case B_NET_ERROR_UNREACH_PORT:
 			type = ICMP_TYPE_UNREACH;
-			code = ICMP_CODE_PORT_UNREACH;
+			code = ICMP_CODE_UNREACH_PORT;
 			break;
 		case B_NET_ERROR_MESSAGE_SIZE:
 			type = ICMP_TYPE_UNREACH;
-			code = ICMP_CODE_FRAGMENTATION_NEEDED;
+			code = ICMP_CODE_UNREACH_FRAGMENTATION_NEEDED;
+			break;
+		case B_NET_ERROR_UNREACH_SOURCE_FAIL:
+			type = ICMP_TYPE_UNREACH;
+			code = ICMP_CODE_UNREACH_SOURCE_ROUTE_FAIL;
+			break;
+		case B_NET_ERROR_UNREACH_NET_UNKNOWN:
+			type = ICMP_TYPE_UNREACH;
+			code = ICMP_CODE_UNREACH_NET_UNKNOWN;
+			break;
+		case B_NET_ERROR_UNREACH_HOST_UNKNOWN:
+			type = ICMP_TYPE_UNREACH;
+			code = ICMP_CODE_UNREACH_HOST_UNKNOWN;
+			break;
+		case B_NET_ERROR_UNREACH_ISOLATED:
+			type = ICMP_TYPE_UNREACH;
+			code = ICMP_CODE_UNREACH_ISOLATED;
+			break;
+		case B_NET_ERROR_UNREACH_NET_PROHIBITED:
+			type = ICMP_TYPE_UNREACH;
+			code = ICMP_CODE_UNREACH_NET_PROHIBITED;
+			break;
+		case B_NET_ERROR_UNREACH_HOST_PROHIBITED:
+			type = ICMP_TYPE_UNREACH;
+			code = ICMP_CODE_UNREACH_HOST_PROHIBITED;
+			break;
+		case B_NET_ERROR_UNREACH_NET_TOS:
+			type = ICMP_TYPE_UNREACH;
+			code = ICMP_CODE_UNREACH_NET_TOS;
+			break;
+		case B_NET_ERROR_UNREACH_HOST_TOS:
+			type = ICMP_TYPE_UNREACH;
+			code = ICMP_CODE_UNREACH_HOST_TOS;
+			break;
+		case B_NET_ERROR_UNREACH_FILTER_PROHIBITED:
+			type = ICMP_TYPE_UNREACH;
+			code = ICMP_CODE_UNREACH_FILTER_PROHIBITED;
+			break;
+		case B_NET_ERROR_UNREACH_HOST_PRECEDENCE:
+			type = ICMP_TYPE_UNREACH;
+			code = ICMP_CODE_UNREACH_HOST_PRECEDENCE;
+			break;
+		case B_NET_ERROR_UNREACH_PRECEDENCE_CUTOFF:
+			type = ICMP_TYPE_UNREACH;
+			code = ICMP_CODE_UNREACH_PRECEDENCE_CUTOFF;
 			break;
 
 		// time exceeded
@@ -478,23 +544,40 @@ icmp_receive_data(net_buffer* buffer)
 		case ICMP_TYPE_SOURCE_QUENCH:
 		case ICMP_TYPE_PARAMETER_PROBLEM:
 		case ICMP_TYPE_TIME_EXCEEDED:
+		case ICMP_TYPE_REDIRECT:
 		{
 			net_domain* domain = get_domain(buffer);
 			if (domain == NULL)
 				break;
 
+			net_error error = icmp_to_net_error(header.type, header.code);
+			if (error == 0)
+				break;
+
+			net_error_data dataStorage = {};
+			net_error_data* data = NULL;
+			if (error == B_NET_ERROR_MESSAGE_SIZE) {
+				data = &dataStorage;
+				data->mtu = ntohs(header.path_mtu.next_mtu);
+
+				// IPv4 minimum fragment size is 68 bytes, so if the "next MTU" is
+				// smaller than that, we can be sure it's invalid.
+				if (data->mtu < 68)
+					data = NULL;
+			} else if (error == B_NET_ERROR_REDIRECT_HOST) {
+				data = &dataStorage;
+				sockaddr_in& gateway = (sockaddr_in&)data->gateway;
+				gateway.sin_len = sizeof(sockaddr_in);
+				gateway.sin_family = AF_INET;
+				gateway.sin_addr.s_addr = header.redirect.gateway;
+			}
+
 			// Deliver the error to the domain protocol which will
 			// propagate the error to the upper protocols
-			net_error error = icmp_to_net_error(header.type, header.code);
-			if (error != 0) {
-				bufferHeader.Remove();
-				return domain->module->error_received(error, buffer);
-			}
-			break;
+			bufferHeader.Remove();
+			return domain->module->error_received(error, data, buffer);
 		}
 
-		case ICMP_TYPE_REDIRECT:
-			// TODO: Update the routing table
 		case ICMP_TYPE_TIMESTAMP_REQUEST:
 		case ICMP_TYPE_TIMESTAMP_REPLY:
 		case ICMP_TYPE_INFO_REQUEST:
@@ -513,7 +596,7 @@ icmp_receive_data(net_buffer* buffer)
 
 
 status_t
-icmp_error_received(net_error code, net_buffer* data)
+icmp_error_received(net_error code, net_error_data* errorData, net_buffer* data)
 {
 	return B_ERROR;
 }
@@ -596,7 +679,7 @@ icmp_error_reply(net_protocol* protocol, net_buffer* buffer, net_error error,
 				icmpHeader->parameter_problem.pointer = errorData->error_offset;
 				break;
 			case B_NET_ERROR_MESSAGE_SIZE:
-				icmpHeader->path_mtu.next_mtu = errorData->mtu;
+				icmpHeader->path_mtu.next_mtu = htons(errorData->mtu);
 				break;
 
 			default:
