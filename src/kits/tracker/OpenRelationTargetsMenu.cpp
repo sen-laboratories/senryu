@@ -192,12 +192,15 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 	BMessenger  targetMessenger;
 	BMessage 	matchingRefs;
 	BStringList targetTypes;
+	// for filtering out meta types / generic entitiy types below
+	BStringList mimeIncludes;
+	BStringList mimeExcludes;
 
 	PRINT(("collecting compatible template types for relation %s...\n", relationType.String() ));
 
 	// handle meta relations for associations
 	// relation type is the classification relation and targetType is some classification type
-	if (relationType == SEN_LABEL_RELATION_TYPE) {
+	if (relationType == SEN_LABEL_RELATION_TYPE || relationType.StartsWith(SEN_META_SUPERTYPE)) {
 		BString targetType;
 		result = fEntriesToOpen.FindString(SEN_RELATION_TARGET_TYPE, &targetType);
 
@@ -211,14 +214,22 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 			targetTypes.Add(targetType);
 		}
 		PRINT(("building META targets for type %s...\n", targetType.String() ));
+
 		senAddRelationMsg.what = SEN_RELATION_ADD;
 		targetMessenger = BMessenger(SEN_SERVER_SIGNATURE);
+
+		mimeIncludes.Add(SEN_META_SUPERTYPE);
 	} else {
 		// else, handle new relations from compatible templates
-		PRINT(("source %s is a normal relation, collecting all compatible templates for relation.\n", relationType.String() ));
+		PRINT(("%s is a normal relation, collecting all compatible templates except for META entities for relation.\n",
+			relationType.String() ));
+
 		senAddRelationMsg.what = SEN_RELATIONS_GET_NEW_TARGET;
 		senAddRelationMsg.AddMessenger("TrackerViewToken", fMessenger);
 		targetMessenger = be_app_messenger;
+
+		mimeIncludes = targetTypes;
+		mimeExcludes.Add(SEN_META_SUPERTYPE);
 
 		// here we got a list of compatible target types
 		result = fRelationTargetsReply->FindStrings(SEN_RELATION_COMPATIBLE_TYPES, &targetTypes);
@@ -230,7 +241,7 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 		}
 	}
 
-	int32 templatesCount = TemplateUtils::GetInstalledTemplates(NULL, &targetTypes, NULL, &matchingRefs);
+	int32 templatesCount = TemplateUtils::GetInstalledTemplates(NULL, &mimeIncludes, &mimeExcludes, &matchingRefs);
 
 	if (templatesCount >= 0) {	// ok to find nothing
 		PRINT(("got %d matching templates for relation %s:\n", templatesCount, relationType.String()));
@@ -279,7 +290,6 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 	return result;
 }
 
-// todo: use simpler method refs method from AddNewRelationTargetItems
 status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 {
 	status_t result;
@@ -352,10 +362,10 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 		return result;
 	}
 
-	// get ref to self from refs received (source of relation)
+	// get ref to self from original refs received (source of relation)
 	// Note: we expect only 1 ref for self relations, but let's keep it consistent across all relation types
 	entry_ref ref;
-	result = fRelationTargetsReply->FindRef(SEN_RELATION_SOURCE_REF, &ref);
+	result = fEntriesToOpen.FindRef(SEN_RELATION_SOURCE_REF, &ref);
 	if (result != B_OK) {
 		PRINT(("failed to resolve self relation to source: %s\n", strerror(result)));
 		return result;
@@ -386,7 +396,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 
 			// create new self relation item with self ref msg
 			BMessage openRelationTargetItemMsg(B_REFS_RECEIVED);
-			openRelationTargetItemMsg.AddRef(SEN_RELATION_SOURCE_REF, &ref);
+			openRelationTargetItemMsg.AddRef("refs", &ref);		// use standard refs as expected by Tracker
 			openRelationTargetItemMsg.AddBool(SEN_RELATION_IS_SELF, true);
 			openRelationTargetItemMsg.AddBool(SEN_RELATION_IS_DYNAMIC, true);
 			openRelationTargetItemMsg.AddString(SENSEI_DEFAULT_TYPE_KEY, defaultType);

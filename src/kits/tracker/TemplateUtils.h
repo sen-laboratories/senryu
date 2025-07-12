@@ -47,10 +47,11 @@ public:
                                           BMessage *templatesMsg = new BMessage());
     static status_t GetTemplateForType(const char* mimeType, entry_ref* ref);
 
+	static int32    FindPartialMatch(const char* nameToFind, const BStringList* names);
+
     // only static access allowed
     TemplateUtils() = delete;
-private:
-	static int32    FindPartialMatch(const char* nameToFind, const BStringList* names);
+
 };
 
 #endif  // _TEMPLATE_UTILS_H

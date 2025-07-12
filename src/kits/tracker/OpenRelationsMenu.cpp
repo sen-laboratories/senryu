@@ -46,8 +46,10 @@ OpenRelationsMenu::OpenRelationsMenu(const char* label, const BMessage* entriesT
 
 	// too long to have triggers
 	SetTriggersEnabled(false);
-}
 
+	//TODO: support multi-selection - when SEN is adapted
+	fEntriesToOpen.FindRef("refs", &fSourceRef);
+}
 
 bool
 OpenRelationsMenu::StartBuildingItemList()
@@ -70,11 +72,7 @@ OpenRelationsMenu::StartBuildingItemList()
 	}
 	message.what = fSenCmd;
 
-	//TODO: support multi-selection - when SEN is adapted
-	entry_ref ref;
-	fEntriesToOpen.FindRef("refs", &ref);
-
-	BEntry entry(&ref);
+	BEntry entry(&fSourceRef);
 	BPath path;
 	entry.GetPath(&path);
 
@@ -95,12 +93,11 @@ OpenRelationsMenu::StartBuildingItemList()
 		default:
 			relationType = "UNKNOWN/UNEXPECTED";
 	}
+
 	PRINT(("Tracker->SEN: getting %s relations for path %s\n",
 		relationType.String(),
 		path.Path()));
 
-	// TODO: remove string param and only use ref
-	message.AddString(SEN_RELATION_SOURCE, (new BString(path.Path()))->String());
 	message.PrintToStream();
 
 	fSenMessenger.SendMessage(new BMessage(message), &fRelationsReply);
@@ -139,36 +136,30 @@ OpenRelationsMenu::DoneBuildingItemList()
 	SetTargetForItems(fTrackerMessenger);
 
 	int32 relationCount = 0;
-	entry_ref sourceRef;
-
-	status_t result = fRelationsReply.FindRef(SEN_RELATION_SOURCE_REF, &sourceRef);
-	if (result != B_OK) {
-		PRINT(("error parsing SEN relation reply: %s\n", strerror(result) ));
-		// still continue and build empty relations menu for a more consistent behavior
-	}
 
 	// check for desired relation type and build suitable items
 	switch (fSenCmd) {
 		case SEN_RELATIONS_GET:
 			PRINT(("building relation targets menu.\n"));
-			relationCount = AddRelationItems(&sourceRef);
+			relationCount = AddRelationItems(&fSourceRef);
 			break;
 		case SEN_RELATIONS_GET_ALL:
 			PRINT(("building relations menu.\n"));
-			relationCount = AddRelationItems(&sourceRef);
+			relationCount = AddRelationItems(&fSourceRef);
 			break;
 		case SEN_RELATIONS_GET_ALL_SELF:
 			PRINT(("building contained relations menu.\n"));
-			relationCount = AddSelfRelationItems(&sourceRef);
+			relationCount = AddSelfRelationItems(&fSourceRef);
 			break;
 		case SEN_RELATIONS_GET_COMPATIBLE:
 			PRINT(("building compatible relations menu.\n"));
-			relationCount = AddRelationItems(&sourceRef);
+			relationCount = AddRelationItems(&fSourceRef);
 			break;
 		default:
 			PRINT(("MISSING/UNEXPECTED command %u, building standard relations menu.\n", fSenCmd));
-			relationCount = AddRelationItems(&sourceRef);	// also handles new relation with compatible types
+			relationCount = AddRelationItems(&fSourceRef);	// also handles new relation with compatible types
 	}
+
 	if (relationCount == 0) {
 		BMenuItem* item = new BMenuItem("no relations found.", 0);
 		item->SetEnabled(false);
@@ -199,22 +190,18 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 	}
 
 	BString propertyName(SEN_RELATIONS);	// default: handle normal relations
-	BString relationType;
+	BString relationFilter = fRelationsReply.GetString("filter");
 
-	if (fRelationsReply.FindString(SEN_RELATION_TYPE, &relationType) == B_OK) {
-		// handle meta relations
-		if (relationType == SEN_LABEL_RELATION_TYPE) {
-			propertyName = SEN_RELATION_COMPATIBLE_TYPES;		// use the meta relation types for association relations
-		}
+	// only sent for compatible relation types
+	if (relationFilter == "compatible") {
+		propertyName = SEN_RELATION_COMPATIBLE_TYPES;		// use the meta relation types for association relations
 	}
 
-	// only show associations for existing relations, not for new ones (handled separately)
-	if (relationType == SEN_LABEL_RELATION_TYPE) {
-		if (msgCmd != SEN_RELATIONS_GET && msgCmd != SEN_RELATIONS_GET_COMPATIBLE_TYPES) {
-			PRINT(("  > skipping Association relation.\n"));
-			return 0;
-		}
-	}
+	PRINT(("getting compatible relation items for relations with property %s...\n", propertyName.String() ));
+
+	// get any type filters passed in
+	BStringList mimeExcludes;
+	fEntriesToOpen.FindStrings(SEN_EXCLUDE_TYPES, &mimeExcludes);
 
     int32 index = 0, countRelations = 0;
 	BString typeName;
@@ -222,15 +209,20 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 		// check if associated MIME type is installed (needed for Tracker display)
 		BMimeType mime(typeName.String());
 		if (!mime.IsInstalled()) {
-			ERROR("skipping relation with unavailable MIME type %s...\n", typeName.String());
+			ERROR("  > skipping relation with unavailable MIME type %s...\n", typeName.String());
 			continue;
 		}
 
+		// check for excluded types
+		if (mimeExcludes.HasString(typeName)) {
+			PRINT(("  > skipping Association relation.\n"));
+			continue;
+		}
 		// message for relation menu items
         BMessage* message = new BMessage(msgCmd);
         message->AddRef(SEN_RELATION_SOURCE_REF, sourceRef);
 
-		if (relationType == SEN_LABEL_RELATION_TYPE) {
+		if (typeName == SEN_LABEL_RELATION_TYPE) {
 			message->AddString(SEN_RELATION_TYPE, SEN_LABEL_RELATION_TYPE);
 			message->AddString(SEN_RELATION_TARGET_TYPE, BString(typeName));
 		} else {
@@ -254,11 +246,14 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
         BMenuItem* item = new IconMenuItem(
             new OpenRelationTargetsMenu(label, message, fParentWindow, fTrackerMessenger),
 										openRelationTargetsMsg, typeName);
+
 		// redirect open relation targets message to Tracker app directly
 		item->SetTarget(be_app_messenger);
+
 		AddItem(item);
 		countRelations++;
     }
+	PRINT(("got %d compatible relation items.\n", countRelations));
 
 	return countRelations;
 }

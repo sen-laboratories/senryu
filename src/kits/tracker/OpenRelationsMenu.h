@@ -18,6 +18,7 @@
 #include "Utilities.h"
 
 class OpenRelationsMenu : public BSlowMenu {
+
 public:
 	OpenRelationsMenu(const char* label, const BMessage* entriesToOpen,
 		BWindow* parentWindow, const BMessenger& target);
@@ -36,6 +37,7 @@ private:
 	BWindow*    fParentWindow;
 
     BMessenger  fSenMessenger;
+	entry_ref   fSourceRef;			// todo: support multi refs
     BMessage    fRelationsReply;
 	uint32		fSenCmd;
 

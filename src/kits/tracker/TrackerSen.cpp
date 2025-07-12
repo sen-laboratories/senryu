@@ -143,8 +143,8 @@ TTracker::HandleSenMessage(BMessage* message)
 				return true;	// abort
 			}
 
-			entry_ref targetRef;
-			result = message->FindRef(SEN_RELATION_TARGET_REF, &targetRef);
+			entry_ref* targetRef = new entry_ref;
+			result = message->FindRef(SEN_RELATION_TARGET_REF, targetRef);
 			if (result != B_OK) {
 				PRINT(("could not get target ref: %s\n", strerror(result) ));
 				return true;	// abort
@@ -154,7 +154,7 @@ TTracker::HandleSenMessage(BMessage* message)
 			if (relationType == SEN_LABEL_RELATION_TYPE) {
 				// just add a relation to the existing association meta entity
 				PRINT(("adding relation to META entity for association %s of type %s\n",
-					targetRef.name, targetType.String() ));
+					targetRef->name, targetType.String() ));
 
 				// adapt and send as SEN scripting message to add relation of desired type
 				message->what = SEN_RELATION_ADD;
@@ -171,8 +171,8 @@ TTracker::HandleSenMessage(BMessage* message)
 			}
 			// else, adapt and forward as "new from template" message to Tracker
 			message->what = kNewEntryFromTemplate;
-			message->AddRef("refs_template", &targetRef);
-			message->AddString("name", targetRef.name);	// becomes e.g. "New Label"
+			message->AddRef("refs_template", targetRef);
+			message->AddString("name", targetRef->name);	// becomes e.g. "New Label"
 
 			BMessenger trackerMessenger;
 			result = message->FindMessenger("TrackerViewToken", &trackerMessenger);
@@ -221,11 +221,10 @@ bool TTracker::ResolveRelation(const entry_ref* ref, BString* srcId, BString* ta
 		PRINT(("error accessing nodeInfo for relation target %s: %s\n", ref->name, strerror(result)));
 		return false;
 	}
+
 	if (result == B_OK) result = relationNode.ReadAttrString(SEN_RELATION_SOURCE_ATTR, srcId);
-	if (result == B_NAME_NOT_FOUND) {
-		// todo: check for self relation
-		return false;
-	}
+	if (result == B_NAME_NOT_FOUND) return false;
+
 	if (result == B_OK) result = relationNode.ReadAttrString(SEN_RELATION_TARGET_ATTR, targetId);
 	if (result == B_NAME_NOT_FOUND) return false;
 
@@ -268,12 +267,13 @@ TTracker::PrepareRelationTargetWindow(BMessage *message, RelationInfo* relationI
 		PRINT(("could not create relation target view: %s\n", strerror(result)));
 		return result;
 	}
+
 	BDirectory relationDir(&relationInfo->relationDirRef);
 
 	// get fresh relation targets from SEN server
 	BMessenger senMessenger(SEN_SERVER_SIGNATURE);
 	BMessage relationTargetsMsg(SEN_RELATIONS_GET);
-	relationTargetsMsg.AddString(SEN_RELATION_SOURCE, relationInfo->source);
+    relationTargetsMsg.AddRef(SEN_RELATION_SOURCE_REF, &relationInfo->srcRef);
     relationTargetsMsg.AddString(SEN_RELATION_TYPE, relationInfo->relationType);
 
 	BMessage reply;
@@ -283,11 +283,11 @@ TTracker::PrepareRelationTargetWindow(BMessage *message, RelationInfo* relationI
 	BMessage relations;
 	if (reply.FindMessage(SEN_RELATIONS, &relations) != B_OK) {
 		PRINT(("no relations for type %s and source %s to show.\n",
-			relationInfo->relationType.String(), relationInfo->source.String() ));
+			relationInfo->relationType.String(), relationInfo->srcRef.name ));
 			return B_OK;
 	}
 
-	PRINT(("got relations for type %s for source %s:\n", relationInfo->relationType.String(), relationInfo->source.String()) );
+	PRINT(("got relations for type %s for source %s:\n", relationInfo->relationType.String(), relationInfo->srcRef.name) );
 	relations.PrintToStream();
 
 	// get MIME type for target relation
@@ -299,7 +299,7 @@ TTracker::PrepareRelationTargetWindow(BMessage *message, RelationInfo* relationI
 	BMessage relationProperties;
 	result = relations.FindMessage("properties", &relationProperties);
 	if (result != B_OK) {
-		ERROR("no relation properties found for source %s: %s\n", relationInfo->source.String(), strerror(result));
+		ERROR("no relation properties found for source %s: %s\n", relationInfo->srcRef.name, strerror(result));
 		// still continue and just create blank relation files
 	}
 
@@ -309,7 +309,7 @@ TTracker::PrepareRelationTargetWindow(BMessage *message, RelationInfo* relationI
 	BStringList targetIds;
     result = relations.FindStrings(SEN_TO_ATTR, &targetIds);
 	if (result != B_OK) {
-		ERROR("could not get relation targetIds for source %s: %s\n", relationInfo->source.String(), strerror(result));
+		ERROR("could not get relation targetIds for source %s: %s\n", relationInfo->srcRef.name, strerror(result));
 		return result;
 	}
 
@@ -317,7 +317,7 @@ TTracker::PrepareRelationTargetWindow(BMessage *message, RelationInfo* relationI
 	BMessage idToRefMap;
 	result = relations.FindMessage(SEN_ID_TO_REF_MAP, &idToRefMap);
 	if (result != B_OK) {
-		ERROR("could not get ref mapping for source %s: %s\n", relationInfo->source.String(), strerror(result));
+		ERROR("could not get ref mapping for source %s: %s\n", relationInfo->srcRef.name, strerror(result));
 		return result;
 	}
 
@@ -347,6 +347,7 @@ TTracker::PrepareRelationTargetWindow(BMessage *message, RelationInfo* relationI
 			if (BEntry(fileName).Exists()) {
 				fileName.Append(" #") << propertiesIndex + 2; // human readable 1-based index, first relation is #1
 			}
+
             BFile relationTarget(&relationDir, fileName, B_READ_WRITE | B_CREATE_FILE);
             result = relationTarget.InitCheck();
             if (result != B_OK) {
@@ -393,6 +394,7 @@ TTracker::PrepareRelationTargetWindow(BMessage *message, RelationInfo* relationI
                 }
                 attrIndex++;
             } // attributes loop
+
             relationNode.Sync();
             relationTarget.Unset();
 
@@ -443,9 +445,6 @@ TTracker::GetRelationTypeAttributeInfo(const char* relationType, BMessage* attrI
 		return result;
 	}
 
-	PRINT(("got attrInfo for supertype:\n"));
-	attrInfoSuperType.PrintToStream();
-
 	// merge with attributes from supertype (relation)
 	result = attrInfo->Append(attrInfoSuperType);
 /* fixme: works but check returns 'Bad argument type passed to function' ?!
@@ -454,9 +453,6 @@ TTracker::GetRelationTypeAttributeInfo(const char* relationType, BMessage* attrI
 		return result;
 	}
  */
-	PRINT(("got attributeInfo for type %s and supertype %s:\n", relationType, relationSuperType.Type()) );
-	attrInfo->PrintToStream();
-
 	return B_OK;
 }
 
@@ -465,9 +461,10 @@ TTracker::PrepareRelationDirectory(BMessage *message, RelationInfo* relationInfo
 {
 	status_t result = B_OK;
 
-	BString src, srcId, relationType, relationLabel;
+	BString srcId, relationType, relationLabel;
+	entry_ref srcRef;
 
-	result = message->FindString(SEN_RELATION_SOURCE, &src);
+	result = message->FindRef(SEN_RELATION_SOURCE_REF, &srcRef);
 	if (result == B_OK) result = message->FindString(SEN_RELATION_SOURCE_ATTR, &srcId);
 	if (result == B_OK) result = message->FindString(SEN_RELATION_TYPE, &relationType);
 	if (result == B_OK) result = message->FindString(SEN_RELATION_LABEL, &relationLabel);
@@ -489,7 +486,7 @@ TTracker::PrepareRelationDirectory(BMessage *message, RelationInfo* relationInfo
 	}
 	BString relationsDirName(relationsDirPath.Path());
 	relationsDirName.Append("/sen/") << srcId << "/relations/" << relationName
-		<< "/" << BPath(src).Leaf() << "\u2192" << relationLabel << " relations";
+		<< "/" << srcRef.name << "\u2192" << relationLabel << " relations";
 
 	if ((result = create_directory(relationsDirName, B_READ_WRITE) != B_OK)) {
 		PRINT(("failed to create temp dir at %s: %s\n", relationsDirName.String(), strerror(result) ));
@@ -503,7 +500,7 @@ TTracker::PrepareRelationDirectory(BMessage *message, RelationInfo* relationInfo
 	entry.GetRef(&relationInfo->relationDirRef);
 
 	relationInfo->relationType = relationType;
-	relationInfo->source = src;
+	relationInfo->srcRef = srcRef;
 	relationInfo->srcId = srcId;
 
 	return result;

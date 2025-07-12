@@ -74,10 +74,10 @@ const uint32 B_ENTRY_SPECIFIER = 'sref';
 
 // simple data exchange object needed for creating and populating the relation view directory
 struct RelationInfo{
-	entry_ref relationDirRef;
+	entry_ref srcRef;
 	entry_ref targetRef;
+	entry_ref relationDirRef;
 	BString relationType;
-	BString source;
 	BString srcId;
 	BString targetId;
 };

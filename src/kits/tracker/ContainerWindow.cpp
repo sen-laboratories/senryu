@@ -2212,6 +2212,8 @@ BContainerWindow::SetupNewRelationMenu(BMenu* parent, const entry_ref* ref)
 
 	// add desired SEN relations command, handed through to SEN
 	message.AddUInt32(SEN_ACTION_CMD, SEN_RELATIONS_GET_COMPATIBLE);
+	// indicate for later (i.e. in OpenRelationsMenu) that we don't want Associations to show up
+	message.AddString(SEN_EXCLUDE_TYPES, SEN_LABEL_RELATION_TYPE);
 
 	// always build a fresh menu
 	if (fNewRelationItem)
@@ -2276,9 +2278,9 @@ BContainerWindow::SetupNewAssociationMenu(BMenu* parent, const entry_ref* ref)
 	message.AddUInt32(SEN_ACTION_CMD, SEN_RELATIONS_GET_COMPATIBLE);
 	message.AddString(SEN_RELATION_TYPE, SEN_LABEL_RELATION_TYPE);
 
-	// always build a fresh menu
-	//if (fNewAssociationItem)
-	//	delete fNewAssociationItem;
+	// always build a fresh menu - FIXME: likes to crash here, but works in the other relation menus?!
+//	if (fNewAssociationItem)
+//		delete fNewAssociationItem;
 
 	// reuse OpenRelationsMenu (because it's the same, really, only uses
 	// different command to get all relations compatible to selected file(s) )
