@@ -146,8 +146,23 @@ TTracker::HandleSenMessage(BMessage* message)
 			entry_ref* targetRef = new entry_ref;
 			result = message->FindRef(SEN_RELATION_TARGET_REF, targetRef);
 			if (result != B_OK) {
-				PRINT(("could not get target ref: %s\n", strerror(result) ));
-				return true;	// abort
+				if (result == B_NAME_NOT_FOUND && targetType.StartsWith(SEN_META_SUPERTYPE)) {
+					// create a new association/meta template on the fly
+					BEntry targetEntry(TemplateUtils::GetUserTemplatesPath());
+					result = targetEntry.GetRef(targetRef);
+
+					if (result == B_OK)
+						result = TemplateUtils::GetTemplateForType(targetType.String(), targetRef);
+					if (result != B_OK) {
+						PRINT(("error creating new ref from type %s: %s\n", targetType.String(), strerror(result) ));
+						return true;
+					}
+					PRINT(("created new target type %s in %s.\n", targetType.String(), BPath(targetRef).Path() ));
+					message->AddRef(SEN_RELATION_TARGET_REF, targetRef);
+				} else {
+					PRINT(("could not get target ref: %s\n", strerror(result) ));
+					return true;	// abort
+				}
 			}
 
 			// associations are handled the same until here, where we never create a new target in that case

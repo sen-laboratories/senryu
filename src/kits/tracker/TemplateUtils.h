@@ -49,9 +49,13 @@ public:
 
 	static int32    FindPartialMatch(const char* nameToFind, const BStringList* names);
 
+	static const char* GetUserTemplatesPath();
+
     // only static access allowed
     TemplateUtils() = delete;
 
+private:
+	inline static const char* templatesPath = NULL;
 };
 
 #endif  // _TEMPLATE_UTILS_H

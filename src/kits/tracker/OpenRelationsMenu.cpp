@@ -222,7 +222,7 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
         BMessage* message = new BMessage(msgCmd);
         message->AddRef(SEN_RELATION_SOURCE_REF, sourceRef);
 
-		if (typeName == SEN_LABEL_RELATION_TYPE) {
+		if (typeName == SEN_LABEL_RELATION_TYPE || typeName.StartsWith(SEN_META_SUPERTYPE)) {
 			message->AddString(SEN_RELATION_TYPE, SEN_LABEL_RELATION_TYPE);
 			message->AddString(SEN_RELATION_TARGET_TYPE, BString(typeName));
 		} else {
@@ -240,7 +240,6 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
         openRelationTargetsMsg->AddRef(SEN_RELATION_SOURCE_REF, sourceRef);
 		// todo: add new srcId if adding first relation via Tracker later!
 		openRelationTargetsMsg->AddString(SEN_RELATION_SOURCE_ATTR, BString(srcId));
-		openRelationTargetsMsg->AddString(SEN_RELATION_TYPE, BString(typeName));
 		openRelationTargetsMsg->AddString(SEN_RELATION_LABEL, label);
 
         BMenuItem* item = new IconMenuItem(

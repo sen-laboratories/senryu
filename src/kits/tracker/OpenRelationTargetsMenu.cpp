@@ -183,7 +183,7 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 	BString relationType;
 	result = fEntriesToOpen.FindString(SEN_RELATION_TYPE, &relationType);
 	if (result != B_OK) {
-		PRINT(("failed to retrieve relation type: %s\n", strerror(result)));
+		PRINT(("failed to retrieve target type: %s\n", strerror(result)));
 		return result;
 	}
 
@@ -196,29 +196,48 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 	BStringList mimeIncludes;
 	BStringList mimeExcludes;
 
-	PRINT(("collecting compatible template types for relation %s...\n", relationType.String() ));
+	PRINT(("collecting compatible template types for type %s...\n", relationType.String() ));
 
 	// handle meta relations for associations
 	// relation type is the classification relation and targetType is some classification type
-	if (relationType == SEN_LABEL_RELATION_TYPE || relationType.StartsWith(SEN_META_SUPERTYPE)) {
+	if (relationType == SEN_LABEL_RELATION_TYPE) {
 		BString targetType;
 		result = fEntriesToOpen.FindString(SEN_RELATION_TARGET_TYPE, &targetType);
 
 		if (result != B_OK) {
 			// targetType param is optional
 			if (result != B_NAME_NOT_FOUND) {
-				PRINT(("failed to retrieve relation target type: %s\n", strerror(result)));
+				PRINT(("failed to retrieve target type: %s\n", strerror(result)));
 				return result;
 			}
 		} else {
 			targetTypes.Add(targetType);
 		}
+
 		PRINT(("building META targets for type %s...\n", targetType.String() ));
+
+		// add a shortcut New <AssociationType> on top
+		BMessage* newAssociationMsg = new BMessage(SEN_RELATIONS_GET_NEW_TARGET);
+		newAssociationMsg->AddRef(SEN_RELATION_SOURCE_REF, &srcRef);
+		newAssociationMsg->AddString(SEN_RELATION_TYPE, relationType);
+		newAssociationMsg->AddString(SEN_RELATION_TARGET_TYPE, targetType);
+		newAssociationMsg->AddMessenger("TrackerViewToken", fMessenger);
+
+		BString newAssocLabel("New" B_UTF8_ELLIPSIS);
+
+		IconMenuItem* newAssociationItem = new IconMenuItem(newAssocLabel.String(),
+											   newAssociationMsg,
+											   targetType);
+
+		newAssociationItem->SetTarget(be_app_messenger);
+		AddItem(newAssociationItem);
+
+		AddSeparatorItem();
 
 		senAddRelationMsg.what = SEN_RELATION_ADD;
 		targetMessenger = BMessenger(SEN_SERVER_SIGNATURE);
 
-		mimeIncludes.Add(SEN_META_SUPERTYPE);
+		mimeIncludes.Add(targetType);
 	} else {
 		// else, handle new relations from compatible templates
 		PRINT(("%s is a normal relation, collecting all compatible templates except for META entities for relation.\n",

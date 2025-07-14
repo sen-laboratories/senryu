@@ -3385,7 +3385,13 @@ BPoseView::NewFileFromTemplate(const BMessage* message)
 	FSMakeOriginalName(fileName, &destDir, " copy");
 
 	entry_ref srcRef;
-	message->FindRef("refs_template", &srcRef);
+	status_t status = message->FindRef("refs_template", &srcRef);
+	if (status != B_OK) {
+		PRINT(("NewFileFromTemplate: no refs_template and no targetType found, aborting.\n"));
+		return;
+	}
+
+	PRINT(("NewFileFromTemplate %s\n", srcRef.name));
 
 	BDirectory dir(&srcRef);
 

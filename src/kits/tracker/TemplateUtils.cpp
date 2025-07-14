@@ -52,21 +52,10 @@ int32 TemplateUtils::GetInstalledTemplates(
 	BMessage* templatesMsg)
 {
 	BEntry entry;
-	BPath templatePath;
-	status_t result = B_OK;
 	int32 templatesCount = 0;
 
 	if (path == NULL) {
-		status_t result;
-
-		if ((result = find_directory(B_USER_SETTINGS_DIRECTORY, &templatePath)) != B_OK)
-		{
-			PRINT(("could not find user settings directory (using default): %s\n", strerror(result)));
-			templatePath.SetTo("/boot/home/config/settings");
-		}
-
-		templatePath.Append(kTemplatesDirectory);
-		path = templatePath.Path();
+		path = GetUserTemplatesPath();
 	}
 	PRINT(("  >> entering templates path %s...\n", path ));
 
@@ -92,7 +81,8 @@ int32 TemplateUtils::GetInstalledTemplates(
 				if (dir.InitCheck() == B_OK) {
 					BPath subdirPath;
 					if (entry.GetPath(&subdirPath) == B_OK) {
-						int32 subDirResult = GetInstalledTemplates(subdirPath.Path(), mimeIncludes, mimeExcludes, templatesMsg);
+						int32 subDirResult = GetInstalledTemplates(
+							subdirPath.Path(), mimeIncludes, mimeExcludes, templatesMsg);
 						if (subDirResult < 0)
 							return subDirResult;	// return error
 						else
@@ -138,7 +128,28 @@ int32 TemplateUtils::GetInstalledTemplates(
 	if (templatesCount >= 0)
 		return templatesCount;
 	else
-		return result;
+		return B_ERROR;
+}
+
+const char* TemplateUtils::GetUserTemplatesPath() {
+	BPath path;
+
+	if (templatesPath == NULL) {
+		// to be correct, we should block on a Benaphore or similar here, but it doesn't really matter here
+		status_t result;
+
+		if ((result = find_directory(B_USER_SETTINGS_DIRECTORY, &path)) != B_OK)
+		{
+			PRINT(("could not find user settings directory (using default): %s\n", strerror(result)));
+			path.SetTo("/boot/home/config/settings");
+		}
+
+		path.Append(kTemplatesDirectory);
+		templatesPath = path.Path();
+
+		PRINT(("templates path is %s\n", templatesPath));
+	}
+	return templatesPath;
 }
 
 int32 TemplateUtils::FindPartialMatch(const char* nameToFind, const BStringList* names)
@@ -158,19 +169,8 @@ int32 TemplateUtils::FindPartialMatch(const char* nameToFind, const BStringList*
 
 status_t TemplateUtils::GetTemplateForType(const char* mimeType, entry_ref* ref)
 {
-	// TODO: search Tracker templates for matching template
-	// LATER: relation specific templates to use depending on relation ends, e.g. Person->Note vs Movie->Note etc.
-	//        this could be added like a filter as separate (non indexed) attributes in Tracker relation templates
-
-	// create new tmp file of given type to act as template for now
-	BPath templatePath;
 	status_t result;
 
-	if (find_directory(B_SYSTEM_TEMP_DIRECTORY, &templatePath) != B_OK)
-	{
-		PRINT(("could not find user settings directory, falling back to /tmp.\n"));
-		templatePath.SetTo("/tmp");
-	}
 	// build simple MIME path
 	BMimeType mime(mimeType);
 	if ((result = mime.InitCheck()) != B_OK) {
@@ -178,8 +178,18 @@ status_t TemplateUtils::GetTemplateForType(const char* mimeType, entry_ref* ref)
 		return result;
 	}
 
-	templatePath.Append("sen");
-	templatePath.Append(SEN_ENTITY_SUPERTYPE);
+	// create new tmp file of given type to act as template for now
+	BPath templatePath;
+
+	// use existing path?
+	if (templatePath.SetTo(ref) != B_OK) {
+		if (find_directory(B_SYSTEM_TEMP_DIRECTORY, &templatePath) != B_OK) {
+			PRINT(("could not find user settings directory, falling back to /tmp.\n"));
+			templatePath.SetTo("/tmp");
+		}
+		templatePath.Append("sen");
+		templatePath.Append(SEN_ENTITY_SUPERTYPE);
+	}
 
 	BDirectory outputDir;
 	result = create_directory(templatePath.Path(), B_CREATE_FILE);
