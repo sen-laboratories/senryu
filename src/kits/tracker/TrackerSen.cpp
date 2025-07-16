@@ -143,22 +143,50 @@ TTracker::HandleSenMessage(BMessage* message)
 				return true;	// abort
 			}
 
-			entry_ref* targetRef = new entry_ref;
-			result = message->FindRef(SEN_RELATION_TARGET_REF, targetRef);
+			entry_ref targetRef;
+			result = message->FindRef(SEN_RELATION_TARGET_REF, &targetRef);
 			if (result != B_OK) {
 				if (result == B_NAME_NOT_FOUND && targetType.StartsWith(SEN_META_SUPERTYPE)) {
-					// create a new association/meta template on the fly
-					BEntry targetEntry(TemplateUtils::GetUserTemplatesPath());
-					result = targetEntry.GetRef(targetRef);
+					// create a new association/meta entity instance from all available meta types on the fly
+					BMessage msgGetClassEntity(SEN_CONFIG_CLASS_ADD);
+					msgGetClassEntity.AddString(SEN_MSG_TYPE, targetType);
 
-					if (result == B_OK)
-						result = TemplateUtils::GetTemplateForType(targetType.String(), targetRef);
+					BString newClass("New ");
+					BMimeType classMime(targetType.String());
+					result = classMime.InitCheck();
+					if (result == B_OK) {
+						char label[B_MIME_TYPE_LENGTH];
+						classMime.GetShortDescription(label);
+						newClass << label;
+					} else {
+						PRINT(("could not get MIME type for target type %s: %s\n",
+							targetType.String(), strerror(result) ));
+						newClass << "(Unknown Classification Type)";
+					}
+					msgGetClassEntity.AddString(SEN_MSG_NAME, newClass);
+
+					BMessage msgClassReply;
+					BMessenger senMsgr(SEN_SERVER_SIGNATURE);
+
+					result = senMsgr.SendMessage(&msgGetClassEntity, &msgClassReply);
+
 					if (result != B_OK) {
 						PRINT(("error creating new ref from type %s: %s\n", targetType.String(), strerror(result) ));
 						return true;
 					}
-					PRINT(("created new target type %s in %s.\n", targetType.String(), BPath(targetRef).Path() ));
-					message->AddRef(SEN_RELATION_TARGET_REF, targetRef);
+					PRINT(("got reply from create classification:\n"));
+					msgClassReply.PrintToStream();
+
+					result = msgClassReply.FindRef("refs", &targetRef);
+					if (result == B_OK) {
+						PRINT(("created new meta entity instance %s in %s.\n",
+							targetType.String(), BPath(&targetRef).Path() ));
+
+						message->AddRef(SEN_RELATION_TARGET_REF, &targetRef);
+					} else {
+						PRINT(("could not find ref for new classification entity in reply: %s\n", strerror(result) ));
+						return true;
+					}
 				} else {
 					PRINT(("could not get target ref: %s\n", strerror(result) ));
 					return true;	// abort
@@ -169,7 +197,7 @@ TTracker::HandleSenMessage(BMessage* message)
 			if (relationType == SEN_LABEL_RELATION_TYPE) {
 				// just add a relation to the existing association meta entity
 				PRINT(("adding relation to META entity for association %s of type %s\n",
-					targetRef->name, targetType.String() ));
+					targetRef.name, targetType.String() ));
 
 				// adapt and send as SEN scripting message to add relation of desired type
 				message->what = SEN_RELATION_ADD;
@@ -186,8 +214,8 @@ TTracker::HandleSenMessage(BMessage* message)
 			}
 			// else, adapt and forward as "new from template" message to Tracker
 			message->what = kNewEntryFromTemplate;
-			message->AddRef("refs_template", targetRef);
-			message->AddString("name", targetRef->name);	// becomes e.g. "New Label"
+			message->AddRef("refs_template", &targetRef);
+			message->AddString("name", targetRef.name);	// becomes e.g. "New Label"
 
 			BMessenger trackerMessenger;
 			result = message->FindMessenger("TrackerViewToken", &trackerMessenger);
@@ -462,7 +490,7 @@ TTracker::GetRelationTypeAttributeInfo(const char* relationType, BMessage* attrI
 
 	// merge with attributes from supertype (relation)
 	result = attrInfo->Append(attrInfoSuperType);
-/* fixme: works but check returns 'Bad argument type passed to function' ?!
+/* FIXME: works but check returns 'Bad argument type passed to function' ?!
 	if (result != B_OK) {
 		PRINT(("failed to construct attribute info for relation type and supertype: %s\n", strerror(result) ));
 		return result;

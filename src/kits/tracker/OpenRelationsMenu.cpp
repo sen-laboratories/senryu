@@ -193,11 +193,11 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 	BString relationFilter = fRelationsReply.GetString("filter");
 
 	// only sent for compatible relation types
-	if (relationFilter == "compatible") {
+	if (relationFilter == SEN_MSG_FILTER_COMPATIBLE) {
 		propertyName = SEN_RELATION_COMPATIBLE_TYPES;		// use the meta relation types for association relations
 	}
 
-	PRINT(("getting compatible relation items for relations with property %s...\n", propertyName.String() ));
+	PRINT(("getting compatible relation items for relations using property %s...\n", propertyName.String() ));
 
 	// get any type filters passed in
 	BStringList mimeExcludes;
