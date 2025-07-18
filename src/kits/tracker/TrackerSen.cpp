@@ -144,9 +144,11 @@ TTracker::HandleSenMessage(BMessage* message)
 			}
 
 			entry_ref targetRef;
+			bool newMetaEntityCreated = false;
+
 			result = message->FindRef(SEN_RELATION_TARGET_REF, &targetRef);
 			if (result != B_OK) {
-				if (result == B_NAME_NOT_FOUND && targetType.StartsWith(SEN_META_SUPERTYPE)) {
+				if (result == B_NAME_NOT_FOUND && targetType.StartsWith(SEN_META_SUPERTYPE "/")) {
 					// create a new association/meta entity instance from all available meta types on the fly
 					BMessage msgGetClassEntity(SEN_CONFIG_CLASS_ADD);
 					msgGetClassEntity.AddString(SEN_MSG_TYPE, targetType);
@@ -169,24 +171,30 @@ TTracker::HandleSenMessage(BMessage* message)
 					BMessenger senMsgr(SEN_SERVER_SIGNATURE);
 
 					result = senMsgr.SendMessage(&msgGetClassEntity, &msgClassReply);
+					status_t status = msgClassReply.GetInt32("status", B_OK);
 
-					if (result != B_OK) {
-						PRINT(("error creating new ref from type %s: %s\n", targetType.String(), strerror(result) ));
+					if (result != B_OK || status != B_OK) {
+						PRINT(("error creating new ref from type %s: %s, return status was: %s\n",
+							targetType.String(), strerror(result), strerror(status) ));
+
 						return true;
 					}
+
 					PRINT(("got reply from create classification:\n"));
 					msgClassReply.PrintToStream();
 
 					result = msgClassReply.FindRef("refs", &targetRef);
 					if (result == B_OK) {
-						PRINT(("created new meta entity instance %s in %s.\n",
-							targetType.String(), BPath(&targetRef).Path() ));
+						PRINT(("got new meta entity instance '%s' of type '%s' in %s.\n",
+							targetRef.name, targetType.String(), BPath(&targetRef).Path() ));
 
 						message->AddRef(SEN_RELATION_TARGET_REF, &targetRef);
 					} else {
 						PRINT(("could not find ref for new classification entity in reply: %s\n", strerror(result) ));
 						return true;
 					}
+					// continue with new Entity from template flow below
+					newMetaEntityCreated = true;
 				} else {
 					PRINT(("could not get target ref: %s\n", strerror(result) ));
 					return true;	// abort
@@ -196,8 +204,8 @@ TTracker::HandleSenMessage(BMessage* message)
 			// associations are handled the same until here, where we never create a new target in that case
 			if (relationType == SEN_LABEL_RELATION_TYPE) {
 				// just add a relation to the existing association meta entity
-				PRINT(("adding relation to META entity for association %s of type %s\n",
-					targetRef.name, targetType.String() ));
+				PRINT(("adding relation to association entity instance '%s' for association %s of type %s\n",
+					BPath(&targetRef).Path(), relationType.String(), targetType.String() ));
 
 				// adapt and send as SEN scripting message to add relation of desired type
 				message->what = SEN_RELATION_ADD;
@@ -209,16 +217,19 @@ TTracker::HandleSenMessage(BMessage* message)
 				} else {
 					PRINT(("could not reach sen_server.\n"));
 				}
-
-				return true;	// done
+				if (!newMetaEntityCreated)
+					return true;	// done for existing association targets
 			}
-			// else, adapt and forward as "new from template" message to Tracker
+
+			// adapt and forward as "new from template" message to Tracker
 			message->what = kNewEntryFromTemplate;
 			message->AddRef("refs_template", &targetRef);
-			message->AddString("name", targetRef.name);	// becomes e.g. "New Label"
+			message->AddString("name", targetRef.name);	// later becomes e.g. "New Label" in PoseView::NewFromTemplate
 
 			BMessenger trackerMessenger;
 			result = message->FindMessenger("TrackerViewToken", &trackerMessenger);
+
+			PRINT(("targetRef is now pointing to %s.\n", BPath(&targetRef).Path() ));
 
 			if (result == B_OK) {
 				result = trackerMessenger.SendMessage(message);

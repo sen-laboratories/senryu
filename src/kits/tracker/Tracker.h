@@ -109,7 +109,7 @@ public:
 		// closes parent, waits for child to open first
 
 	void SelectChildInParentSoon(const entry_ref* parent,
-			const node_ref* child);
+			const node_ref* child, const node_ref* edit = NULL);
 		// waits till child shows up in parent and selects it
 
 	void SelectPoseAtLocationSoon(node_ref parent, BPoint location);
@@ -193,7 +193,7 @@ private:
 	bool LaunchAndCloseParentIfOK(const entry_ref* launchThis,
 			const node_ref* closeThis, const BMessage* messageToBundle);
 	bool SelectChildInParent(const entry_ref* parent,
-			const node_ref* child);
+			const node_ref* child, const node_ref* edit = NULL);
 	void SelectPoseAtLocationInParent(node_ref parent, BPoint location);
 	bool CloseParentWindowCommon(BContainerWindow*);
 
@@ -237,7 +237,8 @@ private:
 	status_t OpenRef(const entry_ref*, const node_ref* nodeToClose = NULL,
 			const node_ref* nodeToSelect = NULL,
 			OpenSelector selector = kOpen,
-			const BMessage* messageToBundle = NULL);
+			const BMessage* messageToBundle = NULL,
+			const node_ref* nodeToEdit = NULL);
 
 	MimeTypeList*			fMimeTypeList;
 	WindowList				fWindowList;

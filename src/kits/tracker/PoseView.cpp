@@ -3380,8 +3380,10 @@ BPoseView::NewFileFromTemplate(const BMessage* message)
 		return;
 
 	// TODO: Localise this
-	char fileName[B_FILE_NAME_LENGTH] = "New ";
-	strlcat(fileName, message->FindString("name"), sizeof(fileName));
+	BString fileName(message->FindString("name"));
+	if (! fileName.StartsWith("New "))
+		fileName.Prepend("New ");
+
 	FSMakeOriginalName(fileName, &destDir, " copy");
 
 	entry_ref srcRef;
@@ -3391,73 +3393,97 @@ BPoseView::NewFileFromTemplate(const BMessage* message)
 		return;
 	}
 
-	PRINT(("NewFileFromTemplate %s\n", srcRef.name));
+	PRINT(("NewFileFromTemplate source ref is: %s\n", BPath(&srcRef).Path()));
 
-	BDirectory dir(&srcRef);
+	BString	 relationType;
+	message->FindString(SEN_RELATION_TYPE, &relationType);
 
-	if (dir.InitCheck() == B_OK) {
-		// special handling of directories
-		if (FSCreateNewFolderIn(targetModel->NodeRef(), &destEntryRef,
-				&destNodeRef) == B_OK) {
-			BEntry destEntry(&destEntryRef);
-			destEntry.Rename(fileName);
-		}
-	} else {
-		BFile srcFile(&srcRef, B_READ_ONLY);
-		BFile destFile(&destDir, fileName, B_READ_WRITE | B_CREATE_FILE);
-
-		// copy the data from the template file
-		char* buffer = new char[1024];
-		ssize_t result;
-		do {
-			result = srcFile.Read(buffer, 1024);
-
-			if (result > 0) {
-				ssize_t written = destFile.Write(buffer, (size_t)result);
-				if (written != result)
-					result = written < B_OK ? written : B_ERROR;
+	// don't copy template to new file when creating a new association meta entity
+	if (relationType != SEN_LABEL_RELATION_TYPE) {
+		BDirectory dir(&srcRef);
+		if (dir.InitCheck() == B_OK) {
+			// special handling of directories
+			if (FSCreateNewFolderIn(targetModel->NodeRef(), &destEntryRef,
+					&destNodeRef) == B_OK) {
+				BEntry destEntry(&destEntryRef);
+				destEntry.Rename(fileName);
 			}
-		} while (result > 0);
-		delete[] buffer;
+		} else {
+			BFile srcFile(&srcRef, B_READ_ONLY);
+			BFile destFile(&destDir, fileName, B_READ_WRITE | B_CREATE_FILE);
+
+			// copy the data from the template file
+			char* buffer = new char[1024];
+			ssize_t result;
+			do {
+				result = srcFile.Read(buffer, 1024);
+
+				if (result > 0) {
+					ssize_t written = destFile.Write(buffer, (size_t)result);
+					if (written != result)
+						result = written < B_OK ? written : B_ERROR;
+				}
+			} while (result > 0);
+			delete[] buffer;
+		}
+
+		// todo: create an UndoItem
+
+		// copy the attributes from the template file
+		BNode srcNode(&srcRef);
+		BNode destNode(&destDir, fileName);
+		FSCopyAttributesAndStats(&srcNode, &destNode, false);
+	} else {
+		// get parent dir of association entity in SEN config path
+		BEntry destEntry(&srcRef);
+		BString step("destEntry.GetParent");
+		BEntry destDirEntry;
+		status_t result = destEntry.GetParent(&destDirEntry);
+
+		if (result == B_OK) {
+			// switch to new PoseView in context config of the newly created item
+			if (result == B_OK) {
+				entry_ref destDirRef;
+				result = destDirEntry.GetRef(&destDirRef);
+
+				node_ref nodeToSelect;
+				if (result == B_OK)
+					result = destEntry.GetNodeRef(&nodeToSelect);
+
+				if (result == B_OK) {
+					// send to Tracker and open the relevant context config directory
+					BMessage message(B_REFS_RECEIVED);
+					message.AddRef("refs", &destDirRef);
+					step.SetTo("AddData");
+
+					// select and start editing the newly created item
+					result = message.AddData("nodeRefToSelect", B_RAW_TYPE,
+											(const void*) &nodeToSelect, sizeof(node_ref));
+					// same node, easier to work with existing Tracker OpenRef this way
+					if (result == B_OK)
+						result = message.AddData("nodeRefToEdit", B_RAW_TYPE,
+											(const void*) &nodeToSelect, sizeof(node_ref));
+
+					if (result == B_OK) {
+						// post to Tracker as refs_received
+						be_app->PostMessage(&message);
+						return;
+					}
+				}
+			}
+		}
+		if (result != B_OK) {
+			PRINT(("failed at step '%s', cannot open classification entity for editing: %s\n",
+				step.String(), strerror(result) ));
+			return;
+		} else {
+			PRINT(("navigating to new target classification for editing.\n"));
+			OpenParent();
+		}
 	}
-
-	// todo: create an UndoItem
-
-	// copy the attributes from the template file
-	BNode srcNode(&srcRef);
-	BNode destNode(&destDir, fileName);
-	FSCopyAttributesAndStats(&srcNode, &destNode, false);
 
 	BEntry entry(&destDir, fileName);
 	entry.GetRef(&destEntryRef);
-
-	// add SEN relation to original file if coming from "New related..."
-	entry_ref originalRef;
-	BString	  relationType;
-	status_t result = message->FindRef(SEN_RELATION_SOURCE_REF, &originalRef);
-	if (result == B_OK)
-		result = message->FindString(SEN_RELATION_TYPE, &relationType);
-
-	if (result == B_OK) {
-		// send SEN scripting message to add relation of desired type
-		BMessage senAddRelationMsg(SEN_RELATION_ADD);
-		senAddRelationMsg.AddRef(SEN_RELATION_SOURCE_REF, &originalRef);
-		senAddRelationMsg.AddRef(SEN_RELATION_TARGET_REF, &destEntryRef);
-		senAddRelationMsg.AddString(SEN_RELATION_TYPE, relationType);
-		// todo: add possible relation properties from template!
-
-		PRINT(("add relation '%s' for new target '%s'...\n", relationType.String(), fileName));
-		senAddRelationMsg.PrintToStream();
-
-		BMessenger senMsgr(SEN_SERVER_SIGNATURE);
-		if (senMsgr.IsValid()) {
-			senMsgr.SendMessage(&senAddRelationMsg);
-		} else {
-			PRINT(("could not reach sen_server.\n"));
-		}
-	} else {
-		PRINT(("abort add SEN relation, error: %s\n", strerror(result) ));
-	}
 
 	// try to place new item at click point or under mouse if possible
 	PlaceFolder(&destEntryRef, message);
@@ -5597,8 +5623,9 @@ BPoseView::EntryCreated(const node_ref* dirNode, const node_ref* itemNode,
 	if (model->InitCheck() != B_OK) {
 		// if we have trouble setting up model then we stuff it into
 		// a zombie list in a half-alive state until we can properly awaken it
-		PRINT(("2 adding model %s to zombie list, error %s\n", model->Name(),
+		PRINT(("adding model %s to zombie list, error %s\n", model->Name(),
 			strerror(model->InitCheck())));
+
 		fZombieList->AddItem(model);
 		return NULL;
 	}
