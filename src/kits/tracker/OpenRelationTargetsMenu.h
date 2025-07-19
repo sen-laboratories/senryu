@@ -15,7 +15,8 @@
 class OpenRelationTargetsMenu : public BSlowMenu {
 public:
 	OpenRelationTargetsMenu(const char* label, const BMessage* entriesToOpen,
-	BWindow* parentWindow, const BMessenger &target);
+							BWindow* parentWindow, const BMessenger &target);
+	~OpenRelationTargetsMenu();
 
 private:
 	virtual bool StartBuildingItemList();
@@ -30,6 +31,7 @@ private:
 
 	BMessage	fEntriesToOpen;
 	BMessenger	fMessenger;
+	BMessenger* fSenMessenger;
 	BWindow*	fParentWindow;
 
 	BMessage*	fRelationTargetsReply;

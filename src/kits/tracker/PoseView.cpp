@@ -3395,92 +3395,39 @@ BPoseView::NewFileFromTemplate(const BMessage* message)
 
 	PRINT(("NewFileFromTemplate source ref is: %s\n", BPath(&srcRef).Path()));
 
-	BString	 relationType;
-	message->FindString(SEN_RELATION_TYPE, &relationType);
-
-	// don't copy template to new file when creating a new association meta entity
-	if (relationType != SEN_LABEL_RELATION_TYPE) {
-		BDirectory dir(&srcRef);
-		if (dir.InitCheck() == B_OK) {
-			// special handling of directories
-			if (FSCreateNewFolderIn(targetModel->NodeRef(), &destEntryRef,
-					&destNodeRef) == B_OK) {
-				BEntry destEntry(&destEntryRef);
-				destEntry.Rename(fileName);
-			}
-		} else {
-			BFile srcFile(&srcRef, B_READ_ONLY);
-			BFile destFile(&destDir, fileName, B_READ_WRITE | B_CREATE_FILE);
-
-			// copy the data from the template file
-			char* buffer = new char[1024];
-			ssize_t result;
-			do {
-				result = srcFile.Read(buffer, 1024);
-
-				if (result > 0) {
-					ssize_t written = destFile.Write(buffer, (size_t)result);
-					if (written != result)
-						result = written < B_OK ? written : B_ERROR;
-				}
-			} while (result > 0);
-			delete[] buffer;
+	BDirectory dir(&srcRef);
+	if (dir.InitCheck() == B_OK) {
+		// special handling of directories
+		if (FSCreateNewFolderIn(targetModel->NodeRef(), &destEntryRef,
+				&destNodeRef) == B_OK) {
+			BEntry destEntry(&destEntryRef);
+			destEntry.Rename(fileName);
 		}
-
-		// todo: create an UndoItem
-
-		// copy the attributes from the template file
-		BNode srcNode(&srcRef);
-		BNode destNode(&destDir, fileName);
-		FSCopyAttributesAndStats(&srcNode, &destNode, false);
 	} else {
-		// get parent dir of association entity in SEN config path
-		BEntry destEntry(&srcRef);
-		BString step("destEntry.GetParent");
-		BEntry destDirEntry;
-		status_t result = destEntry.GetParent(&destDirEntry);
+		BFile srcFile(&srcRef, B_READ_ONLY);
+		BFile destFile(&destDir, fileName, B_READ_WRITE | B_CREATE_FILE);
 
-		if (result == B_OK) {
-			// switch to new PoseView in context config of the newly created item
-			if (result == B_OK) {
-				entry_ref destDirRef;
-				result = destDirEntry.GetRef(&destDirRef);
+		// copy the data from the template file
+		char* buffer = new char[1024];
+		ssize_t result;
+		do {
+			result = srcFile.Read(buffer, 1024);
 
-				node_ref nodeToSelect;
-				if (result == B_OK)
-					result = destEntry.GetNodeRef(&nodeToSelect);
-
-				if (result == B_OK) {
-					// send to Tracker and open the relevant context config directory
-					BMessage message(B_REFS_RECEIVED);
-					message.AddRef("refs", &destDirRef);
-					step.SetTo("AddData");
-
-					// select and start editing the newly created item
-					result = message.AddData("nodeRefToSelect", B_RAW_TYPE,
-											(const void*) &nodeToSelect, sizeof(node_ref));
-					// same node, easier to work with existing Tracker OpenRef this way
-					if (result == B_OK)
-						result = message.AddData("nodeRefToEdit", B_RAW_TYPE,
-											(const void*) &nodeToSelect, sizeof(node_ref));
-
-					if (result == B_OK) {
-						// post to Tracker as refs_received
-						be_app->PostMessage(&message);
-						return;
-					}
-				}
+			if (result > 0) {
+				ssize_t written = destFile.Write(buffer, (size_t)result);
+				if (written != result)
+					result = written < B_OK ? written : B_ERROR;
 			}
-		}
-		if (result != B_OK) {
-			PRINT(("failed at step '%s', cannot open classification entity for editing: %s\n",
-				step.String(), strerror(result) ));
-			return;
-		} else {
-			PRINT(("navigating to new target classification for editing.\n"));
-			OpenParent();
-		}
+		} while (result > 0);
+		delete[] buffer;
 	}
+
+	// todo: create an UndoItem
+
+	// copy the attributes from the template file
+	BNode srcNode(&srcRef);
+	BNode destNode(&destDir, fileName);
+	FSCopyAttributesAndStats(&srcNode, &destNode, false);
 
 	BEntry entry(&destDir, fileName);
 	entry.GetRef(&destEntryRef);

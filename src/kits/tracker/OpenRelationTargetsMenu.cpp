@@ -47,6 +47,19 @@ OpenRelationTargetsMenu::OpenRelationTargetsMenu(const char* label, const BMessa
 
 	SetFont(be_plain_font);
 	SetTriggersEnabled(false);
+
+	if (be_roster->IsRunning(SEN_SERVER_SIGNATURE)) {
+		fSenMessenger = new BMessenger(SEN_SERVER_SIGNATURE);
+		if (! fSenMessenger->IsValid()) {
+			PRINT(("failed to set up messenger for SEN server!\n"));
+		}
+	}
+}
+
+OpenRelationTargetsMenu::~OpenRelationTargetsMenu()
+{
+	if (fSenMessenger)
+		delete fSenMessenger;
 }
 
 bool
@@ -71,7 +84,7 @@ OpenRelationTargetsMenu::StartBuildingItemList()
 		}
 		case SEN_RELATIONS_GET_COMPATIBLE_TYPES:
 		{
-			PRINT(("building relations targets submenu for compatible targets...\n"));
+			PRINT(("building relation targets submenu for compatible targets...\n"));
 			break;
 		}
 		case SEN_RELATIONS_GET:
@@ -85,28 +98,18 @@ OpenRelationTargetsMenu::StartBuildingItemList()
 		}
 	}
 
-    if (be_roster->IsRunning(SEN_SERVER_SIGNATURE)) {
-		BMessenger fSenMessenger(SEN_SERVER_SIGNATURE);
-		if (! fSenMessenger.IsValid()) {
-			PRINT(("failed to set up messenger for SEN server!\n"));
-			return false;
-		}
-		// prepare items with relation targets result from SEN
-        status_t result = fSenMessenger.SendMessage(new BMessage(fEntriesToOpen), fRelationTargetsReply);
-		if (result != B_OK) {
-			PRINT(("failed to communicate with SEN server: %s\n", strerror(result)));
-			return false;
-		}
-		#ifdef DEBUG
-		    PRINT(("got relation targets reply:\n"));
-			fRelationTargetsReply->PrintToStream();
-		#endif
+	// prepare items with relation targets result from SEN
+	status_t result = fSenMessenger->SendMessage(new BMessage(fEntriesToOpen), fRelationTargetsReply);
+	if (result != B_OK) {
+		PRINT(("failed to communicate with SEN server: %s\n", strerror(result)));
+		return false;
+	}
+	#ifdef DEBUG
+		PRINT(("got relation targets reply:\n"));
+		fRelationTargetsReply->PrintToStream();
+	#endif
 
-		return true;
-    } else {
-        PRINT(("failed to reach SEN server, is it running?\n"));
-        return false;
-    }
+	return true;
 }
 
 bool OpenRelationTargetsMenu::AddNextItem()
@@ -196,7 +199,7 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 	BStringList mimeIncludes;
 	BStringList mimeExcludes;
 
-	PRINT(("collecting compatible template types for type %s...\n", relationType.String() ));
+	PRINT(("collecting compatible target types for relation %s...\n", relationType.String() ));
 
 	// handle meta relations for associations
 	// relation type is the classification relation and targetType is some classification type
@@ -214,7 +217,7 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 			targetTypes.Add(targetType);
 		}
 
-		PRINT(("building META targets for type %s...\n", targetType.String() ));
+		PRINT(("collecting association targets for type %s...\n", targetType.String() ));
 
 		// add a shortcut New <AssociationType> on top
 		BMessage* newAssociationMsg = new BMessage(SEN_RELATIONS_GET_NEW_TARGET);
@@ -237,7 +240,36 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 		senAddRelationMsg.what = SEN_RELATION_ADD;
 		targetMessenger = BMessenger(SEN_SERVER_SIGNATURE);
 
-		mimeIncludes.Add(targetType);
+		// retrieve suitable classifications from SEN config
+		BMessage senFindClassMsg(SEN_CONFIG_CLASS_FIND);
+		senFindClassMsg.AddString(SEN_MSG_TYPE, targetType);
+
+		BMessage senFindClassReply;
+		result = fSenMessenger->SendMessage(&senFindClassMsg, &senFindClassReply);
+		if (result == B_OK) {
+			PRINT(("got %d matching classification types from SEN:\n", senFindClassReply.CountNames(B_REF_TYPE) ));
+			senFindClassReply.PrintToStream();
+
+			entry_ref classRef;
+			BString   classType;
+
+			for (int i = 0; i < senFindClassReply.CountNames(B_REF_TYPE); i++) {
+				classType = senFindClassReply.GetString("types", i, "");
+				if (! classType.IsEmpty()) {
+					result = senFindClassReply.FindRef("refs", i, &classRef);
+					if (result == B_OK) {
+						PRINT(("adding ref %s @%d.\n", classRef.name, i));
+						matchingRefs.AddRef(classType.String(), &classRef);
+					} else {
+						PRINT(("  > error getting ref @%d: %s\n", i, strerror(result) ));
+					}
+				} else {
+					PRINT(("  > could not get type for entry @%d, skipping\n", i));
+				}
+			}
+		} else {
+			PRINT(("failed to send find classification msg to SEN: %s\n", strerror(result)));
+		}
 	} else {
 		// else, handle new relations from compatible templates
 		PRINT(("%s is a normal relation, collecting all compatible templates except for META entities for relation.\n",
@@ -258,17 +290,18 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 				return result;
 			}
 		}
-	}
 
-	int32 templatesCount = TemplateUtils::GetInstalledTemplates(NULL, &mimeIncludes, &mimeExcludes, &matchingRefs);
+		int32 templatesCount = TemplateUtils::GetInstalledTemplates(NULL, &mimeIncludes, &mimeExcludes, &matchingRefs);
 
-	if (templatesCount >= 0) {	// ok to find nothing
-		PRINT(("got %d matching templates for relation %s:\n", templatesCount, relationType.String()));
-		matchingRefs.PrintToStream();
-	} else {
-		PRINT(("failed to retrieve relation target refs for type %s: %s\n",
-			relationType.String(), strerror(result)));
-		return result;
+		if (templatesCount >= 0) {	// ok to find nothing
+			PRINT(("got %d matching templates for relation %s:\n", templatesCount, relationType.String()));
+			matchingRefs.PrintToStream();
+		} else {
+			PRINT(("failed to retrieve relation target refs for type %s: %s\n",
+				relationType.String(), strerror(result)));
+
+			return result;
+		}
 	}
 
 	// for meta relations, we only need to add the association relation and are done
@@ -277,6 +310,8 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 	int32	  refCount;
 	char*     targetType;
 
+	PRINT(("adding %d refs to OpenRelated target items...\n", matchingRefs.CountNames(B_REF_TYPE) ));
+
 	for (int32 i = 0; i < matchingRefs.CountNames(B_REF_TYPE); i++) {
 		result = matchingRefs.GetInfo(B_REF_TYPE, i, &targetType, NULL, &refCount);
 
@@ -284,7 +319,7 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 			for (int32 r = 0; r < refCount; r++) {
 				matchingRefs.FindRef(targetType, r, &destRef);
 
-				PRINT(("adding template ref %s for type %s at %d\n", destRef.name, targetType, r));
+				PRINT(("adding ref %s for type %s at %d\n", destRef.name, targetType, r));
 
 				BMessage* itemMsg = new BMessage(senAddRelationMsg);
 				itemMsg->AddRef(SEN_RELATION_SOURCE_REF, &srcRef);
@@ -302,7 +337,7 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 				(*targetCount)++;
 			}
 		} else {
-			PRINT(("could not resolve template type #%d for source type %s: %s\n",
+			PRINT(("could not resolve type #%d for source type %s: %s\n",
 				i, targetType, strerror(result) ));
 		}
 	}

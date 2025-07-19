@@ -60,7 +60,7 @@ OpenRelationsMenu::StartBuildingItemList()
     }
 	fSenMessenger = BMessenger(SEN_SERVER_SIGNATURE);
 
-	// get all relations for refs received, what field contains relation type (ALL or SELF)
+	// get relations for all refs received, 'what' field contains relation type (ALL or SELF)
 	BMessage message(fEntriesToOpen);
 
 	// use SEN action as new message type for passing on to SEN
@@ -94,7 +94,7 @@ OpenRelationsMenu::StartBuildingItemList()
 			relationType = "UNKNOWN/UNEXPECTED";
 	}
 
-	PRINT(("Tracker->SEN: getting %s relations for path %s\n",
+	PRINT(("Tracker->SEN: getting %s relations for path '%s' with message:\n",
 		relationType.String(),
 		path.Path()));
 
@@ -190,7 +190,7 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 	}
 
 	BString propertyName(SEN_RELATIONS);	// default: handle normal relations
-	BString relationFilter = fRelationsReply.GetString("filter");
+	BString relationFilter = fRelationsReply.GetString(SEN_MSG_FILTER);
 
 	// only sent for compatible relation types
 	if (relationFilter == SEN_MSG_FILTER_COMPATIBLE) {
@@ -215,32 +215,35 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 
 		// check for excluded types
 		if (mimeExcludes.HasString(typeName)) {
-			PRINT(("  > skipping Association relation.\n"));
+			PRINT(("  > skipping excluded relation %s.\n", typeName.String()));
 			continue;
 		}
 		// message for relation menu items
         BMessage* message = new BMessage(msgCmd);
         message->AddRef(SEN_RELATION_SOURCE_REF, sourceRef);
-
-		if (typeName == SEN_LABEL_RELATION_TYPE || typeName.StartsWith(SEN_META_SUPERTYPE)) {
+		if (propertyName == SEN_RELATION_COMPATIBLE_TYPES) {
 			message->AddString(SEN_RELATION_TYPE, SEN_LABEL_RELATION_TYPE);
-			message->AddString(SEN_RELATION_TARGET_TYPE, BString(typeName));
-		} else {
-			message->AddString(SEN_RELATION_TYPE, BString(typeName));
+			message->AddString(SEN_RELATION_TARGET_TYPE, typeName);
 		}
+		else
+			message->AddString(SEN_RELATION_TYPE, typeName);
 
 		char label[B_ATTR_NAME_LENGTH];
 		if (mime.GetShortDescription(label) != B_OK) {
 			// this should never happen, since the MIME registry does not allow a Type without a short description
 			PRINT(("could not get short description for relation %s, falling back to type name.\n", typeName.String()));
-			typeName.CopyInto(label, 0, typeName.Length());
+			typeName.CopyInto(label, 0, typeName.CountBytes(0, typeName.Length()));
 		}
 
 		BMessage *openRelationTargetsMsg = new BMessage(SEN_OPEN_RELATION_TARGET_VIEW);
         openRelationTargetsMsg->AddRef(SEN_RELATION_SOURCE_REF, sourceRef);
-		// todo: add new srcId if adding first relation via Tracker later!
-		openRelationTargetsMsg->AddString(SEN_RELATION_SOURCE_ATTR, BString(srcId));
+		openRelationTargetsMsg->AddString(SEN_RELATION_SOURCE_ATTR, srcId);
 		openRelationTargetsMsg->AddString(SEN_RELATION_LABEL, label);
+		if (propertyName == SEN_RELATION_COMPATIBLE_TYPES) {
+			openRelationTargetsMsg->AddString(SEN_RELATION_TYPE, SEN_LABEL_RELATION_TYPE);
+		}
+		else
+			openRelationTargetsMsg->AddString(SEN_RELATION_TYPE, typeName);
 
         BMenuItem* item = new IconMenuItem(
             new OpenRelationTargetsMenu(label, message, fParentWindow, fTrackerMessenger),

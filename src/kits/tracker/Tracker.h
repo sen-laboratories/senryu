@@ -176,6 +176,8 @@ protected:
 	bool HandleSenMessage(BMessage*);
 	bool ResolveRelation(const entry_ref*, BString*, BString*);
 
+	status_t CreateNewAssociationEntity(const char* associationEntityType, entry_ref* targetRef);
+	status_t EditNewEntity(const entry_ref* ref);
 	status_t PrepareLaunchTarget(const entry_ref* srcRef, const char* targetId, entry_ref* targetRef, BMessage* params);
 	status_t PrepareRelationWindow(BMessage *message, RelationInfo* relationInfo);
 	status_t PrepareRelationTargetWindow(BMessage *message, RelationInfo* relationInfo);
