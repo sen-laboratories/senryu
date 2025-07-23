@@ -279,7 +279,7 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 		senAddRelationMsg.AddMessenger("TrackerViewToken", fMessenger);
 		targetMessenger = be_app_messenger;
 
-		mimeIncludes = targetTypes;
+		mimeIncludes.Add(targetTypes);
 		mimeExcludes.Add(SEN_META_SUPERTYPE);
 
 		// here we got a list of compatible target types
@@ -357,7 +357,7 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 	}
 
 	BMessage idToRef;
-	result = relations.FindMessage(SEN_ID_TO_REF_MAP, &idToRef);
+	result = fRelationTargetsReply->FindMessage(SEN_ID_TO_REF_MAP, &idToRef);
 	if (result != B_OK) {
 		PRINT(("failed to retrieve ID/ref mapping for relations: %s\n", strerror(result)));
 		return result;

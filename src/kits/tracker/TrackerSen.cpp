@@ -148,12 +148,33 @@ TTracker::HandleSenMessage(BMessage* message)
 			if (result != B_OK) {
 				if (result == B_NAME_NOT_FOUND && targetType.StartsWith(SEN_META_SUPERTYPE "/")) {
 					result = CreateNewAssociationEntity(targetType.String(), &targetRef);
+
 					if (result == B_OK) {
+						PRINT(("adding new association entity instance '%s' for association '%s' of type '%s'\n",
+						BPath(&targetRef).Path(), relationType.String(), targetType.String() ));
+
 						// show in target location (SEN context config) in Tracker for editing name
 						EditNewEntity(&targetRef);
 
-						// add new ref and continue to add association relation below as in normal case
-						message->AddRef(SEN_RELATION_TARGET_REF, &targetRef);
+						// add a relation to new or existing association meta entity
+						PRINT(("adding relation '%s' to entity instance '%s' of type %s\n",
+							relationType.String(), BPath(&targetRef).Path(), targetType.String() ));
+
+						// send as SEN scripting message to add relation of desired type
+						BMessage addRelationMsg(SEN_RELATION_ADD);
+						addRelationMsg.AddString(SEN_RELATION_TYPE, relationType);
+						addRelationMsg.AddString(SEN_RELATION_TARGET_TYPE, targetType);
+						addRelationMsg.AddRef(SEN_RELATION_SOURCE_REF, &sourceRef);
+						addRelationMsg.AddRef(SEN_RELATION_TARGET_REF, &targetRef);
+
+						addRelationMsg.PrintToStream();
+
+						BMessenger senMsgr(SEN_SERVER_SIGNATURE);
+						if (senMsgr.IsValid()) {
+							senMsgr.SendMessage(&addRelationMsg);
+						} else {
+							PRINT(("could not reach sen_server.\n"));
+						}
 					} else {
 						return true;	// bail out
 					}
@@ -161,25 +182,28 @@ TTracker::HandleSenMessage(BMessage* message)
 					PRINT(("could not get target ref: %s\n", strerror(result) ));
 					return true;	// abort
 				}
+			} else { // new from template with existing targetRef
+				// forward to Tracker like "New from Template"
+				message->what = kNewEntryFromTemplate;
+				message->AddRef("refs_template", &targetRef);
+
+				// redirect new templates message and finish processing
+				if (message->what == kNewEntryFromTemplate) {
+					BMessenger poseViewMsgr;
+					result = message->FindMessenger("TrackerViewToken", &poseViewMsgr);
+					if (result == B_OK) {
+						// redirect back to original PoseView to create new
+						// relation target just like new file from Template
+						// Note: relation has to be added there, as our targetRef
+						//       is copied to a new file first.
+						poseViewMsgr.SendMessage(message);
+					} else {
+						PRINT(("could not get target PostView messenger, cannot forward as 'create new from temmplate': %s\n",
+							strerror(result) ));
+					}
+				}
 			}
-
-			// add a relation to new or existing association meta entity
-			PRINT(("adding relation to association entity instance '%s' for association %s of type %s\n",
-				BPath(&targetRef).Path(), relationType.String(), targetType.String() ));
-
-			// adapt and send as SEN scripting message to add relation of desired type
-			message->what = SEN_RELATION_ADD;
-			message->PrintToStream();
-
-			BMessenger senMsgr(SEN_SERVER_SIGNATURE);
-			if (senMsgr.IsValid()) {
-				senMsgr.SendMessage(message);
-			} else {
-				PRINT(("could not reach sen_server.\n"));
-			}
-
-			// we are done here
-			// todo: clean up 'if' branch below for better uniform handling
+			// done
 			return true;
 		}
 		default:

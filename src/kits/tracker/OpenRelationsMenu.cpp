@@ -221,12 +221,15 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 		// message for relation menu items
         BMessage* message = new BMessage(msgCmd);
         message->AddRef(SEN_RELATION_SOURCE_REF, sourceRef);
+		// add relevant message properties for compatible or ALL relations
 		if (propertyName == SEN_RELATION_COMPATIBLE_TYPES) {
 			message->AddString(SEN_RELATION_TYPE, SEN_LABEL_RELATION_TYPE);
 			message->AddString(SEN_RELATION_TARGET_TYPE, typeName);
 		}
-		else
+		else {
 			message->AddString(SEN_RELATION_TYPE, typeName);
+			message->AddBool(SEN_ID_TO_REF_MAP, true);	// will be sent back as message under the same name
+		}
 
 		char label[B_ATTR_NAME_LENGTH];
 		if (mime.GetShortDescription(label) != B_OK) {
@@ -239,11 +242,13 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
         openRelationTargetsMsg->AddRef(SEN_RELATION_SOURCE_REF, sourceRef);
 		openRelationTargetsMsg->AddString(SEN_RELATION_SOURCE_ATTR, srcId);
 		openRelationTargetsMsg->AddString(SEN_RELATION_LABEL, label);
+
 		if (propertyName == SEN_RELATION_COMPATIBLE_TYPES) {
 			openRelationTargetsMsg->AddString(SEN_RELATION_TYPE, SEN_LABEL_RELATION_TYPE);
 		}
-		else
+		else {
 			openRelationTargetsMsg->AddString(SEN_RELATION_TYPE, typeName);
+		}
 
         BMenuItem* item = new IconMenuItem(
             new OpenRelationTargetsMenu(label, message, fParentWindow, fTrackerMessenger),

@@ -2437,8 +2437,11 @@ BPoseView::MessageReceived(BMessage* message)
 			break;
 
 		case kNewEntryFromTemplate:{
-			if (message->HasRef("refs_template"))
+			if (message->HasRef("refs_template")) {
 				NewFileFromTemplate(message);
+			} else {
+				PRINT(("cannot create new template without ref in refs_template!\n"));
+			}
 			break;
 		}
 		case kNewFolder:
@@ -3431,6 +3434,28 @@ BPoseView::NewFileFromTemplate(const BMessage* message)
 
 	BEntry entry(&destDir, fileName);
 	entry.GetRef(&destEntryRef);
+
+	// coming from "create new relation"?
+	if (message->HasString(SEN_RELATION_TARGET_TYPE)) {
+		// send as SEN scripting message to add relation of desired type
+		BMessage addRelationMsg(SEN_RELATION_ADD);
+		addRelationMsg.AddString(SEN_RELATION_TYPE, message->GetString(SEN_RELATION_TYPE, ""));
+		addRelationMsg.AddString(SEN_RELATION_TARGET_TYPE, message->GetString(SEN_RELATION_TARGET_TYPE, ""));
+		entry_ref relationSrcRef;
+		message->FindRef(SEN_RELATION_SOURCE_REF, &relationSrcRef);
+		addRelationMsg.AddRef(SEN_RELATION_SOURCE_REF, &relationSrcRef);
+		addRelationMsg.AddRef(SEN_RELATION_TARGET_REF, &destEntryRef);
+
+		PRINT(("adding new relation to new target from template with message:\n"));
+		addRelationMsg.PrintToStream();
+
+		BMessenger senMsgr(SEN_SERVER_SIGNATURE);
+		if (senMsgr.IsValid()) {
+			senMsgr.SendMessage(&addRelationMsg);
+		} else {
+			PRINT(("could not reach sen_server.\n"));
+		}
+	}
 
 	// try to place new item at click point or under mouse if possible
 	PlaceFolder(&destEntryRef, message);

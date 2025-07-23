@@ -52,10 +52,15 @@ int32 TemplateUtils::GetInstalledTemplates(
 	BMessage* templatesMsg)
 {
 	BEntry entry;
+	BPath templatesPath;
 	int32 templatesCount = 0;
 
 	if (path == NULL) {
-		path = GetUserTemplatesPath();
+		status_t status = GetUserTemplatesPath(&templatesPath);
+		if (status != B_OK) {
+			return -1;
+		}
+		path = templatesPath.Path();
 	}
 	PRINT(("  >> entering templates path %s...\n", path ));
 
@@ -131,25 +136,21 @@ int32 TemplateUtils::GetInstalledTemplates(
 		return B_ERROR;
 }
 
-const char* TemplateUtils::GetUserTemplatesPath() {
-	BPath path;
+status_t TemplateUtils::GetUserTemplatesPath(BPath* path) {
+	status_t result = B_OK;
 
-	if (templatesPath == NULL) {
-		// to be correct, we should block on a Benaphore or similar here, but it doesn't really matter here
-		status_t result;
+	// to be correct, we should block on a Benaphore or similar here, but it doesn't really matter here
 
-		if ((result = find_directory(B_USER_SETTINGS_DIRECTORY, &path)) != B_OK)
-		{
-			PRINT(("could not find user settings directory (using default): %s\n", strerror(result)));
-			path.SetTo("/boot/home/config/settings");
-		}
-
-		path.Append(kTemplatesDirectory);
-		templatesPath = path.Path();
-
-		PRINT(("templates path is %s\n", templatesPath));
+	if ((result = find_directory(B_USER_SETTINGS_DIRECTORY, path)) != B_OK)
+	{
+		PRINT(("could not find user settings directory (using default): %s\n", strerror(result)));
+		path->SetTo("/boot/home/config/settings");
 	}
-	return templatesPath;
+
+	path->Append(kTemplatesDirectory);
+	PRINT(("templates path is %s\n", path->Path()));
+
+	return result;
 }
 
 int32 TemplateUtils::FindPartialMatch(const char* nameToFind, const BStringList* names)

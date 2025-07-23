@@ -700,8 +700,12 @@ BContainerWindow::DetachSubmenus()
 		fOpenSelfRelationsItem->Menu()->RemoveItem(fOpenSelfRelationsItem);
 	if (fOpenRelationsItem != NULL && fOpenRelationsItem->Menu() != NULL)
 		fOpenRelationsItem->Menu()->RemoveItem(fOpenRelationsItem);
-	if (fNewAssociationItem != NULL && fNewAssociationItem->Menu() != NULL)
+	if (fNewAssociationItem != NULL && fNewAssociationItem->Menu() != NULL) {
+		// delete separator first
+		delete fNewAssociationItem->Menu()->RemoveItem(
+			fNewAssociationItem->Menu()->IndexOf(fNewAssociationItem) + 1);
 		fNewAssociationItem->Menu()->RemoveItem(fNewAssociationItem);
+	}
 	if (fNewRelationItem != NULL && fNewRelationItem->Menu() != NULL)
 		fNewRelationItem->Menu()->RemoveItem(fNewRelationItem);
 
@@ -2209,6 +2213,8 @@ BContainerWindow::SetupNewRelationMenu(BMenu* parent, const entry_ref* ref)
 		BPose* pose = PoseView()->SelectionList()->ItemAt(index);
 		message.AddRef("refs", pose->TargetModel()->EntryRef());
 	}
+	// add Tracker token so that we can call back here in Tracker's refs received later
+	message.AddMessenger("TrackerViewToken", BMessenger(PoseView()));
 
 	// add desired SEN relations command, handed through to SEN
 	message.AddUInt32(SEN_ACTION_CMD, SEN_RELATIONS_GET_COMPATIBLE);
@@ -2236,8 +2242,11 @@ BContainerWindow::SetupNewAssociationMenu(BMenu* parent, const entry_ref* ref)
 {
 	ASSERT(parent != NULL);
 
-	// remove existing relation items from old menu
+	// remove existing association item (and separator) from old menu
 	if (fNewAssociationItem != NULL && fNewAssociationItem->Menu() != NULL) {
+		// delete separator first
+		delete fNewAssociationItem->Menu()->RemoveItem(
+			fNewAssociationItem->Menu()->IndexOf(fNewAssociationItem) + 1);
 		fNewAssociationItem->Menu()->RemoveItem(fNewAssociationItem);
 	}
 
