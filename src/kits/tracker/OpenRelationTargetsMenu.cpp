@@ -203,7 +203,7 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 
 	// handle meta relations for associations
 	// relation type is the classification relation and targetType is some classification type
-	if (relationType == SEN_LABEL_RELATION_TYPE) {
+	if (relationType == SEN_ASSOC_RELATION_TYPE) {
 		BString targetType;
 		result = fEntriesToOpen.FindString(SEN_RELATION_TARGET_TYPE, &targetType);
 
@@ -280,7 +280,7 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 		targetMessenger = be_app_messenger;
 
 		mimeIncludes.Add(targetTypes);
-		mimeExcludes.Add(SEN_META_SUPERTYPE);
+		mimeExcludes.Add(SEN_CLASS_SUPERTYPE);
 
 		// here we got a list of compatible target types
 		result = fRelationTargetsReply->FindStrings(SEN_RELATION_COMPATIBLE_TYPES, &targetTypes);

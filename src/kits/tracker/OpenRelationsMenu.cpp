@@ -223,7 +223,7 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
         message->AddRef(SEN_RELATION_SOURCE_REF, sourceRef);
 		// add relevant message properties for compatible or ALL relations
 		if (propertyName == SEN_RELATION_COMPATIBLE_TYPES) {
-			message->AddString(SEN_RELATION_TYPE, SEN_LABEL_RELATION_TYPE);
+			message->AddString(SEN_RELATION_TYPE, SEN_ASSOC_RELATION_TYPE);
 			message->AddString(SEN_RELATION_TARGET_TYPE, typeName);
 		}
 		else {
@@ -244,7 +244,7 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 		openRelationTargetsMsg->AddString(SEN_RELATION_LABEL, label);
 
 		if (propertyName == SEN_RELATION_COMPATIBLE_TYPES) {
-			openRelationTargetsMsg->AddString(SEN_RELATION_TYPE, SEN_LABEL_RELATION_TYPE);
+			openRelationTargetsMsg->AddString(SEN_RELATION_TYPE, SEN_ASSOC_RELATION_TYPE);
 		}
 		else {
 			openRelationTargetsMsg->AddString(SEN_RELATION_TYPE, typeName);

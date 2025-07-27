@@ -146,7 +146,7 @@ TTracker::HandleSenMessage(BMessage* message)
 			entry_ref targetRef;
 			result = message->FindRef(SEN_RELATION_TARGET_REF, &targetRef);
 			if (result != B_OK) {
-				if (result == B_NAME_NOT_FOUND && targetType.StartsWith(SEN_META_SUPERTYPE "/")) {
+				if (result == B_NAME_NOT_FOUND && targetType.StartsWith(SEN_CLASS_SUPERTYPE "/")) {
 					result = CreateNewAssociationEntity(targetType.String(), &targetRef);
 
 					if (result == B_OK) {
