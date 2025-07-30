@@ -1064,7 +1064,17 @@ BContainerWindow::UpdateTitle()
 		SetTitle(path.Path());
 	} else {
 		// use the default look
-		SetTitle(TargetModel()->Name());
+		BString title(TargetModel()->Name());
+		// use meta folder title if set
+		BNode node(TargetModel()->EntryRef());
+		if (node.InitCheck() == B_OK) {
+			BString metaTitle;
+			if (node.ReadAttrString(META_FOLDER_NAME, &metaTitle) == B_OK) {
+				title = metaTitle;
+				PRINT(("found meta tiltle '%s' for folder %s.\n", metaTitle.String(), TargetModel()->Name() ));
+			}
+		}
+		SetTitle(title.String());
 	}
 
 	if (Navigator() != NULL)
