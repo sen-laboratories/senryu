@@ -375,8 +375,23 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 			if (result == B_OK) {
 				// this will create a menu item similar to folder items and launch with the preferred app,
 				// which in this case is the associated relation handler.
-				// todo: add message with arguments from relation properties as with self relations!
-				ModelMenuItem* item = new ModelMenuItem(new Model(&ref, true, true), ref.name, NULL);
+
+				// add message with target ref and relation properties for the given ID
+				BMessage itemMessage(B_REFS_RECEIVED);
+				itemMessage.AddRef("refs", &ref);
+
+				BMessage itemProps;
+				result = relations.FindMessage(idKey, &itemProps);
+				if (result == B_OK) {
+					// add as arguments like with ARGV_RECEIVED but typed
+					itemMessage.Append(itemProps);
+				}
+
+				PRINT(("adding item message for relationt target with ID %s:\n", idKey));
+				itemMessage.PrintToStream();
+
+				ModelMenuItem* item = new ModelMenuItem(new Model(&ref, true, true), ref.name, new BMessage(itemMessage));
+				item->SetTarget(be_app_messenger);
 				AddItem(item);
 
 				(*targetCount)++;
