@@ -1282,15 +1282,13 @@ BPoseView::AddPoses(Model* model)
 {
 	// if model is zero, PoseView has other means of iterating through all
 	// the entries that it adds
-	if (model != NULL) {
-		TrackerSettings settings;
-		if (model->IsRoot()) {
-			AddRootPoses(true, settings.MountSharedVolumesOntoDesktop());
-			return;
-		} else if (IsDesktopView()
-			&& (settings.MountVolumesOntoDesktop() || settings.ShowDisksIcon()
-				|| (IsFilePanel() && settings.DesktopFilePanelRoot())))
-			AddRootPoses(true, settings.MountSharedVolumesOntoDesktop());
+
+	// Desktop poses are added either in FilePanelPriv or DesktopPoseView
+
+	// adding volumes is all there is to do for root directory
+	if (TargetModel()->IsRoot()) {
+		AddVolumePoses();
+		return;
 	}
 
 	ShowBarberPole();
@@ -1589,8 +1587,11 @@ BPoseView::AddPosesTask(void* castToParams)
 
 
 void
-BPoseView::AddRootPoses(bool watchIndividually, bool mountShared)
+BPoseView::AddVolumePoses()
 {
+	if (Window() == NULL)
+		return;
+
 	BVolumeRoster roster;
 	roster.Rewind();
 	BVolume volume;
@@ -1608,18 +1609,18 @@ BPoseView::AddRootPoses(bool watchIndividually, bool mountShared)
 			monitorMsg.AddInt64("node", model.NodeRef()->node);
 			monitorMsg.AddInt64("directory", model.EntryRef()->directory);
 			monitorMsg.AddString("name", model.EntryRef()->name);
-			if (Window())
-				Window()->PostMessage(&monitorMsg, this);
+
+			Window()->PostMessage(&monitorMsg, this);
 		}
 	} else {
 		while (roster.GetNextVolume(&volume) == B_OK) {
 			if (!volume.IsPersistent())
 				continue;
 
-	 		if (volume.IsShared() && !mountShared)
+			if (volume.IsShared() && !TrackerSettings().MountSharedVolumesOntoDesktop())
 				continue;
 
-			CreateVolumePose(&volume, watchIndividually);
+			CreateVolumePose(&volume);
 		}
 	}
 
@@ -1630,7 +1631,7 @@ BPoseView::AddRootPoses(bool watchIndividually, bool mountShared)
 
 
 void
-BPoseView::RemoveRootPoses()
+BPoseView::RemoveVolumePoses()
 {
 	int32 index;
 	int32 poseCount = fPoseList->CountItems();
@@ -1651,6 +1652,25 @@ BPoseView::RemoveRootPoses()
 	SortPoses();
 	UpdateCount();
 	Invalidate();
+}
+
+
+void
+BPoseView::ToggleDisksVolumes()
+{
+	if (IsVolumesRoot() && LockLooper()) {
+		SavePoseLocations();
+
+		if (TrackerSettings().MountVolumesOntoDesktop()) {
+			RemoveRootPose();
+			AddVolumePoses();
+		} else {
+			RemoveVolumePoses();
+			CreateRootPose();
+		}
+
+		UnlockLooper();
+	}
 }
 
 
@@ -1705,7 +1725,7 @@ BPoseView::AddPosesCompleted()
 
 
 void
-BPoseView::CreateVolumePose(BVolume* volume, bool watchIndividually)
+BPoseView::CreateVolumePose(BVolume* volume)
 {
 	if (volume->InitCheck() != B_OK || !volume->IsPersistent()) {
 		// We never want to create poses for those volumes; the file
@@ -1737,9 +1757,9 @@ BPoseView::CreateVolumePose(BVolume* volume, bool watchIndividually)
 	dirNode.node = ref.directory;
 
 	BPose* pose = EntryCreated(&dirNode, &itemNode, ref.name, 0);
-	if (pose != NULL && watchIndividually) {
-		// make sure volume names still get watched, even though
-		// they are on the desktop which is not their physical parent
+	if (pose != NULL && !TargetModel()->IsRoot()) {
+		// When placing a volume pose onto the Desktop where unlike in the
+		// Root window it will not be watched by the folder.
 		pose->TargetModel()->WatchVolumeAndMountPoint(B_WATCH_NAME
 			| B_WATCH_STAT | B_WATCH_ATTR, this);
 	}
@@ -1747,17 +1767,48 @@ BPoseView::CreateVolumePose(BVolume* volume, bool watchIndividually)
 
 
 void
+BPoseView::CreateRootPose()
+{
+	BEntry entry("/");
+	Model* model = new Model(&entry);
+	if (model == NULL || model->InitCheck() != B_OK) {
+		delete model;
+		return;
+	}
+
+	PoseInfo info;
+	ReadPoseInfo(model, &info);
+	CreatePose(model, &info, true, NULL, NULL, true);
+}
+
+
+void
+BPoseView::RemoveRootPose()
+{
+	BEntry entry("/");
+	node_ref nref;
+	if (entry.GetNodeRef(&nref) != B_OK)
+		return;
+
+	DeletePose(&nref);
+
+	Invalidate();
+}
+
+
+void
 BPoseView::CreateTrashPose()
 {
-	BVolume volume;
-	if (BVolumeRoster().GetBootVolume(&volume) == B_OK) {
+	BVolume boot;
+	if (BVolumeRoster().GetBootVolume(&boot) == B_OK) {
 		BDirectory trash;
 		BEntry entry;
-		node_ref ref;
-		if (FSGetTrashDir(&trash, volume.Device()) == B_OK
+		node_ref nref;
+		if (FSGetTrashDir(&trash, boot.Device()) == B_OK
 			&& trash.GetEntry(&entry) == B_OK
-			&& entry.GetNodeRef(&ref) == B_OK) {
-			WatchNewNode(&ref);
+			&& entry.GetNodeRef(&nref) == B_OK) {
+			WatchNewNode(&nref, B_WATCH_ATTR, BMessenger(this));
+				// redraw Trash icon when attribute changes
 			Model* model = new Model(&entry);
 			PoseInfo info;
 			ReadPoseInfo(model, &info);
@@ -5367,7 +5418,7 @@ BPoseView::FSNotification(const BMessage* message)
 	dev_t device;
 	Model* targetModel = TargetModel();
 
-	switch (message->FindInt32("opcode")) {
+	switch (message->GetInt32("opcode", 0)) {
 		case B_ENTRY_CREATED:
 		{
 			ASSERT(targetModel != NULL);
@@ -5388,9 +5439,10 @@ BPoseView::FSNotification(const BMessage* message)
 				&& !targetModel->IsQuery()
 				&& !targetModel->IsVirtualDirectory()
 				&& !targetModel->IsRoot()
-				&& (!settings.ShowDisksIcon() || !IsDesktopView())) {
+				&& (!settings.ShowDisksIcon() || !IsVolumesRoot())) {
 				if (count == 0)
 					break;
+
 				createPose = false;
 			}
 
@@ -5423,8 +5475,8 @@ BPoseView::FSNotification(const BMessage* message)
 							createdPath.Length()) == 0) {
 							if (pathStr[createdPath.Length()] != '/')
 								break;
-							StopWatchingParentsOf(fBrokenLinks->ItemAt(i)
-								->EntryRef());
+
+							StopWatchingParentsOf(fBrokenLinks->ItemAt(i)->EntryRef());
 							watch_node(&itemNode, B_WATCH_DIRECTORY, this);
 							break;
 						}
@@ -5500,7 +5552,7 @@ BPoseView::FSNotification(const BMessage* message)
 			if (targetModel != NULL && targetModel->IsRoot()) {
 				BVolume volume(device);
 				if (volume.InitCheck() == B_OK)
-					CreateVolumePose(&volume, false);
+					CreateVolumePose(&volume);
 			} else if (TargetModel()->IsTrash()) {
 				// add trash items from newly mounted volume
 
@@ -5824,14 +5876,14 @@ BPoseView::AttributeChanged(const BMessage* message)
 		attrName = NULL;
 
 	Model* targetModel = TargetModel();
-	if (targetModel != NULL && *targetModel->NodeRef() == itemNode
-		&& targetModel->IsNodeOpen()
+	if (ContainerWindow()->ShouldHaveDraggableFolderIcon() && targetModel != NULL
+		&& *targetModel->NodeRef() == itemNode && targetModel->IsNodeOpen()
 		&& targetModel->AttrChanged(attrName)) {
 		// the icon of our target has changed, update drag icon
 		// TODO: make this simpler (i.e. store the icon with the window)
 		BView* view = Window()->FindView("MenuBar");
 		if (view != NULL) {
-			view = view->FindView("ThisContainer");
+			view = view->FindView("DraggableContainerIcon");
 			if (view != NULL) {
 				IconCache::sIconCache->IconChanged(targetModel);
 				view->Invalidate();
@@ -5860,8 +5912,7 @@ BPoseView::AttributeChanged(const BMessage* message)
 			if (result == B_OK || result != B_BUSY)
 				break;
 
-			PRINT(("poseModel %s busy, retrying in a bit\n",
-				poseModel->Name()));
+			PRINT(("poseModel %s busy, retrying in a bit\n", poseModel->Name()));
 			snooze(10000);
 		}
 		if (result != B_OK) {
@@ -5875,18 +5926,50 @@ BPoseView::AttributeChanged(const BMessage* message)
 		if (IsFiltering())
 			visible = fFilteredPoseList->FindPose(poseModel->NodeRef(), &index) != NULL;
 
-		BPoint loc(0, index * fListElemHeight);
-		if (attrName != NULL && poseModel->Node() != NULL) {
+		status_t infoStatus = B_ERROR;
+		if (attrName != NULL) {
 			memset(&info, 0, sizeof(attr_info));
-			// the call below might fail if the attribute has been removed
-			poseModel->Node()->GetAttrInfo(attrName, &info);
-			pose->UpdateWidgetAndModel(poseModel, attrName, info.type, index, loc, this, visible);
+			if (strcmp(attrName, kAttrIcon) == 0
+				|| strcmp(attrName, kAttrLargeIcon) == 0
+				|| strcmp(attrName, kAttrMiniIcon) == 0
+				|| strcmp(attrName, kAttrThumbnail) == 0) {
+				// set icon type manually in case attribute was removed
+				if (strcmp(attrName, kAttrIcon) == 0)
+					info.type = B_VECTOR_ICON_TYPE;
+				else if (strcmp(attrName, kAttrLargeIcon) == 0)
+					info.type = 'ICON';
+				else if (strcmp(attrName, kAttrMiniIcon) == 0)
+					info.type = 'MICN';
+				else if (strcmp(attrName, kAttrThumbnail) == 0)
+					info.type = B_RAW_TYPE;
+
+				info.size = 0;
+					// old size not needed, writing new attr
+				infoStatus = B_OK;
+			} else if (poseModel->Node() != NULL) {
+				// the call below might fail if the attribute has been removed
+				infoStatus = poseModel->Node()->GetAttrInfo(attrName, &info);
+			}
+		}
+
+		BPoint poseLoc;
+		if (ViewMode() == kListMode)
+			poseLoc.Set(0, index * fListElemHeight);
+		else
+			poseLoc = pose->Location(this);
+
+		if (attrName != NULL) {
+			// update attr
+			pose->UpdateWidgetAndModel(attrName, infoStatus == B_OK ? info.type : 0,
+				index, poseLoc, this, visible);
 			if (strcmp(attrName, kAttrMIMEType) == 0)
 				RefreshMimeTypeList();
 		} else {
-			pose->UpdateWidgetAndModel(poseModel, 0, 0, index, loc, this, visible);
+			// update stat
+			pose->UpdateWidgetAndModel(0, 0, index, poseLoc, this, visible);
 		}
 		poseModel->CloseNode();
+
 		if (IsFiltering()) {
 			if (!visible && FilterPose(pose)) {
 				visible = true;
@@ -5966,6 +6049,8 @@ BPoseView::UpdateIcon(BPose* pose)
 
 		if (!found)
 			return;
+	} else {
+		location = pose->Location(this);
 	}
 
 	pose->UpdateIcon(location, this);
@@ -8428,6 +8513,7 @@ BPoseView::SwitchDir(const entry_ref* newDirRef, AttributeStreamNode* node)
 		AddTrashPoses();
 	else
 		AddPoses(TargetModel());
+
 	TargetModel()->CloseNode();
 
 	AdoptSystemColors();

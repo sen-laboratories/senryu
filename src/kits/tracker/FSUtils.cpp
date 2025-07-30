@@ -624,7 +624,7 @@ ConfirmChangeIfWellKnownDirectory(const BEntry* entry, DestructiveAction action,
 	if (confirmedAlready && *confirmedAlready == kConfirmedAll)
 		return true;
 
-	if (FSIsDeskDir(entry) || FSIsTrashDir(entry) || FSIsRootDir(entry))
+	if (FSIsDeskDir(entry) || FSIsPrintersDir(entry) || FSIsRootDir(entry) || FSIsTrashDir(entry))
 		return false;
 
 	if ((!DirectoryMatchesOrContains(entry, B_SYSTEM_DIRECTORY)
@@ -891,26 +891,44 @@ InitCopy(CopyLoopControl* loopControl, uint32 moveMode,
 		BEntry entry((entry_ref*)srcList->ItemAt(index));
 		if (FSIsRootDir(&entry)) {
 			BString errorStr;
-			if (moveMode == kCreateLink) {
-				errorStr.SetTo(
-					B_TRANSLATE("You cannot create a link to the root "
-					"directory."));
-			} else {
-				errorStr.SetTo(
-					B_TRANSLATE("You cannot copy or move the root "
-					"directory."));
-			}
+			if (moveMode == kCreateLink || moveMode == kCreateRelativeLink)
+				errorStr.SetTo(B_TRANSLATE("You cannot create a link to the root directory."));
+			else
+				errorStr.SetTo(B_TRANSLATE("You cannot copy or move the root directory."));
 
-			BAlert* alert = new BAlert("", errorStr.String(),
-				B_TRANSLATE("Cancel"), 0, 0, B_WIDTH_AS_USUAL,
-				B_WARNING_ALERT);
+			BAlert* alert = new BAlert("", errorStr.String(), B_TRANSLATE("Cancel"), 0, 0,
+				B_WIDTH_AS_USUAL, B_WARNING_ALERT);
 			alert->SetFlags(alert->Flags() | B_CLOSE_ON_ESCAPE);
 			alert->Go();
+
+			return B_ERROR;
+		} else if (FSIsTrashDir(&entry)) {
+			BString errorStr;
+			if (moveMode == kCreateLink || moveMode == kCreateRelativeLink)
+				errorStr.SetTo(B_TRANSLATE("You cannot create a link to the Trash directory."));
+			else
+				errorStr.SetTo(B_TRANSLATE("You cannot copy or move the Trash directory."));
+
+			BAlert* alert = new BAlert("", errorStr.String(), B_TRANSLATE("Cancel"), 0, 0,
+				B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+			alert->SetFlags(alert->Flags() | B_CLOSE_ON_ESCAPE);
+			alert->Go();
+
+			return B_ERROR;
+		} else if (FSIsPrintersDir(&entry)
+			&& (moveMode == kCopySelectionTo || moveMode == kMoveSelectionTo)) {
+			BString errorStr(B_TRANSLATE("You cannot copy or move the Printers directory."));
+
+			BAlert* alert = new BAlert("", errorStr.String(), B_TRANSLATE("Cancel"), 0, 0,
+				B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+			alert->SetFlags(alert->Flags() | B_CLOSE_ON_ESCAPE);
+			alert->Go();
+
 			return B_ERROR;
 		}
+
 		if (moveMode == kMoveSelectionTo
-			&& !ConfirmChangeIfWellKnownDirectory(&entry, kMove,
-				false, &askOnceOnly)) {
+			&& !ConfirmChangeIfWellKnownDirectory(&entry, kMove, false, &askOnceOnly)) {
 			return B_ERROR;
 		}
 	}
@@ -2679,32 +2697,10 @@ FSGetTrashDir(BDirectory* trashDir, dev_t dev)
 		PoseInfo poseInfo;
 		poseInfo.fInvisible = true;
 		poseInfo.fInitedDirectory = sbuf.st_ino;
-		trashDir->WriteAttr(kAttrPoseInfo, B_RAW_TYPE, 0, &poseInfo,
-			sizeof(PoseInfo));
+		trashDir->WriteAttr(kAttrPoseInfo, B_RAW_TYPE, 0, &poseInfo, sizeof(PoseInfo));
 	}
 
-	// set Trash icons (if they haven't already been set)
-	attr_info attrInfo;
-	size_t size;
-	const void* data;
-	if (trashDir->GetAttrInfo(kAttrLargeIcon, &attrInfo) == B_ENTRY_NOT_FOUND) {
-		data = GetTrackerResources()->LoadResource('ICON', R_TrashIcon, &size);
-		if (data != NULL)
-			trashDir->WriteAttr(kAttrLargeIcon, 'ICON', 0, data, size);
-	}
-
-	if (trashDir->GetAttrInfo(kAttrMiniIcon, &attrInfo) == B_ENTRY_NOT_FOUND) {
-		data = GetTrackerResources()->LoadResource('MICN', R_TrashIcon, &size);
-		if (data != NULL)
-			trashDir->WriteAttr(kAttrMiniIcon, 'MICN', 0, data, size);
-	}
-
-	if (trashDir->GetAttrInfo(kAttrIcon, &attrInfo) == B_ENTRY_NOT_FOUND) {
-		data = GetTrackerResources()->LoadResource(B_VECTOR_ICON_TYPE,
-			R_TrashIcon, &size);
-		if (data != NULL)
-			trashDir->WriteAttr(kAttrIcon, B_VECTOR_ICON_TYPE, 0, data, size);
-	}
+	// icon attributes set by TrashWatcher
 
 	return B_OK;
 }
@@ -2726,27 +2722,38 @@ FSGetDeskDir(BDirectory* deskDir)
 		return result;
 
 	// set Desktop icons (if they haven't already been set)
+	bool gotIcon = true;
 	attr_info attrInfo;
 	size_t size;
 	const void* data;
-	if (deskDir->GetAttrInfo(kAttrLargeIcon, &attrInfo) == B_ENTRY_NOT_FOUND) {
-		data = GetTrackerResources()->LoadResource('ICON', R_DeskIcon, &size);
-		if (data != NULL)
-			deskDir->WriteAttr(kAttrLargeIcon, 'ICON', 0, data, size);
-	}
-
-	if (deskDir->GetAttrInfo(kAttrMiniIcon, &attrInfo) == B_ENTRY_NOT_FOUND) {
-		data = GetTrackerResources()->LoadResource('MICN', R_DeskIcon, &size);
-		if (data != NULL)
-			deskDir->WriteAttr(kAttrMiniIcon, 'MICN', 0, data, size);
+	if (deskDir->GetAttrInfo(kAttrIcon, &attrInfo) == B_ENTRY_NOT_FOUND) {
+		// write vector icon attribute
+		data = GetTrackerResources()->LoadResource(B_VECTOR_ICON_TYPE, R_DeskIcon, &size);
+		if (data != NULL && size > 0)
+			deskDir->WriteAttr(kAttrIcon, B_VECTOR_ICON_TYPE, 0, data, size);
 	}
 
 	if (deskDir->GetAttrInfo(kAttrIcon, &attrInfo) == B_ENTRY_NOT_FOUND) {
-		data = GetTrackerResources()->LoadResource(B_VECTOR_ICON_TYPE,
-			R_DeskIcon, &size);
-		if (data != NULL)
-			deskDir->WriteAttr(kAttrIcon, B_VECTOR_ICON_TYPE, 0, data, size);
+		// write large and mini icon attributes
+		if (deskDir->GetAttrInfo(kAttrLargeIcon, &attrInfo) == B_ENTRY_NOT_FOUND) {
+			data = GetTrackerResources()->LoadResource('ICON', R_DeskIcon, &size);
+			if (data != NULL && size > 0)
+				deskDir->WriteAttr(kAttrLargeIcon, 'ICON', 0, data, size);
+			else
+				gotIcon = false;
+		}
+
+		if (deskDir->GetAttrInfo(kAttrMiniIcon, &attrInfo) == B_ENTRY_NOT_FOUND) {
+			data = GetTrackerResources()->LoadResource('MICN', R_DeskIcon, &size);
+			if (data != NULL && size > 0)
+				deskDir->WriteAttr(kAttrMiniIcon, 'MICN', 0, data, size);
+			else
+				gotIcon = false;
+		}
 	}
+
+	if (!gotIcon)
+		TRESPASS();
 
 	return B_OK;
 }
@@ -3222,7 +3229,7 @@ FSCreateTrashDirs()
 
 	roster.Rewind();
 	while (roster.GetNextVolume(&volume) == B_OK) {
-		if (volume.IsReadOnly() || !volume.IsPersistent())
+		if (volume.IsReadOnly() || !volume.IsPersistent() || volume.Capacity() == 0)
 			continue;
 
 		BDirectory trashDir;

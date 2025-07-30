@@ -300,6 +300,9 @@ TTracker::TTracker()
 
 	// init Desktop now that pose view is created and window is locked
 	deskWindow->Init();
+
+	// create this before ReadyToRun() so that the Trash icon gets set
+	fTrashWatcher = new BTrashWatcher();
 }
 
 
@@ -1686,7 +1689,6 @@ TTracker::ReadyToRun()
 	InstallIndices();
 	InstallTemporaryBackgroundImages();
 
-	fTrashWatcher = new BTrashWatcher();
 	fTrashWatcher->Run();
 
 	fClipboardRefsWatcher = new BClipboardRefsWatcher();

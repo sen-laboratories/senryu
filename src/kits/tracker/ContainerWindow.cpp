@@ -794,7 +794,7 @@ BContainerWindow::Init(const BMessage* message)
 		fMenuContainer->GroupLayout()->AddView(fMenuBar);
 		AddMenus();
 
-		if (!TargetModel()->IsRoot() && !TargetModel()->IsTrash())
+		if (ShouldHaveDraggableFolderIcon())
 			_AddFolderIcon();
 	} else {
 		// add equivalents of the menu shortcuts to the menuless
@@ -1030,23 +1030,20 @@ BContainerWindow::SwitchDirectory(const entry_ref* ref)
 	SetSingleWindowBrowseShortcuts(settings.SingleWindowBrowse());
 
 	// Update draggable folder icon
-	if (fMenuBar != NULL) {
-		if (!TargetModel()->IsRoot() && !TargetModel()->IsTrash()) {
-			// Folder icon should be visible, but in single
-			// window navigation, it might not be.
-			if (fDraggableIcon != NULL) {
-				IconCache::sIconCache->IconChanged(TargetModel());
-				if (fDraggableIcon->IsHidden())
-					fDraggableIcon->Show();
-				fDraggableIcon->Invalidate();
-			} else {
-				// draggable icon visible
-				_AddFolderIcon();
-			}
-		} else if (fDraggableIcon != NULL) {
-			// hide for Root or Trash
-			fDraggableIcon->Hide();
+	if (ShouldHaveDraggableFolderIcon()) {
+		// Folder icon should be visible, but in single
+		// window navigation, it might not be.
+		if (fDraggableIcon != NULL) {
+			IconCache::sIconCache->IconChanged(TargetModel());
+			if (fDraggableIcon->IsHidden())
+				fDraggableIcon->Show();
+			fDraggableIcon->Invalidate();
+		} else {
+			// draggable icon visible
+			_AddFolderIcon();
 		}
+	} else if (fMenuBar != NULL && fDraggableIcon != NULL) {
+		fDraggableIcon->Hide();
 	}
 
 	UpdateTitle();
@@ -3424,6 +3421,13 @@ bool
 BContainerWindow::ShouldHaveAddOnMenus()
 {
 	return !PoseView()->IsFilePanel();
+}
+
+
+bool
+BContainerWindow::ShouldHaveDraggableFolderIcon()
+{
+	return fMenuBar != NULL;
 }
 
 

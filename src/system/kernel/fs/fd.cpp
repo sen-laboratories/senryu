@@ -188,8 +188,8 @@ put_fd(struct file_descriptor* descriptor)
 
 		object_cache_free(sFileDescriptorCache, descriptor, 0);
 	} else if ((descriptor->open_mode & O_DISCONNECTED) != 0
-		&& previous - 1 == descriptor->open_count
-		&& descriptor->ops != NULL) {
+			&& previous - 1 == descriptor->open_count
+			&& descriptor->ops != NULL) {
 		// the descriptor has been disconnected - it cannot
 		// be accessed anymore, let's close it (no one is
 		// currently accessing this descriptor)
@@ -324,7 +324,6 @@ remove_fd(struct io_context* context, int fd)
 		descriptor = context->fds[fd];
 
 	select_info* selectInfos = NULL;
-	bool disconnected = false;
 
 	if (descriptor != NULL)	{
 		// fd is valid
@@ -337,14 +336,12 @@ remove_fd(struct io_context* context, int fd)
 
 		selectInfos = context->select_infos[fd];
 		context->select_infos[fd] = NULL;
-
-		disconnected = (descriptor->open_mode & O_DISCONNECTED);
 	}
 
 	if (selectInfos != NULL)
 		deselect_select_infos(descriptor, selectInfos, true);
 
-	return disconnected ? NULL : descriptor;
+	return descriptor;
 }
 
 
