@@ -4145,8 +4145,12 @@ BPoseView::AddPoseToSelection(BPose* pose, int32 index, bool scrollIntoView)
 		if (scrollIntoView)
 			ScrollIntoView(poseRect);
 
-		if (fSelectionChangedHook)
+		if (fSelectionChangedHook) {
+			PRINT(("calling fSelectionChangedHook...\n"));
 			ContainerWindow()->SelectionChanged();
+		} else {
+			PRINT(("no fSelectionChangedHook defined, skipping notification.\n"));
+		}
 	}
 }
 

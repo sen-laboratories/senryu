@@ -653,7 +653,7 @@ TShortcuts::OpenParentLabel()
 BMenuItem*
 TShortcuts::OpenRelationsItem()
 {
-	return new BMenuItem(OpenRelationsLabel(), new BMessage(kOpenRelations), 'O', B_SHIFT_KEY);
+	return new BMenuItem(OpenRelationsLabel(), new BMessage(kOpenRelations), 'O', B_OPTION_KEY);
 }
 
 
@@ -674,7 +674,7 @@ TShortcuts::OpenRelationsLabel()
 BMenuItem*
 TShortcuts::OpenSelfRelationsItem()
 {
-	return new BMenuItem(OpenSelfRelationsLabel(), new BMessage(kOpenSelfRelations));
+	return new BMenuItem(OpenSelfRelationsLabel(), new BMessage(kOpenSelfRelations), 'O', B_OPTION_KEY | B_SHIFT_KEY);
 }
 
 
@@ -688,7 +688,7 @@ TShortcuts::OpenSelfRelationsItem(BMenu* menu)
 const char*
 TShortcuts::OpenSelfRelationsLabel()
 {
-	return B_TRANSLATE("Open contained" B_UTF8_ELLIPSIS);
+	return B_TRANSLATE("Open self related" B_UTF8_ELLIPSIS);
 }
 
 

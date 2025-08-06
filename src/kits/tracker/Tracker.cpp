@@ -767,6 +767,9 @@ TTracker::SelectRefs(const BMessage* message)
 
 		window->PostMessage(selectMessage);
 	}
+
+	// notify observers
+	PRINT(("SelectRefs: gonna notify you curious observers...\n"));
 }
 
 

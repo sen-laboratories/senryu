@@ -36,6 +36,7 @@ All rights reserved.
  PoseView SEN integration.
 */
 
+#include "Commands.h"
 #define DEBUG 1
 
 #include "FSUtils.h"
@@ -52,8 +53,10 @@ All rights reserved.
 bool
 BPoseView::HandleSenMessage(BMessage* message)
 {
-	// filter for SEN messages, in this case SENSEI commands
+	// filter for SEN messages
 	switch(message->what) {
+		case kOpenRelations:
+		case kOpenSelfRelations:
 		case SENSEI_CMD_EXTRACT:
 		case SENSEI_CMD_ENRICH:
 		case SENSEI_CMD_IDENTIFY:
@@ -71,6 +74,38 @@ BPoseView::HandleSenMessage(BMessage* message)
 	status_t result = B_OK;
 
 	switch (message->what) {
+		case kOpenRelations: {
+			BMessage relationRefs(kOpenRelations);
+			result = ExtractRefsFromSelection(&relationRefs);
+
+			if (result == B_OK) {
+				// forward to TrackerSen for central relation folder handling
+				PRINT(("PoseView::SEN Open relations menu called, forwarding refs:\n"));
+				relationRefs.PrintToStream();
+
+				be_app->PostMessage(&relationRefs);
+			} else {
+				PRINT(("failed to extract refs from selection: %s\n", strerror(result) ));
+				break;
+			}
+			break;
+		}
+		case kOpenSelfRelations: {
+			BMessage relationRefs(kOpenRelations);
+			result = ExtractRefsFromSelection(&relationRefs);
+
+			if (result == B_OK) {
+				// forward to TrackerSen for central relation folder handling
+				PRINT(("PoseView::SEN Open self relations menu called, forwarding refs:\n"));
+				relationRefs.PrintToStream();
+
+				be_app->PostMessage(&relationRefs);
+			} else {
+				PRINT(("failed to extract refs from selection: %s\n", strerror(result) ));
+				break;
+			}
+			break;
+		}
 		case SENSEI_CMD_EXTRACT:
 			PRINT(("PoseView::SENSEI extract called.\n"));
 			break;
@@ -106,12 +141,29 @@ BPoseView::HandleSenMessage(BMessage* message)
 	return true;
 }
 
+
+status_t
+BPoseView::ExtractRefsFromSelection(BMessage* refs) {
+	status_t    result = B_OK;
+
+	for (int32 index = 0; index < CountSelected(); index++) {
+		BPose* pose = fSelectionList->ItemAt(index);
+		const entry_ref* ref = pose->TargetModel()->ResolveIfLink()->EntryRef();
+		if (ref != NULL) {
+			result = refs->AddRef(SEN_RELATION_SOURCE_REF, ref);
+			if (result != B_OK)
+				break;
+		}
+	}
+	return result;	// in any case, concerning the caller, we've done our best.
+}
+
+
 status_t
 BPoseView::EnrichRefsFromSelection(bool wipe) {
 	status_t    result;
 
-	int32 selectCount = CountSelected();
-	for (int32 index = 0; index < selectCount; index++) {
+	for (int32 index = 0; index < CountSelected(); index++) {
 		BPose* pose = fSelectionList->ItemAt(index);
 		const entry_ref* ref = pose->TargetModel()->ResolveIfLink()->EntryRef();
 

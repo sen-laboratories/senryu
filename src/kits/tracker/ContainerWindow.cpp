@@ -1329,6 +1329,13 @@ BContainerWindow::TargetModel() const
 void
 BContainerWindow::SelectionChanged()
 {
+	BString name;
+	if (TargetModel() != NULL && TargetModel()->EntryRef() != NULL) {
+		name << TargetModel()->EntryRef()->name;
+	} else {
+		name << "<no entry selected>";
+	}
+	PRINT(("SelectionChanged(): %s\n", name.String() ));
 }
 
 
@@ -1453,26 +1460,6 @@ BContainerWindow::MessageReceived(BMessage* message)
 
 		case kNewFolder:
 			PostMessage(message, PoseView());
-			break;
-
-		case kNewRelation:
-		{
-			//todo: implement top level SEN relations view
-			PRINT(("SEN: show relations in Tracker not yet implemented.\n"));
-			entry_ref ref;
-			if (message->FindRef("refs", &ref) == B_OK)
-				_NewTemplateSubmenu(ref);
-
-			break;
-		}
-		case kOpenRelations:
-			//todo: implement top level SEN relations view
-			PRINT(("SEN: show relations in Tracker not yet implemented.\n"));
-			break;
-
-		case kOpenSelfRelations:
-			//todo: implement top level SEN relations view
-			PRINT(("SEN: show contains relations in Tracker not yet implemented.\n"));
 			break;
 
 		case kNewTemplateSubmenu:
@@ -1972,7 +1959,8 @@ BContainerWindow::AddShortcuts()
 	AddShortcut('U', B_COMMAND_KEY, new BMessage(kUnmountVolume), PoseView());
 	AddShortcut(B_UP_ARROW, B_COMMAND_KEY, new BMessage(kOpenParentDir), PoseView());
 	AddShortcut('O', B_COMMAND_KEY | B_CONTROL_KEY, new BMessage(kOpenSelectionWith), PoseView());
-	AddShortcut('R', B_COMMAND_KEY | B_CONTROL_KEY, new BMessage(kOpenRelations), PoseView());
+	AddShortcut('O', B_OPTION_KEY, new BMessage(kOpenRelations), be_app);
+	AddShortcut('O', B_OPTION_KEY | B_SHIFT_KEY, new BMessage(kOpenSelfRelations), be_app);
 
 	BMessage* decreaseSize = new BMessage(kIconMode);
 	decreaseSize->AddInt32("scale", 0);
@@ -2253,7 +2241,7 @@ BContainerWindow::SetupNewAssociationMenu(BMenu* parent, const entry_ref* ref)
 		if (menu != NULL) {
 			int32 assocIndex = menu->IndexOf(fNewAssociationItem);
 			if (assocIndex == B_ERROR) {
-				PRINT(("could not find index of association menu?!\n"));
+				PRINT(("could not find index of association menu.\n"));
 			} else {
 				menu->RemoveItem(assocIndex + 1);
 			}
@@ -2364,7 +2352,7 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 	message.AddUInt32(SEN_ACTION_CMD, SEN_RELATIONS_GET_ALL);
 
 	fOpenRelationsItem = Shortcuts()->OpenRelationsItem(
-		new OpenRelationsMenu(Shortcuts()->OpenRelationsLabel(), &message, this, BMessenger(PoseView())));
+		new OpenRelationsMenu(Shortcuts()->OpenRelationsLabel(), &message, this, BMessenger(PoseView())) );
 
 	parent->AddItem(fOpenRelationsItem, menuIndex + 1);
 	Shortcuts()->UpdateOpenRelationsItem(fOpenRelationsItem);
@@ -2377,8 +2365,9 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 	if (fOpenSelfRelationsItem)
 		delete fOpenSelfRelationsItem;
 
+	// Note: the menu itself targets Tracker, same as for fOpenRelationsItem above
 	fOpenSelfRelationsItem = Shortcuts()->OpenSelfRelationsItem(
-		new OpenRelationsMenu(Shortcuts()->OpenSelfRelationsLabel(), &messageSelf, this, BMessenger(PoseView())));
+		new OpenRelationsMenu(Shortcuts()->OpenSelfRelationsLabel(), &messageSelf, this, BMessenger(PoseView())) );
 
 	parent->AddItem(fOpenSelfRelationsItem, menuIndex + 2);
 	Shortcuts()->UpdateOpenSelfRelationsItem(fOpenSelfRelationsItem);

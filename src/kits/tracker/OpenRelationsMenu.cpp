@@ -221,6 +221,7 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 		// message for relation menu items
         BMessage* message = new BMessage(msgCmd);
         message->AddRef(SEN_RELATION_SOURCE_REF, sourceRef);
+
 		// add relevant message properties for compatible or ALL relations
 		if (propertyName == SEN_RELATION_COMPATIBLE_TYPES) {
 			message->AddString(SEN_RELATION_TYPE, SEN_ASSOC_RELATION_TYPE);
@@ -228,7 +229,7 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 		}
 		else {
 			message->AddString(SEN_RELATION_TYPE, typeName);
-			message->AddBool(SEN_ID_TO_REF_MAP, true);	// will be sent back as message under the same name
+			message->AddBool(SEN_ID_TO_REF_MAP, true);	// param for internal processing to send back the id_ref-map
 		}
 
 		char label[B_ATTR_NAME_LENGTH];
@@ -360,9 +361,14 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const entry_ref* sourceRef) {
 				isDynamic ? "dynamic" : "static",
 				isSelf ? "inward" : "outward"));
 		}
+
+		// get relation label from MIME types's short description (commonly used as name)
 		char label[B_ATTR_NAME_LENGTH];
-		if (mime.GetShortDescription(label) != B_OK) {
-			PRINT(("could not get short description for relation MIME type %s, falling back to type name.\n", defaultType.String()));
+		result = mime.GetShortDescription(label);
+
+		if (result != B_OK) {
+			PRINT(("could not get short description for relation MIME type %s, falling back to type name, reason: %s\n",
+				defaultType.String(), strerror(result) ));
 			strcpy(label, defaultType.String());
 		}
 

@@ -462,6 +462,7 @@ protected:
 
 	// SEN integration
 	virtual bool HandleSenMessage(BMessage* message);
+	status_t ExtractRefsFromSelection(BMessage* refs);
 	status_t EnrichRefsFromSelection(bool wipe = true);
 	status_t EnrichRefWithPlugin(const entry_ref* ref, bool wipe = true);
 

@@ -57,9 +57,14 @@ TTracker::HandleSenMessage(BMessage* message)
 		case kNewAssociation:
 			PRINT(("TrackerSen::AssociateWith()  called\n"));
 			break;
-		case kOpenRelations:
-		case kOpenSelfRelations:
-		case SEN_OPEN_RELATION_TARGET_VIEW:	// fallthrough
+		case kOpenRelations:				// menu itself was invoked, adjust command for later processing below
+		case kOpenSelfRelations: {			// same
+			PRINT(("relation menu invoked, opening top-level relation view.\n"));
+			// handle both at once, can be separated by comparing srcId to targetId, if same => self relation
+			message->what = SEN_OPEN_RELATION_VIEW;
+			break;
+		}
+		case SEN_OPEN_RELATION_TARGET_VIEW:	// coming from the (sub)menu actions
 			PRINT(("TrackerSen::Open (Self) Relations called.\n"));
 			break;
 
@@ -105,21 +110,14 @@ TTracker::HandleSenMessage(BMessage* message)
 	switch (message->what) {
 		case SEN_OPEN_RELATION_VIEW:
 		{
-			result = PrepareRelationWindow(message, &relationInfo);
+			result = PrepareRelationFolder(message, &relationInfo);
 			break;
 		}
 		case SEN_OPEN_RELATION_TARGET_VIEW:
 		{
-			result = PrepareRelationTargetWindow(message, &relationInfo);
+			result = PrepareRelationTargetFolder(message, &relationInfo);
 			break;
 		}
-		case kOpenRelations:
-		case kOpenSelfRelations:	//fallthrough
-		{
-			PRINT(("open (self) relations top level view not yet implemented. Please check back later.\n"));
-			break;
-		}
-		case kNewAssociation:
 		case SEN_RELATIONS_GET_NEW_TARGET:
 		{
 			BString relationType;
@@ -145,6 +143,7 @@ TTracker::HandleSenMessage(BMessage* message)
 
 			entry_ref targetRef;
 			result = message->FindRef(SEN_RELATION_TARGET_REF, &targetRef);
+
 			if (result != B_OK) {
 				if (result == B_NAME_NOT_FOUND && targetType.StartsWith(SEN_CLASS_SUPERTYPE "/")) {
 					result = CreateNewAssociationEntity(targetType.String(), &targetRef);
@@ -198,8 +197,8 @@ TTracker::HandleSenMessage(BMessage* message)
 						//       is copied to a new file first.
 						poseViewMsgr.SendMessage(message);
 					} else {
-						PRINT(("could not get target PostView messenger, cannot forward as 'create new from temmplate': %s\n",
-							strerror(result) ));
+						PRINT(("could not get PostView messenger, cannot forward as 'create new from temmplate': %s\n",
+						strerror(result) ));
 					}
 				}
 			}
@@ -360,18 +359,82 @@ status_t TTracker::PrepareLaunchTarget(
 }
 
 status_t
-TTracker::PrepareRelationWindow(BMessage *message, RelationInfo* relationInfo)
+TTracker::PrepareRelationFolder(BMessage *message, RelationInfo* relationInfo)
 {
-	//status_t result;
-	return B_NOT_SUPPORTED;	// not yet implemented
+	entry_ref srcRef;
+	BString srcId, relationType;
+
+	status_t result = message->FindRef(SEN_RELATION_SOURCE_REF, &srcRef);
+	if (result != B_OK) {
+		ERROR("PrepareRelationFolder: could not get required parameter, aborting: %s\n", strerror(result));
+		return result;
+	}
+
+	// get fresh relation targets from SEN server
+	BMessenger senMessenger(SEN_SERVER_SIGNATURE);
+	BMessage relationsMsg(SEN_RELATIONS_GET_ALL);
+    relationsMsg.AddRef(SEN_RELATION_SOURCE_REF, &srcRef);
+
+	BMessage reply;
+	result = senMessenger.SendMessage(&relationsMsg, &reply);
+
+	// get resolved SEN:ID from reply
+	result = reply.FindString(SEN_RELATION_SOURCE_ID, &srcId);
+	if (result != B_OK) {
+		ERROR("PrepareRelationFolder: could not get SEN:ID, aborting: %s\n", strerror(result));
+		return result;
+	}
+
+    // check relations
+	BStringList relations;
+	if (reply.FindStrings(SEN_RELATIONS, &relations) != B_OK) {
+		// TODO: add default relations from MIME DB so users can add targets!
+		PRINT(("no relations for source %s to show.\n", srcRef.name ));
+		return B_OK;
+	}
+
+	int32 countRelations = relations.CountStrings();
+	PRINT(("got %d relations for source %s:\n", countRelations, srcRef.name) );
+
+	// create SEN relation folders of relation type, relations are expected to be unique here
+	for (int rel = 0; rel < countRelations; rel++) {
+		const char* relationType = relations.StringAt(rel).String();
+		result = CreateRelationDirectory(&srcRef, srcId.String(), relationType, relationInfo);
+		if ((result != B_OK)) {
+			PRINT(("could not create directory for relation %s: %s\n", relationType, strerror(result)));
+			return result;
+		}
+	}
+
+	// return parent dir that holds all relations
+	BEntry relationDirEntry(&relationInfo->relationDirRef);
+	BEntry rootRelationDirEntry;
+
+	result = relationDirEntry.GetParent(&rootRelationDirEntry);
+	if (result == B_OK) {
+		result = rootRelationDirEntry.GetRef(&relationInfo->relationDirRef);
+	}
+
+	return result;
 }
 
 status_t
-TTracker::PrepareRelationTargetWindow(BMessage *message, RelationInfo* relationInfo)
+TTracker::PrepareRelationTargetFolder(BMessage *message, RelationInfo* relationInfo)
 {
-	status_t result;
-	if ((result = PrepareRelationDirectory(message, relationInfo) != B_OK)) {
-		PRINT(("could not create relation target view: %s\n", strerror(result)));
+	entry_ref srcRef;
+	BString srcId, relationType;
+
+	status_t result = message->FindRef(SEN_RELATION_SOURCE_REF, &srcRef);
+	if (result == B_OK) result = message->FindString(SEN_RELATION_SOURCE_ID, &srcId);
+	if (result == B_OK) result = message->FindString(SEN_RELATION_TYPE, &relationType);
+	if (result != B_OK) {
+		ERROR("PrepareRelationTargetFolder: could not get required parameter, aborting: %s\n", strerror(result));
+		return result;
+	}
+
+	result = CreateRelationDirectory(&srcRef, srcId.String(), relationType.String(), relationInfo);
+	if ((result != B_OK)) {
+		PRINT(("could not create relation target folder: %s\n", strerror(result)));
 		return result;
 	}
 
@@ -380,8 +443,8 @@ TTracker::PrepareRelationTargetWindow(BMessage *message, RelationInfo* relationI
 	// get fresh relation targets from SEN server
 	BMessenger senMessenger(SEN_SERVER_SIGNATURE);
 	BMessage relationTargetsMsg(SEN_RELATIONS_GET);
-    relationTargetsMsg.AddRef(SEN_RELATION_SOURCE_REF, &relationInfo->srcRef);
-    relationTargetsMsg.AddString(SEN_RELATION_TYPE, relationInfo->relationType);
+    relationTargetsMsg.AddRef(SEN_RELATION_SOURCE_REF, &srcRef);
+    relationTargetsMsg.AddString(SEN_RELATION_TYPE, relationType.String());
 
 	BMessage reply;
 	senMessenger.SendMessage(&relationTargetsMsg, &reply);
@@ -390,33 +453,34 @@ TTracker::PrepareRelationTargetWindow(BMessage *message, RelationInfo* relationI
 	BMessage relations;
 	if (reply.FindMessage(SEN_RELATIONS, &relations) != B_OK) {
 		PRINT(("no relations for type %s and source %s to show.\n",
-			relationInfo->relationType.String(), relationInfo->srcRef.name ));
+			relationType.String(), srcRef.name ));
 			return B_OK;
 	}
 
-	PRINT(("got relations for type %s for source %s:\n", relationInfo->relationType.String(), relationInfo->srcRef.name) );
+	PRINT(("got relations for type %s for source %s:\n", relationType.String(), srcRef.name) );
 	relations.PrintToStream();
 
 	// get MIME type for target relation
 	BMessage attrInfo;
-	if ((result = GetRelationTypeAttributeInfo(relationInfo->relationType, &attrInfo)) != B_OK) {
+	if ((result = GetRelationTypeAttributeInfo(relationType.String(), &attrInfo)) != B_OK) {
 		return result;
 	}
 
+	// get optional relation properties for relationTarget
 	BMessage relationProperties;
 	result = relations.FindMessage("properties", &relationProperties);
-	if (result != B_OK) {
-		ERROR("no relation properties found for source %s: %s\n", relationInfo->srcRef.name, strerror(result));
-		// still continue and just create blank relation files
-	}
 
-	PRINT(("got relation properties:\n"));
-	relationProperties.PrintToStream();
+	if (! relationProperties.IsEmpty()) {
+		PRINT(("got relation properties:\n"));
+		relationProperties.PrintToStream();
+	} else {
+		PRINT(("no properties for relation '%s'.\n", relationType.String() ));
+	}
 
 	BStringList targetIds;
     result = relations.FindStrings(SEN_TO_ATTR, &targetIds);
 	if (result != B_OK) {
-		ERROR("could not get relation targetIds for source %s: %s\n", relationInfo->srcRef.name, strerror(result));
+		ERROR("could not get relation targetIds for source %s: %s\n", srcRef.name, strerror(result));
 		return result;
 	}
 
@@ -424,7 +488,7 @@ TTracker::PrepareRelationTargetWindow(BMessage *message, RelationInfo* relationI
 	BMessage idToRefMap;
 	result = relations.FindMessage(SEN_ID_TO_REF_MAP, &idToRefMap);
 	if (result != B_OK) {
-		ERROR("could not get ref mapping for source %s: %s\n", relationInfo->srcRef.name, strerror(result));
+		ERROR("could not get ref mapping for source %s: %s\n", srcRef.name, strerror(result));
 		return result;
 	}
 
@@ -553,33 +617,19 @@ TTracker::GetRelationTypeAttributeInfo(const char* relationType, BMessage* attrI
 	}
 
 	// merge with attributes from supertype (relation)
-	result = attrInfo->Append(attrInfoSuperType);
-/* FIXME: works but check returns 'Bad argument type passed to function' ?!
-	if (result != B_OK) {
-		PRINT(("failed to construct attribute info for relation type and supertype: %s\n", strerror(result) ));
-		return result;
-	}
- */
+	attrInfo->Append(attrInfoSuperType);
+
 	return B_OK;
 }
 
 status_t
-TTracker::PrepareRelationDirectory(BMessage *message, RelationInfo* relationInfo)
+TTracker::CreateRelationDirectory(
+	const entry_ref* srcRef,
+	const char* srcId,
+	const char* relationType,
+	RelationInfo* relationInfo)
 {
 	status_t result = B_OK;
-
-	BString srcId, relationType, relationLabel;
-	entry_ref srcRef;
-
-	result = message->FindRef(SEN_RELATION_SOURCE_REF, &srcRef);
-	if (result == B_OK) result = message->FindString(SEN_RELATION_SOURCE_ATTR, &srcId);
-	if (result == B_OK) result = message->FindString(SEN_RELATION_TYPE, &relationType);
-	if (result == B_OK) result = message->FindString(SEN_RELATION_LABEL, &relationLabel);
-
-	if (result != B_OK) {
-		ERROR("PrepareRelationDirectory: could not get required parameter, aborting: %s\n", strerror(result));
-		return result;
-	}
 
 	BString relationName(relationType);
 	if (relationName.StartsWith(SEN_RELATION_SUPERTYPE "/")) {
@@ -591,23 +641,66 @@ TTracker::PrepareRelationDirectory(BMessage *message, RelationInfo* relationInfo
 		PRINT(("could not find temp directory: %s\n", strerror(result) ));
 		return result;
 	}
-	BString relationsDirName(relationsDirPath.Path());
-	relationsDirName.Append("/sen/") << srcId << "/relations/" << relationName
-		<< "/" << srcRef.name << "\u2192" << relationLabel << " relations";
 
-	if ((result = create_directory(relationsDirName, B_READ_WRITE) != B_OK)) {
-		PRINT(("failed to create temp dir at %s: %s\n", relationsDirName.String(), strerror(result) ));
+	// generate unique relation name
+	BString relationDirName(relationsDirPath.Path());
+	relationDirName.Append("/sen/") << srcId << "/relations/" << relationName;
+
+	// FIXME: remove relation dir and sub dirs, but there does not seem to be a native API call
+	//        matching create_directory, which sucks. Keep an eye on Haiku forum:
+	//	      https://discuss.haiku-os.org/t/missing-remove-directory-to-complement-create-directory/18022
+	if ((result = create_directory(relationDirName, B_READ_WRITE) != B_OK)) {
+		PRINT(("failed to create temp dir at %s: %s\n", relationDirName.String(), strerror(result) ));
 		return result;
 	}
 
-	// populate result param
-	BDirectory relationsDir(relationsDirName.String());
-	BEntry entry;
-	relationsDir.GetEntry(&entry);
-	entry.GetRef(&relationInfo->relationDirRef);
+	// TODO: prepare suitable default layout using archived relation attribute columns
+	// see PoseView::SaveState() and ViewState::ArchiveToStream()
+	// better yet, do this in BPoseView::SetupDefaultColumnsIfNeeded()
 
+	// populate result param
+	BDirectory relationDir(relationDirName.String());
+	BEntry relationDirEntry;
+	relationDir.GetEntry(&relationDirEntry);
+	relationDirEntry.GetRef(&relationInfo->relationDirRef);
+
+	// set a friendly display name from MIME Type's short desc
+	BMimeType relationMime(relationType);
+	result = relationMime.InitCheck();
+	if (result == B_OK) {
+		char shortDesc[B_MIME_TYPE_LENGTH];
+		result = relationMime.GetShortDescription(shortDesc);
+		if (result == B_OK) {
+			relationInfo->relationLabel = shortDesc;
+		}
+	}
+	if (result != B_OK) {
+		PRINT(("could not get label for relation %s from short description: %s\n",
+			relationType, strerror(result) ));
+		// use type as fallback
+		relationInfo->relationLabel = relationType;
+	}
+
+	// add a friendly display name
+	BString folderLabel(srcRef->name);
+	folderLabel << " \u2192 "  << relationInfo->relationLabel << " relations";
+	BNode relationNode(&relationDirEntry);
+
+	result = relationNode.InitCheck();
+
+	// write file and meta type for relation dir
+	if (result == B_OK) {
+		BNodeInfo relationNodeInfo(&relationNode);
+
+		if (result == B_OK) result = relationNodeInfo.InitCheck();
+		if (result == B_OK) result = relationNodeInfo.SetType(relationType);
+		if (result == B_OK) result = relationNode.WriteAttrString("META:TYPE", new BString(SEN_RELATION_FOLDER_TYPE));
+		// so we can populate the folder later with proper relation targets
+		if (result == B_OK) result = relationNode.WriteAttrString(SEN_RELATION_SOURCE_ATTR, new BString(srcId));
+		if (result == B_OK) result = relationNode.WriteAttrString(META_FOLDER_NAME, &folderLabel);
+	}
 	relationInfo->relationType = relationType;
-	relationInfo->srcRef = srcRef;
+	relationInfo->srcRef = *srcRef;
 	relationInfo->srcId = srcId;
 
 	return result;
