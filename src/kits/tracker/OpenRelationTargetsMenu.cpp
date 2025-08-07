@@ -591,23 +591,28 @@ status_t OpenRelationTargetsMenu::GetItemMessageInfo(
 			PRINT(("failed to get message info for item %s[%d]: %s\n", label.String(), itemIndex, strerror(result)));
 			return result;
 		}
+
 		// omit already parsed or non-property fields including item child nodes
 		if (strncmp(name, "label", 5) != 0 && strncmp(name, "type", 4) != 0 && strncmp(name, "item", 4) != 0) {
 			PRINT(("properties at index %d with name %s and count %d:\n", index, name, count));
-			if (index > count-1) {
-				PRINT(("got only %d '%s' items but need #%d\n", count, name, index));
+
+			if (index > count - 1) {
+				PRINT(("got only %d '%s' items but expected #%d\n", count, name, index));
 				break;
 			}
+
 			// add remaining property fields
 			const void* data;
 			ssize_t size;
 
 			if ((result = itemMsg->FindData(name, typeCode, index, &data, &size))!= B_OK) {
-				PRINT(("failed to get message data '%s' for item %s[%d]: %s\n", name, label.String(), index, strerror(result)));
+				PRINT(("failed to get message data '%s' for item %s[%d]: %s\n",
+						name, label.String(), index, strerror(result)));
 				return result;
 			}
 			if ((result = properties->AddData(name, typeCode, data, size)) != B_OK) {
-				PRINT(("failed to add message data '%s' for item %s[%d]: %s\n", name, label.String(), index, strerror(result)));
+				PRINT(("failed to add message data '%s' for item %s[%d]: %s\n",
+						name, label.String(), index, strerror(result)));
 				return result;
 			}
 		}

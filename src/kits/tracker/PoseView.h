@@ -465,6 +465,7 @@ protected:
 	status_t ExtractRefsFromSelection(BMessage* refs);
 	status_t EnrichRefsFromSelection(bool wipe = true);
 	status_t EnrichRefWithPlugin(const entry_ref* ref, bool wipe = true);
+	status_t ExtractSenParams(const BMessage* message, BMessage* enrichedMessage);
 
 	bool SetProperty(BMessage* message, BMessage* specifier, int32 form,
 		const char* property, BMessage* reply);

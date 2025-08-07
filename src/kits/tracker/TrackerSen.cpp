@@ -35,6 +35,7 @@ All rights reserved.
 #define DEBUG 1
 
 #include <Debug.h>
+#include <Entry.h>
 #include <FindDirectory.h>
 #include <Message.h>
 #include <NodeInfo.h>
@@ -46,8 +47,6 @@ All rights reserved.
 
 #include "Commands.h"
 #include "Sen.h"
-#include "TemplatesMenu.h"
-#include "TemplateUtils.h"
 #include "Tracker.h"
 
 bool
@@ -362,7 +361,9 @@ status_t
 TTracker::PrepareRelationFolder(BMessage *message, RelationInfo* relationInfo)
 {
 	entry_ref srcRef;
-	BString srcId, relationType;
+
+	PRINT(("PrepareRelationFolder: got message:\n"));
+	message->PrintToStream();
 
 	status_t result = message->FindRef(SEN_RELATION_SOURCE_REF, &srcRef);
 	if (result != B_OK) {
@@ -370,24 +371,48 @@ TTracker::PrepareRelationFolder(BMessage *message, RelationInfo* relationInfo)
 		return result;
 	}
 
-	// get fresh relation targets from SEN server
+	/* get fresh relation targets from SEN server
 	BMessenger senMessenger(SEN_SERVER_SIGNATURE);
 	BMessage relationsMsg(SEN_RELATIONS_GET_ALL);
     relationsMsg.AddRef(SEN_RELATION_SOURCE_REF, &srcRef);
 
 	BMessage reply;
 	result = senMessenger.SendMessage(&relationsMsg, &reply);
-
+	*/
 	// get resolved SEN:ID from reply
-	result = reply.FindString(SEN_RELATION_SOURCE_ID, &srcId);
+	bool isSelfRelation = message->GetBool(SEN_RELATION_IS_SELF, false);
+	BString folderId;
+
+	result = message->FindString(SEN_RELATION_SOURCE_ID, &folderId);
 	if (result != B_OK) {
-		ERROR("PrepareRelationFolder: could not get SEN:ID, aborting: %s\n", strerror(result));
-		return result;
+		// only allowed for self relations
+		if (! isSelfRelation) {
+			ERROR("PrepareRelationFolder: could not get SEN:ID, aborting: %s\n", strerror(result));
+			return result;
+		} else {
+			// get inode as folder ID instead of SEN:ID, no need to create one for now
+			BEntry srcEntry(&srcRef);
+			result = srcEntry.InitCheck();
+
+			if (result == B_OK) {
+				struct stat srcStat;
+				result = srcEntry.GetStat(&srcStat);
+
+				if (result == B_OK) {
+					folderId << srcStat.st_ino;
+				}
+			}
+			if (result != B_OK) {
+				PRINT(("WARNING: could not get inode for srcRef %s: %s\n", srcRef.name, strerror(result) ));
+				// fall back
+				folderId << srcRef.device << "_" << srcRef.directory << "_" << srcRef.name;
+			}
+		}
 	}
 
     // check relations
 	BStringList relations;
-	if (reply.FindStrings(SEN_RELATIONS, &relations) != B_OK) {
+	if (message->FindStrings(SEN_RELATIONS, &relations) != B_OK) {
 		// TODO: add default relations from MIME DB so users can add targets!
 		PRINT(("no relations for source %s to show.\n", srcRef.name ));
 		return B_OK;
@@ -399,7 +424,7 @@ TTracker::PrepareRelationFolder(BMessage *message, RelationInfo* relationInfo)
 	// create SEN relation folders of relation type, relations are expected to be unique here
 	for (int rel = 0; rel < countRelations; rel++) {
 		const char* relationType = relations.StringAt(rel).String();
-		result = CreateRelationDirectory(&srcRef, srcId.String(), relationType, relationInfo);
+		result = CreateRelationDirectory(&srcRef, folderId.String(), relationType, relationInfo);
 		if ((result != B_OK)) {
 			PRINT(("could not create directory for relation %s: %s\n", relationType, strerror(result)));
 			return result;
@@ -424,6 +449,9 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, RelationInfo* relationI
 	entry_ref srcRef;
 	BString srcId, relationType;
 
+	PRINT(("PrepareRelationTargetFolder: got message:\n"));
+	message->PrintToStream();
+
 	status_t result = message->FindRef(SEN_RELATION_SOURCE_REF, &srcRef);
 	if (result == B_OK) result = message->FindString(SEN_RELATION_SOURCE_ID, &srcId);
 	if (result == B_OK) result = message->FindString(SEN_RELATION_TYPE, &relationType);
@@ -445,6 +473,7 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, RelationInfo* relationI
 	BMessage relationTargetsMsg(SEN_RELATIONS_GET);
     relationTargetsMsg.AddRef(SEN_RELATION_SOURCE_REF, &srcRef);
     relationTargetsMsg.AddString(SEN_RELATION_TYPE, relationType.String());
+	relationTargetsMsg.AddBool(SEN_ID_TO_REF_MAP, true);
 
 	BMessage reply;
 	senMessenger.SendMessage(&relationTargetsMsg, &reply);
@@ -470,23 +499,9 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, RelationInfo* relationI
 	BMessage relationProperties;
 	result = relations.FindMessage("properties", &relationProperties);
 
-	if (! relationProperties.IsEmpty()) {
-		PRINT(("got relation properties:\n"));
-		relationProperties.PrintToStream();
-	} else {
-		PRINT(("no properties for relation '%s'.\n", relationType.String() ));
-	}
-
-	BStringList targetIds;
-    result = relations.FindStrings(SEN_TO_ATTR, &targetIds);
-	if (result != B_OK) {
-		ERROR("could not get relation targetIds for source %s: %s\n", srcRef.name, strerror(result));
-		return result;
-	}
-
 	// get ID lookup map
 	BMessage idToRefMap;
-	result = relations.FindMessage(SEN_ID_TO_REF_MAP, &idToRefMap);
+	result = reply.FindMessage(SEN_ID_TO_REF_MAP, &idToRefMap);
 	if (result != B_OK) {
 		ERROR("could not get ref mapping for source %s: %s\n", srcRef.name, strerror(result));
 		return result;
@@ -494,21 +509,32 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, RelationInfo* relationI
 
 	// iterate through all target IDs and get relation properties for each, then populate relation targets dir
     // with matching target refs, creating files with relation properties in file attributes.
-    for (int32 targetIndex = 0; targetIndex < targetIds.CountStrings(); targetIndex++) {
+    for (int32 targetIndex = 0; targetIndex < relations.CountNames(B_MESSAGE_TYPE); targetIndex++) {
 		entry_ref ref;
-		const char* targetId = targetIds.StringAt(targetIndex).String();
-		result = idToRefMap.FindRef(targetId, &ref);
+		char* targetId;
+		result = relations.GetInfo(B_MESSAGE_TYPE, targetIndex, &targetId, NULL);
+		if (result == B_OK) {
+			result = idToRefMap.FindRef(targetId, &ref);
+		} else {
+			PRINT(("no targetId found at index %d.\n", targetIndex));
+			continue;	// better luck next time?
+		}
 		if (result != B_OK) {
 			PRINT(("no ref found for targetId %s.\n", targetId));
 			continue;	// better luck next time?
 		}
-        PRINT(("handling properties for target %s ...\n", targetId));
 
-		// properties for individual relation to that target
+		// (optional) properties for individual relation to that target
 		// Note: there might be more than one relation to the same target with different properties!
         BMessage properties;
         int32 propertiesIndex = 0;
 
+		if (! relationProperties.HasMessage(targetId)) {
+			// write an empty placeholder for our targetId for easier common processing below
+			relationProperties.AddMessage(targetId, new BMessage());
+		}
+
+		// TODO: handle empty properties and fill in default name, type and label
         while (relationProperties.FindMessage(targetId, propertiesIndex, &properties) == B_OK) {
             // create a file for each set of properties for all targets
             PRINT(("writing property attrs #%d into ref %s:\n", propertiesIndex, ref.name));
@@ -533,7 +559,7 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, RelationInfo* relationI
             if (result == B_OK) result = relationNode.WriteAttrString(SEN_RELATION_SOURCE_ATTR,
 											&relationInfo->srcId);
             if (result == B_OK) result = relationNode.WriteAttrString(SEN_RELATION_TARGET_ATTR,
-                                            new BString(targetIds.StringAt(targetIndex)));
+                                            new BString(targetId));
             if (result != B_OK) {
                 ERROR(("error writing relation attributes: %s"), strerror(result));
                 return result;
@@ -596,9 +622,6 @@ TTracker::GetRelationTypeAttributeInfo(const char* relationType, BMessage* attrI
 		PRINT(("error reading attribute info for relation with type %s: %s\n", relationType, strerror(result)));
 		return result;
 	}
-
-	PRINT(("got attrInfo:\n"));
-	attrInfo->PrintToStream();
 
 	// get additional attributes from relation supertype
 	BMimeType relationSuperType;

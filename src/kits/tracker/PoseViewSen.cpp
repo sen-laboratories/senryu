@@ -75,12 +75,15 @@ BPoseView::HandleSenMessage(BMessage* message)
 
 	switch (message->what) {
 		case kOpenRelations: {
+			PRINT(("PoseView:: got kOpenRelations message from menu:\n"));
+			message->PrintToStream();
+
 			BMessage relationRefs(kOpenRelations);
-			result = ExtractRefsFromSelection(&relationRefs);
+			result = ExtractSenParams(message, &relationRefs);
 
 			if (result == B_OK) {
 				// forward to TrackerSen for central relation folder handling
-				PRINT(("PoseView::SEN Open relations menu called, forwarding refs:\n"));
+				PRINT(("PoseView::SEN Open relations menu called, forwarding message:\n"));
 				relationRefs.PrintToStream();
 
 				be_app->PostMessage(&relationRefs);
@@ -91,12 +94,15 @@ BPoseView::HandleSenMessage(BMessage* message)
 			break;
 		}
 		case kOpenSelfRelations: {
+			PRINT(("PoseView:: got kOpenSelfRelations message from menu:\n"));
+			message->PrintToStream();
+
 			BMessage relationRefs(kOpenRelations);
-			result = ExtractRefsFromSelection(&relationRefs);
+			result = ExtractSenParams(message, &relationRefs);
 
 			if (result == B_OK) {
 				// forward to TrackerSen for central relation folder handling
-				PRINT(("PoseView::SEN Open self relations menu called, forwarding refs:\n"));
+				PRINT(("PoseView::SEN Open self relations menu called, forwarding message:\n"));
 				relationRefs.PrintToStream();
 
 				be_app->PostMessage(&relationRefs);
@@ -155,7 +161,7 @@ BPoseView::ExtractRefsFromSelection(BMessage* refs) {
 				break;
 		}
 	}
-	return result;	// in any case, concerning the caller, we've done our best.
+	return result;
 }
 
 
@@ -163,18 +169,62 @@ status_t
 BPoseView::EnrichRefsFromSelection(bool wipe) {
 	status_t    result;
 
-	for (int32 index = 0; index < CountSelected(); index++) {
-		BPose* pose = fSelectionList->ItemAt(index);
-		const entry_ref* ref = pose->TargetModel()->ResolveIfLink()->EntryRef();
+	BMessage refs;
+	result = ExtractRefsFromSelection(&refs);
+
+	if (result != B_OK)
+		return result;
+
+	entry_ref ref;
+	for (int32 index = 0; index < refs.CountNames(B_REF_TYPE); index++) {
+		refs.FindRef(SEN_RELATION_SOURCE_REF, index, &ref);
 
 		// call plugin
-		result = EnrichRefWithPlugin(ref, wipe);
+		result = EnrichRefWithPlugin(&ref, wipe);
 		if (result != B_OK) {
-			PRINT(("problem enriching ref %s, skipping: %s\n", ref->name, strerror(result)));
+			PRINT(("problem enriching ref %s, skipping: %s\n", ref.name, strerror(result)));
 		}
 	}
 	return B_OK;	// in any case, concerning the caller, we've done our best.
 }
+
+
+// TODO: unify and just handle refs extra, rest has always SEN: prefix, then move to utility class
+status_t
+BPoseView::ExtractSenParams(const BMessage* message, BMessage* enrichedMessage)
+{
+	entry_ref srcRef;
+	status_t result = message->FindRef(SEN_RELATION_SOURCE_REF, &srcRef);
+	if (result == B_OK)
+		enrichedMessage->AddRef(SEN_RELATION_SOURCE_REF, &srcRef);
+
+	BString srcId;
+	result = message->FindString(SEN_RELATION_SOURCE_ID, &srcId);
+	if (result == B_OK)
+		enrichedMessage->AddString(SEN_RELATION_SOURCE_ID, srcId);
+
+	BString relationType;
+	result = message->FindString(SEN_RELATION_TYPE, &relationType);
+	if (result == B_OK)
+		enrichedMessage->AddString(SEN_RELATION_TYPE, relationType);
+
+	BStringList relations;
+	result = message->FindStrings(SEN_RELATIONS, &relations);
+	if (result == B_OK)
+		enrichedMessage->AddStrings(SEN_RELATIONS, relations);
+
+	bool self = message->GetBool(SEN_RELATION_IS_SELF, false);
+	enrichedMessage->AddBool(SEN_RELATION_IS_SELF, self);
+
+	bool bidir = message->GetBool(SEN_RELATION_IS_BIDIR, false);
+	enrichedMessage->AddBool(SEN_RELATION_IS_BIDIR, bidir);
+
+	bool dynamic = message->GetBool(SEN_RELATION_IS_DYNAMIC, false);
+	enrichedMessage->AddBool(SEN_RELATION_IS_DYNAMIC, dynamic);
+
+	return B_OK;	// all params are optional for now
+}
+
 
 status_t
 BPoseView::EnrichRefWithPlugin(const entry_ref* ref, bool wipe) {

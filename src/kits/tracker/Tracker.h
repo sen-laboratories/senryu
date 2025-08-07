@@ -40,6 +40,7 @@ All rights reserved.
 #include <Entry.h>
 
 #include "LockingList.h"
+#include "Sen.h"
 #include "SettingsHandler.h"
 #include "Utilities.h"
 
@@ -71,17 +72,6 @@ const uint32 B_ENTRY_SPECIFIER = 'sref';
 
 #define kPropertyEntry "Entry"
 #define kPropertySelection "Selection"
-
-// simple data exchange object needed for creating and populating the relation view directory
-struct RelationInfo{
-	entry_ref srcRef;
-	entry_ref targetRef;
-	entry_ref relationDirRef;
-	BString relationType;
-	BString relationLabel;
-	BString srcId;
-	BString targetId;
-};
 
 class TTracker : public BApplication  {
 public:
