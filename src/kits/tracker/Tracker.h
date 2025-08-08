@@ -166,6 +166,7 @@ protected:
 	// SEN integration
 	bool HandleSenMessage(BMessage*);
 	bool ResolveRelation(const entry_ref*, BString*, BString*);
+	status_t GetFolderIdFromSenIdOrInode(const BMessage* message, const entry_ref* srcRef, BString* folderId);
 
 	status_t CreateNewAssociationEntity(const char* associationEntityType, entry_ref* targetRef);
 	status_t EditNewEntity(const entry_ref* ref);

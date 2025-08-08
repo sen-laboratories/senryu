@@ -371,45 +371,6 @@ TTracker::PrepareRelationFolder(BMessage *message, RelationInfo* relationInfo)
 		return result;
 	}
 
-	/* get fresh relation targets from SEN server
-	BMessenger senMessenger(SEN_SERVER_SIGNATURE);
-	BMessage relationsMsg(SEN_RELATIONS_GET_ALL);
-    relationsMsg.AddRef(SEN_RELATION_SOURCE_REF, &srcRef);
-
-	BMessage reply;
-	result = senMessenger.SendMessage(&relationsMsg, &reply);
-	*/
-	// get resolved SEN:ID from reply
-	bool isSelfRelation = message->GetBool(SEN_RELATION_IS_SELF, false);
-	BString folderId;
-
-	result = message->FindString(SEN_RELATION_SOURCE_ID, &folderId);
-	if (result != B_OK) {
-		// only allowed for self relations
-		if (! isSelfRelation) {
-			ERROR("PrepareRelationFolder: could not get SEN:ID, aborting: %s\n", strerror(result));
-			return result;
-		} else {
-			// get inode as folder ID instead of SEN:ID, no need to create one for now
-			BEntry srcEntry(&srcRef);
-			result = srcEntry.InitCheck();
-
-			if (result == B_OK) {
-				struct stat srcStat;
-				result = srcEntry.GetStat(&srcStat);
-
-				if (result == B_OK) {
-					folderId << srcStat.st_ino;
-				}
-			}
-			if (result != B_OK) {
-				PRINT(("WARNING: could not get inode for srcRef %s: %s\n", srcRef.name, strerror(result) ));
-				// fall back
-				folderId << srcRef.device << "_" << srcRef.directory << "_" << srcRef.name;
-			}
-		}
-	}
-
     // check relations
 	BStringList relations;
 	if (message->FindStrings(SEN_RELATIONS, &relations) != B_OK) {
@@ -420,6 +381,14 @@ TTracker::PrepareRelationFolder(BMessage *message, RelationInfo* relationInfo)
 
 	int32 countRelations = relations.CountStrings();
 	PRINT(("got %d relations for source %s:\n", countRelations, srcRef.name) );
+
+	BString folderId;
+	result = GetFolderIdFromSenIdOrInode(message, &srcRef, &folderId);
+	if (result != B_OK) {
+		PRINT(("PrepareRelationFolder: could not create relation folder for src '%s': %s\n",
+				srcRef.name, strerror(result) ));
+		return result;
+	}
 
 	// create SEN relation folders of relation type, relations are expected to be unique here
 	for (int rel = 0; rel < countRelations; rel++) {
@@ -447,20 +416,31 @@ status_t
 TTracker::PrepareRelationTargetFolder(BMessage *message, RelationInfo* relationInfo)
 {
 	entry_ref srcRef;
-	BString srcId, relationType;
+	BString relationType;
 
 	PRINT(("PrepareRelationTargetFolder: got message:\n"));
 	message->PrintToStream();
 
 	status_t result = message->FindRef(SEN_RELATION_SOURCE_REF, &srcRef);
-	if (result == B_OK) result = message->FindString(SEN_RELATION_SOURCE_ID, &srcId);
-	if (result == B_OK) result = message->FindString(SEN_RELATION_TYPE, &relationType);
+	if (result == B_OK) {
+		result = message->FindString(SEN_RELATION_TYPE, &relationType);
+		if (result != B_OK) {
+			result = message->FindString(SENSEI_DEFAULT_TYPE_KEY, &relationType);
+		}
+	}
 	if (result != B_OK) {
-		ERROR("PrepareRelationTargetFolder: could not get required parameter, aborting: %s\n", strerror(result));
+		ERROR("could not get required parameter, aborting: %s\n", strerror(result));
 		return result;
 	}
 
-	result = CreateRelationDirectory(&srcRef, srcId.String(), relationType.String(), relationInfo);
+	BString folderId;
+	result = GetFolderIdFromSenIdOrInode(message, &srcRef, &folderId);
+	if (result != B_OK) {
+		PRINT(("could not get ID for src '%s': %s\n", srcRef.name, strerror(result) ));
+		return result;
+	}
+
+	result = CreateRelationDirectory(&srcRef, folderId.String(), relationType.String(), relationInfo);
 	if ((result != B_OK)) {
 		PRINT(("could not create relation target folder: %s\n", strerror(result)));
 		return result;
@@ -468,26 +448,29 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, RelationInfo* relationI
 
 	BDirectory relationDir(&relationInfo->relationDirRef);
 
-	// get fresh relation targets from SEN server
-	BMessenger senMessenger(SEN_SERVER_SIGNATURE);
-	BMessage relationTargetsMsg(SEN_RELATIONS_GET);
-    relationTargetsMsg.AddRef(SEN_RELATION_SOURCE_REF, &srcRef);
-    relationTargetsMsg.AddString(SEN_RELATION_TYPE, relationType.String());
-	relationTargetsMsg.AddBool(SEN_ID_TO_REF_MAP, true);
-
-	BMessage reply;
-	senMessenger.SendMessage(&relationTargetsMsg, &reply);
-
-    // check relations
+    // get relations and their properties
 	BMessage relations;
-	if (reply.FindMessage(SEN_RELATIONS, &relations) != B_OK) {
-		PRINT(("no relations for type %s and source %s to show.\n",
-			relationType.String(), srcRef.name ));
-			return B_OK;
-	}
+	BMessage relationProperties;
 
-	PRINT(("got relations for type %s for source %s:\n", relationType.String(), srcRef.name) );
-	relations.PrintToStream();
+	bool isSelfRelation = message->GetBool(SEN_RELATION_IS_SELF, false);
+
+	if (!isSelfRelation) {
+		if (message->FindMessage(SEN_RELATIONS, &relations) != B_OK) {
+			PRINT(("no relations for type %s and source %s to show.\n", relationType.String(), srcRef.name ));
+			return B_OK;
+		}
+		PRINT(("got relations for type %s for source %s:\n", relationType.String(), srcRef.name) );
+		relations.PrintToStream();
+
+		// get optional relation properties for relation targets
+		relations.FindMessage(SEN_RELATION_PROPERTIES, &relationProperties);
+	} else {	// get item properties of self relation from message received
+		// build target properties map with self as target and add all property messages there
+		message->FindMessage(SEN_RELATION_PROPERTIES, &relationProperties);
+		// TODO: move to separate conversion function
+		// FIXME: we always get a single item here, but we want the nested items to display in a folder!
+		relations.AddMessage(folderId.String(), &relationProperties);
+	}
 
 	// get MIME type for target relation
 	BMessage attrInfo;
@@ -495,16 +478,16 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, RelationInfo* relationI
 		return result;
 	}
 
-	// get optional relation properties for relationTarget
-	BMessage relationProperties;
-	result = relations.FindMessage("properties", &relationProperties);
-
 	// get ID lookup map
 	BMessage idToRefMap;
-	result = reply.FindMessage(SEN_ID_TO_REF_MAP, &idToRefMap);
-	if (result != B_OK) {
-		ERROR("could not get ref mapping for source %s: %s\n", srcRef.name, strerror(result));
-		return result;
+	result = message->FindMessage(SEN_ID_TO_REF_MAP, &idToRefMap);
+	if (!isSelfRelation) {
+		if (result != B_OK) {
+			ERROR("could not get ref mapping for source %s: %s\n", srcRef.name, strerror(result));
+			return result;
+		}
+	} else {
+		idToRefMap.AddRef(folderId.String(), &srcRef);
 	}
 
 	// iterate through all target IDs and get relation properties for each, then populate relation targets dir
@@ -729,7 +712,8 @@ TTracker::CreateRelationDirectory(
 	return result;
 }
 
-status_t TTracker::ConvertAttributesToMessage(const entry_ref* ref, BMessage* params) {
+status_t TTracker::ConvertAttributesToMessage(const entry_ref* ref, BMessage* params)
+{
 	status_t result;
 
 	PRINT(("ConvertAttr2Msg: converting attributes of file %s...\n", ref->name));
@@ -777,4 +761,37 @@ status_t TTracker::ConvertAttributesToMessage(const entry_ref* ref, BMessage* pa
 	params->PrintToStream();
 
 	return B_OK;
+}
+
+
+status_t TTracker::GetFolderIdFromSenIdOrInode(const BMessage* message, const entry_ref* srcRef, BString* folderId)
+{
+	// get resolved SEN:ID from reply or fall back to inode if it is a self relation
+	bool isSelfRelation = message->GetBool(SEN_RELATION_IS_SELF, false);
+	status_t result = message->FindString(SEN_RELATION_SOURCE_ID, folderId);
+
+	// only allowed for self relations
+	if (! isSelfRelation) {
+		ERROR("could not get SEN:ID for srcRef '%s', aborting: %s\n", srcRef->name, strerror(result));
+		return result;
+	} else {
+		// get inode as folder ID instead of SEN:ID, no need to create one for now
+		BEntry srcEntry(srcRef);
+		result = srcEntry.InitCheck();
+
+		if (result == B_OK) {
+			struct stat srcStat;
+			result = srcEntry.GetStat(&srcStat);
+
+			if (result == B_OK) {
+				*folderId << srcStat.st_ino;
+			}
+		}
+		if (result != B_OK) {
+			PRINT(("WARNING: could not get inode for srcRef %s: %s\n", srcRef->name, strerror(result) ));
+			// fall back
+			*folderId << srcRef->device << "_" << srcRef->directory << "_" << srcRef->name;
+		}
+	}
+	return result;
 }

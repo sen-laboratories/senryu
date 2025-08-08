@@ -469,11 +469,16 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 			openRelationTargetItemMsg.AddBool(SEN_RELATION_IS_SELF, true);
 			openRelationTargetItemMsg.AddBool(SEN_RELATION_IS_DYNAMIC, true);
 			openRelationTargetItemMsg.AddString(SENSEI_DEFAULT_TYPE_KEY, defaultType);
-			openRelationTargetItemMsg.AddString(SEN_RELATION_LABEL, label);
-			openRelationTargetItemMsg.AddString(SEN_RELATION_TYPE, type);
 
+			// optimize a bit to keep menu messages compact
+			if (type != defaultType) {
+				openRelationTargetItemMsg.AddString(SEN_RELATION_TYPE, type);
+			} else {
+				// remove from properties
+				propertiesMsg.RemoveName("type");
+			}
 			// add all properties from this item (e.g. page, position,...)
-			openRelationTargetItemMsg.AddMessage(SEN_OPEN_RELATION_ARGS_KEY, new BMessage(propertiesMsg));
+			openRelationTargetItemMsg.AddMessage(SEN_RELATION_PROPERTIES, new BMessage(propertiesMsg));
 
 			#ifdef DEBUG
 				PRINT(("openRelationTargetItemMsg is:\n"));
@@ -486,11 +491,18 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 			BMessage openRelationTargetsMsg(SEN_OPEN_RELATION_TARGET_VIEW);
 			openRelationTargetsMsg.AddBool(SEN_RELATION_IS_SELF, true);
 			openRelationTargetsMsg.AddBool(SEN_RELATION_IS_DYNAMIC, true);
-			openRelationTargetsMsg.AddString(SENSEI_DEFAULT_TYPE_KEY,defaultType);
-			openRelationTargetsMsg.AddString(SEN_RELATION_LABEL, label);
-			openRelationTargetsMsg.AddString(SEN_RELATION_TYPE, type);
-			// add all properties of this item as arguments
-			openRelationTargetsMsg.AddMessage(SEN_OPEN_RELATION_ARGS_KEY, new BMessage(propertiesMsg));
+			openRelationTargetsMsg.AddString(SENSEI_DEFAULT_TYPE_KEY, defaultType);
+
+			// optimize a bit to keep menu messages compact
+			if (type != defaultType) {
+				openRelationTargetsMsg.AddString(SEN_RELATION_TYPE, type);
+			} else {
+				// remove from properties
+				propertiesMsg.RemoveName("type");
+			}
+
+			// add all properties of this relation item to be used as potential args by receiver
+			openRelationTargetsMsg.AddMessage(SEN_RELATION_PROPERTIES, new BMessage(propertiesMsg));
 
 			// transparently handle just like a normal message result above, but for the subtree
 			childMsg.what = SENSEI_MESSAGE_RESULT;
@@ -540,7 +552,7 @@ status_t OpenRelationTargetsMenu::GetItemMessageInfo(
 		return result;
 	}
 	// add to result
-	properties->AddString("label", (new BString(label))->String());
+	properties->AddString("label", label);
 
 	// get type
 	BString type;
@@ -550,6 +562,7 @@ status_t OpenRelationTargetsMenu::GetItemMessageInfo(
 			// this is only allowed if there is a default type
 			if (! fDefaultType.IsEmpty()) {
 				type = fDefaultType;
+				result = B_OK;	// not an error, continue as normal
 			} else {
 				PRINT(("no type specified and no defaultType provided, aborting.\n"));
 				return B_BAD_VALUE;
@@ -559,8 +572,8 @@ status_t OpenRelationTargetsMenu::GetItemMessageInfo(
 			return B_ERROR;
 		}
 	}
-	// add to result
-	properties->AddString("type", (new BString(type))->String());
+
+	properties->AddString("type", type);
 
 	// get optional child node message (empty or another node)
 	BMessage subItemMsg;
@@ -571,7 +584,7 @@ status_t OpenRelationTargetsMenu::GetItemMessageInfo(
 		}
 	} else {
 		if (! subItemMsg.IsEmpty()) {
-			childMsg->AddMessage("item", new BMessage(subItemMsg));
+			childMsg->AddMessage("item", &subItemMsg);
 		}
 	}
 

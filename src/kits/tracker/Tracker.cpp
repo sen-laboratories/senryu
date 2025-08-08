@@ -930,7 +930,7 @@ TTracker::OpenRef(const entry_ref* ref, const node_ref* nodeToClose,
 			if (selfRelation) {
 				PRINT(("OpenRef: resolving SELF relation...\n"));
 				// pass on attributes from self relation properties
-				result = refsReceived.FindMessage(SEN_OPEN_RELATION_ARGS_KEY, &argsMsg);
+				result = refsReceived.FindMessage(SEN_RELATION_PROPERTIES, &argsMsg);
 				if (result != B_OK) {
 					if (result != B_NAME_NOT_FOUND) {
 						PRINT(("error getting relf relation arguments from refs msg: %s\n", strerror(result)));

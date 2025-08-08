@@ -189,38 +189,57 @@ BPoseView::EnrichRefsFromSelection(bool wipe) {
 }
 
 
-// TODO: unify and just handle refs extra, rest has always SEN: prefix, then move to utility class
+// just handle refs extra, rest has always SEN: prefix
 status_t
 BPoseView::ExtractSenParams(const BMessage* message, BMessage* enrichedMessage)
 {
 	entry_ref srcRef;
 	status_t result = message->FindRef(SEN_RELATION_SOURCE_REF, &srcRef);
-	if (result == B_OK)
+	if (result == B_OK) {
 		enrichedMessage->AddRef(SEN_RELATION_SOURCE_REF, &srcRef);
+	}
 
-	BString srcId;
-	result = message->FindString(SEN_RELATION_SOURCE_ID, &srcId);
-	if (result == B_OK)
-		enrichedMessage->AddString(SEN_RELATION_SOURCE_ID, srcId);
+	// add all properties from this item at this index (e.g. page, position,...)
+	char* name;
+	int32 count;
+	int32 index = 0;
+	type_code typeCode;
+	result = B_OK;	// could be B_NAME_NOT_FOUND from above!
 
-	BString relationType;
-	result = message->FindString(SEN_RELATION_TYPE, &relationType);
-	if (result == B_OK)
-		enrichedMessage->AddString(SEN_RELATION_TYPE, relationType);
+	while (result == B_OK) {
+		result = message->GetInfo(B_ANY_TYPE, index, &name,	&typeCode, &count);
+		if (result != B_OK) {
+			if (result == B_BAD_INDEX) {
+				break;	// end of line, done
+			}
+			PRINT(("failed to get message info at index #%d: %s\n", index, strerror(result)));
+			return result;
+		}
 
-	BStringList relations;
-	result = message->FindStrings(SEN_RELATIONS, &relations);
-	if (result == B_OK)
-		enrichedMessage->AddStrings(SEN_RELATIONS, relations);
+		// add message property only if it comes from SEN
+		if (BString(name).IStartsWith(SEN_ATTR_PREFIX) || BString(name).IStartsWith(SENSEI_ATTR_PREFIX)) {
+			PRINT(("adding SEN properties at index %d with name %s and count %d:\n", index, name, count));
+		}
+		const void* data;
+		ssize_t size;
 
-	bool self = message->GetBool(SEN_RELATION_IS_SELF, false);
-	enrichedMessage->AddBool(SEN_RELATION_IS_SELF, self);
+		result = message->FindData(name, typeCode, index, &data, &size);
+		if (result != B_OK) {
+			PRINT(("failed to get message data for property %s[%d]: %s\n",
+					name, index, strerror(result)));
+			return result;
+		}
 
-	bool bidir = message->GetBool(SEN_RELATION_IS_BIDIR, false);
-	enrichedMessage->AddBool(SEN_RELATION_IS_BIDIR, bidir);
+		// finally copy over data to keep
+		result = enrichedMessage->AddData(name, typeCode, data, size);
+		if (result != B_OK) {
+			PRINT(("failed to add message data '%s' at index %d: %s\n",
+					name, index, strerror(result)));
+			return result;
+		}
 
-	bool dynamic = message->GetBool(SEN_RELATION_IS_DYNAMIC, false);
-	enrichedMessage->AddBool(SEN_RELATION_IS_DYNAMIC, dynamic);
+		index++;
+	}
 
 	return B_OK;	// all params are optional for now
 }
