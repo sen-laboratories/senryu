@@ -938,17 +938,16 @@ TTracker::OpenRef(const entry_ref* ref, const node_ref* nodeToClose,
 					}
 				}
 
-				// get self relation type and fall back to default type if not found
+				// get self relation type
 				BString relationType;
-				result = argsMsg.FindString("type", &relationType);
-				if (result != B_OK)
-					result = refsReceived.FindString(SENSEI_DEFAULT_TYPE_KEY, &relationType);
+				result = argsMsg.FindString(SEN_RELATION_TYPE, &relationType);
+
 				if (result != B_OK) {
 					if (result == B_NAME_NOT_FOUND) {
-						PRINT(("could not find self relation (default) type in refs msg, falling back to normal launch.\n"));
+						PRINT(("refs_received misses self relation type, falling back to normal launch.\n"));
 						goto normal_launch_ref;
 					} else {
-						PRINT(("failed to retrieve relation type from refs msg: %s\n", strerror(result)));
+						PRINT(("failed to retrieve SEN relation type from refs msg: %s\n", strerror(result)));
 						return result;
 					}
 				}
@@ -967,12 +966,15 @@ TTracker::OpenRef(const entry_ref* ref, const node_ref* nodeToClose,
 					//      like OpenWith behavior.
 					PRINT(("could not find preferred app for handling relation %s: %s\n",
 							relationType.String(), strerror(result)));
+
 					goto normal_launch_ref;
 				}
 
 				result = be_roster->FindApp(prefAppSig, senHandlerRef);
 				if (result != B_OK) {
-					PRINT(("could not resolve relation handler with signature %s, falling back to normal launch.\n", relationType.String()));
+					PRINT(("could not resolve relation handler with signature %s, falling back to normal launch.\n",
+							relationType.String()));
+
 					goto normal_launch_ref;
 				}
 
@@ -1117,7 +1119,9 @@ TTracker::RefsReceived(BMessage* message)
 					if (error != B_OK)
 						break;
 
-					if (strncmp(name, "be:", 3) != 0 && strncmp(name, "sen:", 4) != 0)
+					if (strncasecmp(name, "be:", 3) != 0
+						&& strncasecmp(name, "sen:", 4) != 0
+						&& strncasecmp(name, "sensei:", 7) != 0)
 						continue;
 
 					for (int32 k = 0; k < count; k++) {

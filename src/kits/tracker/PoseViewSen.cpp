@@ -248,9 +248,10 @@ BPoseView::ExtractSenParams(const BMessage* message, BMessage* enrichedMessage)
 status_t
 BPoseView::EnrichRefWithPlugin(const entry_ref* ref, bool wipe) {
 	// find suitable/default enrichment plugin
-	// todo: migrate to common method from SEN SelfRelations.cpp !
-	BString predicate("SEN:TYPE==meta/x-vnd.sen-meta.plugin && SENSEI:TYPE==enricher");
-	BVolumeRoster volRoster;
+	// todo: migrate to common method GetPluginsForTypeAndFeature in SEN SelfRelationHandler.cpp !
+    BString predicate(SEN_TYPE "==" SENSEI_PLUGIN_TYPE " && " SENSEI_PLUGIN_FEATURE_ATTR ":");
+            predicate << SENSEI_FEATURE_ENRICH << "==1";	BVolumeRoster volRoster;
+
 	BVolume bootVolume;
 	volRoster.GetBootVolume(&bootVolume);
 
@@ -261,7 +262,7 @@ BPoseView::EnrichRefWithPlugin(const entry_ref* ref, bool wipe) {
     status_t result;
 	if ((result = query.Fetch()) != B_OK) {
         if (result == B_ENTRY_NOT_FOUND) {
-            PRINT(("no matching enricher found for ref %s\n", ref->name));
+            PRINT(("no matching plugin found for enrichment.\n"));
             return B_NOT_SUPPORTED;
         }
         // something else went wrong

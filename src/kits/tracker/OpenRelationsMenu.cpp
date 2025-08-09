@@ -263,6 +263,7 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 		AddItem(item);
 		countRelations++;
     }
+
 	PRINT(("got %d compatible relation items.\n", countRelations));
 
 	// store SEN:ID and relationType also in root relation menu item message itself,
@@ -282,7 +283,6 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 	return countRelations;
 }
 
-// TODO: move to SEN and reuse AddRelationItems with just different SEN command
 uint32 OpenRelationsMenu::AddSelfRelationItems(const entry_ref* sourceRef) {
 	BMessage pluginConfig;
 	int relationsAdded = 0;
@@ -383,8 +383,12 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const entry_ref* sourceRef) {
 			strcpy(label, defaultType.String());
 		}
 
-		// message for the relation menu itself (to open targets in separate Tracker window)
-		BMessage openRelationTargetsMsg(SEN_OPEN_RELATION_TARGET_VIEW);
+		// message for the relation menu itself
+		// Note: we need to differentiate between invoking the menu to(to open targets in a Tracker relationview
+		//       or we want to invoke the relation itself (e.g. navigate a deep link and open the preferred app)
+		uint32 invokeCode = ((modifiers() & B_OPTION_KEY) != 0) ? SEN_OPEN_RELATION_TARGET_VIEW : B_REFS_RECEIVED;
+		BMessage openRelationTargetsMsg(invokeCode);
+
         openRelationTargetsMsg.AddRef(SEN_RELATION_SOURCE_REF, sourceRef);
 		openRelationTargetsMsg.AddString(SEN_RELATION_TYPE, defaultType);
 		openRelationTargetsMsg.AddString(SEN_RELATION_LABEL, label);
