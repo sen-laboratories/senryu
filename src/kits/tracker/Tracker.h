@@ -178,7 +178,8 @@ protected:
 	status_t CreateRelationDirectory(const entry_ref* srcRef, const char* srcId,
 		                             const char* relationType, RelationInfo* relationInfo);
 	status_t ConvertAttributesToMessage(const entry_ref* ref, BMessage* params);
-	status_t GetRelationTypeAttributeInfo(const char* relationType, BMessage* attrInfo);
+	status_t GetRelationAttributeInfo(const char* relationType, BMessage* attrInfo);
+	status_t GetRelationConfig(const char* relationType, RelationConfig* config);
 
 private:
 	class WatchingInterface;

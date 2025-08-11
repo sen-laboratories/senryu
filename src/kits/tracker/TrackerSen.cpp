@@ -437,12 +437,6 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, RelationInfo* relationI
 
     // get relations and their properties
 	BMessage relations;
-	BMessage relationProperties;
-
-	// need some special care
-	bool isSelfRelation = message->GetBool(SEN_RELATION_IS_SELF, false);
-	// dynamic relations are not writable as they are created on the fly
-	bool isDynamicRelation = message->GetBool(SEN_RELATION_IS_DYNAMIC, false);
 
 	if (message->FindMessage(SEN_RELATIONS, &relations) != B_OK) {
 		PRINT(("no relations for type %s and source %s to show.\n", relationType.String(), srcRef.name ));
@@ -451,26 +445,29 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, RelationInfo* relationI
 	PRINT(("got relations for type %s for source %s:\n", relationType.String(), srcRef.name) );
 	relations.PrintToStream();
 
-	if (! isSelfRelation) {
-		// get optional relation properties for relation targets
-		relations.FindMessage(SEN_RELATION_PROPERTIES, &relationProperties);
-	}
-
-	// get MIME type for target relation
-	BMessage attrInfo;
-	if ((result = GetRelationTypeAttributeInfo(relationType.String(), &attrInfo)) != B_OK) {
+	// get config for target relation
+	RelationConfig relationConfig;
+	if ((result = GetRelationConfig(relationType.String(), &relationConfig)) != B_OK) {
 		return result;
 	}
 
-	if (isSelfRelation) {
+	if (relationConfig.isSelf) {
+		// get plugin config for mappings
+		BMessage pluginConfig;
+		result = message->FindMessage(SENSEI_PLUGIN_CONFIG_KEY, &pluginConfig);
+		if (result != B_OK) {
+			PRINT(("could not get plugin config required for resolving self relations: %s\n", strerror(result) ));
+			return result;
+		}
+
 		// convert to common relations map with targetId (all point to source for self relation) and
 		// properties mapped to MIME type attribute names, using the type_mapping provided by SENSEI
 		BMessage typeMapping;
-		message->FindMessage(SENSEI_TYPE_MAPPING, &typeMapping);
+		pluginConfig.FindMessage(SENSEI_TYPE_MAPPING, &typeMapping);
 
 		// same for attributes (e.g. page -> SEN:REL:page)
 		BMessage attrMapping;
-		message->FindMessage(SENSEI_ATTR_MAPPING, &attrMapping);
+		pluginConfig.FindMessage(SENSEI_ATTR_MAPPING, &attrMapping);
 
 		result = ConvertSelfRelationsToCommon(folderId.String(), &relations, &typeMapping, &attrMapping);
 		if (result != B_OK) {
@@ -480,14 +477,13 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, RelationInfo* relationI
 
 		PRINT(("successfully converted plugin result to self relations:\n"));
 		relations.PrintToStream();
-
-		createDirectory = relations.GetBool("hasChildren", false);
 	}
 
 	// get ID lookup map
 	BMessage idToRefMap;
 	result = message->FindMessage(SEN_ID_TO_REF_MAP, &idToRefMap);
-	if (!isSelfRelation) {
+
+	if (!relationConfig.isSelf) {
 		if (result != B_OK) {
 			ERROR("could not get ref mapping for source %s: %s\n", srcRef.name, strerror(result));
 			return result;
@@ -496,112 +492,133 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, RelationInfo* relationI
 		idToRefMap.AddRef(folderId.String(), &srcRef);
 	}
 
+	// all relations of a particular target
+	BMessage targetRelations;
+
 	// iterate through all target IDs and get relation properties for each, then populate relation targets dir
     // with matching target refs, creating files with relation properties in file attributes.
     for (int32 targetIndex = 0; targetIndex < relations.CountNames(B_MESSAGE_TYPE); targetIndex++) {
 		entry_ref ref;
 		char* targetId;
+		int32 countRelations;	// there can be multiple relations for the same target
 
-		result = relations.GetInfo(B_MESSAGE_TYPE, targetIndex, &targetId, NULL);
+		result = relations.GetInfo(B_MESSAGE_TYPE, targetIndex, &targetId, NULL, &countRelations);
 		if (result == B_OK) {
 			result = idToRefMap.FindRef(targetId, &ref);
 		} else {
-			PRINT(("no targetId found at index %d.\n", targetIndex));
+			PRINT(("could not get info for target at index %d: %s.\n", targetIndex, strerror(result) ));
 			continue;	// better luck next time?
 		}
 		if (result != B_OK) {
-			PRINT(("no ref found for targetId %s.\n", targetId));
+			PRINT(("no valid targetId found / unexpected type for targetId %s at index %d: %s.\n",
+				targetId, targetIndex, strerror(result) ));
 			continue;	// better luck next time?
 		}
 
+		PRINT(("creating relation files for source '%s' with targetId %s and %d relations...\n",
+				ref.name, targetId, countRelations));
+
 		// (optional) properties for individual relation to that target
 		// Note: there might be more than one relation to the same target with different properties!
-        BMessage properties;
-        int32 propertiesIndex = 0;
-
-		if (! relationProperties.HasMessage(targetId)) {
-			// write an empty placeholder for our targetId for easier common processing below
-			relationProperties.AddMessage(targetId, new BMessage());
-		}
-
 		BNode	  relationNode;
 		BNodeInfo relationNodeInfo;
+        BMessage  properties;
 
-        while (relationProperties.FindMessage(targetId, propertiesIndex, &properties) == B_OK) {
-            // create a file for each set of properties for all targets
-            PRINT(("writing property attrs #%d into ref %s:\n", propertiesIndex, ref.name));
-            properties.PrintToStream();
-
-            BString fileName(ref.name);
-			if (BEntry(fileName).Exists()) {
-				fileName.Append(" #") << propertiesIndex + 2; // human readable 1-based index, first relation is #1
+		// create individual relation targets for each relation of the current target
+        for (int32 relationIndex = 0; relationIndex < countRelations; relationIndex++) {
+			result = relations.FindMessage(targetId, relationIndex, &properties);
+			if (result != B_OK) {
+				PRINT(("  > could not get relation properties for target %s at %d: %s\n",
+					targetId, relationIndex, strerror(result) ));
+				continue;
 			}
 
-			uint32 readWriteMode = (isDynamicRelation ? B_READ_ONLY : B_READ_WRITE);
+			// used for self (and later also n-ary) relations
+			createDirectory = properties.HasMessage(SEN_RELATIONS);
+
+			// use relation's short name as file name
+			BString fileName(relationConfig.shortName);
+
+			// number file names, they are not really important since we prefer the label anyway
+			if (relationIndex > 0) {
+				// human readable 1-based index, first relation is #1 (without number)
+				fileName << " " << relationIndex + 2;
+			}
+
+			// create a file for each set of properties for all targets
+			// since dynamic relations are generated, they cannot be changed
+			mode_t readWriteMode = (relationConfig.isDynamic ? 0755 : 0777);
 
 			// create file or dir with appropriate permissions
 			if (createDirectory) {
-				relationDir.CreateDirectory(fileName, NULL);
-				relationDir.SetPermissions(readWriteMode);
+				relationDir.CreateDirectory(fileName.String(), NULL);
 			} else {
-				BFile relationTarget(&relationDir, fileName, readWriteMode | B_CREATE_FILE);
+				BFile relationTarget(&relationDir, fileName.String(), readWriteMode | B_CREATE_FILE);
 			}
 
-			relationNode.SetTo(&relationDir, fileName);
+			relationNode.SetTo(&relationDir, fileName.String());
 			result = relationNode.InitCheck();
 			if (result != B_OK) {
-				ERROR("error creating relation target %s: %s\n", ref.name, strerror(result));
+				ERROR("  > error creating relation target file %s: %s\n", fileName.String(), strerror(result));
 				return result;
 			}
 
-            BNodeInfo relationNodeInfo(&relationNode);
+			relationNode.SetPermissions(readWriteMode);
+			BNodeInfo relationNodeInfo(&relationNode);
 
-			if (result == B_OK) result = relationNodeInfo.InitCheck();
-            if (result == B_OK) result = relationNodeInfo.SetType(relationInfo->relationType);
-            if (result == B_OK) result = relationNode.WriteAttrString(SEN_RELATION_SOURCE_ATTR, &relationInfo->srcId);
-            if (result == B_OK) result = relationNode.WriteAttrString(SEN_RELATION_TARGET_ATTR, new BString(targetId));
-            if (result != B_OK) {
-                ERROR(("error writing relation attributes: %s"), strerror(result));
-                return result;
-            }
+			result = relationNodeInfo.SetType(relationInfo->relationType);
+			if (result == B_OK) result = relationNode.WriteAttrString(SEN_RELATION_SOURCE_ATTR, &relationInfo->srcId);
+			if (result == B_OK) result = relationNode.WriteAttrString(SEN_RELATION_TARGET_ATTR, new BString(targetId));
+			if (result != B_OK) {
+				ERROR(("  > error writing common relation file attributes: %s"), strerror(result));
+				return result;
+			}
 
-            // write out relation properties as file attributes according to MIME type
-            BString attrName;
-            int32 attrType;
-            int32 attrIndex = 0;
+			PRINT(("* writing %d property attributes for relation #%d, target %s, into file %s:\n",
+				   properties.CountNames(B_ANY_TYPE), relationIndex, targetId, fileName.String() ));
+			properties.PrintToStream();
 
-            while (attrInfo.FindString("attr:name", attrIndex, &attrName) == B_OK) {
-                result = attrInfo.FindInt32("attr:type", attrIndex, &attrType);
-                if (result == B_OK) {
-                    PRINT(("handling attribute %s of type %d...\n", attrName.String(), attrType));
+			for (int32 propertyIndex = 0; propertyIndex < properties.CountNames(B_ANY_TYPE); propertyIndex++) {
+				// write out relation properties as file attributes according to message field type (== MIME attr type)
+				char*   propertyName;
+				uint32  propertyType;
+				const void*  data;
+				ssize_t	     size;
 
-                    const void* data;
-                    ssize_t size;
-                    result = properties.FindData(attrName.String(), static_cast<type_code>(attrType), 0, &data, &size);
-                    if (result == B_OK) {
-						BString value("value ");
-                        PRINT(("creating relation property attribute %s with %s\n",
-							attrName.String(), (value << data).String()) );	// todo: check - was result
+				result = properties.GetInfo(B_ANY_TYPE, propertyIndex, &propertyName, &propertyType, NULL);
+				if (result != B_OK) {
+					PRINT(("  error retrieving propertyName #%d for relation %d of target %s: %s\n",
+							propertyIndex, relationIndex, targetId, strerror(result) ));
+					continue;
+				}
 
-                        result = relationNode.WriteAttr(attrName.String(), attrType, 0, data, size);
-                        if (result <= 0) {
-                            ERROR(("failed to write relation property attribute %s.\n"), attrName.String());
-                        }
-                    }
-                }
-                attrIndex++;
-            } // attributes loop
+				result = properties.FindData(propertyName, propertyType, &data, &size);
+				if (result != B_OK) {
+					PRINT(("  skipping property %s for relation %d of target %s, error: %s\n",
+							propertyName, relationIndex, targetId, strerror(result) ));
+					continue;
+				}
 
-            relationNode.Sync();
-            propertiesIndex++;
-        } // properties loop
+				// relation property name and type == MIME type attr name and type
+				PRINT(("  > writing relation property %s into attribute.\n", propertyName));
+
+				result = relationNode.WriteAttr(propertyName, propertyType, 0, data, size);
+				if (result < size) {
+					ERROR(("  > failed to write relation property attribute %s: %s.\n"),
+						propertyName, strerror(result));
+				}
+			}   // properties loop
+			// sync after finished writing attributes
+			relationNode.Sync();
+
+        } // target relations loop
 	}
 
 	return B_OK;
 }
 
 status_t
-TTracker::GetRelationTypeAttributeInfo(const char* relationType, BMessage* attrInfo) {
+TTracker::GetRelationConfig(const char* relationType, RelationConfig* config) {
 	status_t result;
 	BMimeType relationMimeType(relationType);
 
@@ -614,8 +631,47 @@ TTracker::GetRelationTypeAttributeInfo(const char* relationType, BMessage* attrI
 		return B_ERROR;
 	}
 
+	// get additional attributes from relation supertype
+	BMimeType relationSuperType;
+	relationMimeType.GetSupertype(&relationSuperType);	// must be installed if MimeType was OK above
+
+	char description[B_MIME_TYPE_LENGTH];
+
+	relationMimeType.GetShortDescription(description);
+	config->shortName = description;
+	config->typeName  = relationMimeType.Type();	// == relationType we got
+	config->isAssociation = config->typeName.StartsWith(SEN_ASSOC_RELATION_TYPE);
+
+	// get extra SEN relation config
+	BMessage relationAttrInfo;
+	result = GetRelationAttributeInfo(relationType, &relationAttrInfo);
+
+	if (result != B_OK) {
+		PRINT(("could not get SEN relation attrInfo for type %s: %s\n", relationType, strerror(result) ));
+		return result;
+	}
+/*
+	BMessage relationConfig;
+	result = relationAttrInfo.FindMessage(SEN_RELATION_CONFIG, &relationConfig);
+	if (result != B_OK) {
+		if (result != B_NAME_NOT_FOUND) {	// optional
+			PRINT(("could not get SEN relation config for type %s: %s\n", relationType, strerror(result) ));
+			return result;
+		}
+	}
+*/
+	config->isBidir   = relationAttrInfo.GetBool(SEN_RELATION_IS_BIDIR);
+	config->isDynamic = relationAttrInfo.GetBool(SEN_RELATION_IS_DYNAMIC);
+	config->isSelf    = relationAttrInfo.GetBool(SEN_RELATION_IS_SELF);
+
+	return B_OK;
+}
+
+
+status_t TTracker::GetRelationAttributeInfo(const char* relationType, BMessage* attrInfo) {
 	// get defined attributes for MIME type of relation, same for all targets of this relation
-	result = relationMimeType.GetAttrInfo(attrInfo);
+	BMimeType relationMimeType(relationType);
+	status_t result = relationMimeType.GetAttrInfo(attrInfo);
 	if (result != B_OK) {
 		PRINT(("error reading attribute info for relation with type %s: %s\n", relationType, strerror(result)));
 		return result;
@@ -638,10 +694,10 @@ TTracker::GetRelationTypeAttributeInfo(const char* relationType, BMessage* attrI
 	}
 
 	// merge with attributes from supertype (relation)
-	attrInfo->Append(attrInfoSuperType);
-
-	return B_OK;
+	// TODO: merge relationConfig
+	return attrInfo->Append(attrInfoSuperType);
 }
+
 
 status_t
 TTracker::CreateRelationDirectory(
@@ -744,6 +800,7 @@ status_t TTracker::ConvertSelfRelationsToCommon(
 	if (result != B_OK) {
 		if (result != B_NAME_NOT_FOUND) {
 			PRINT(("error looking for child node in message: %s\n", strerror(result)));
+			return result;
 		} else {
 			// return an empty property message for the self relation
 			PRINT(("no self relations received.\n"));
@@ -757,22 +814,21 @@ status_t TTracker::ConvertSelfRelationsToCommon(
 	// SEN:relations structure, mapping types to full MIME type and properties to MIME attribute names.
 	// sanity checking has already been done in SEN SelfRelations implementation.
 	char* name;
-	int32 count;
-	int32 itemIndex = 0;
+	int32 count = 0, propCount = 0;	// for consistency check, should always be equal
+	int32 itemIndex, itemCount = 0;
 	type_code typeCode;
+
 	const char* defaultType = typeMapping->GetString(SENSEI_DEFAULT_TYPE_KEY);
 
-	BMessage properties;	// collects item properties below
+	BStringList properties;	// collects item properties below
 
 	// todo: move to common place, copied from OpenRelationTargetsMenu::GetItemMessageInfo
 	BString itemPropertyName(SENSEI_ITEM);	// for comfy repeated checks below
-	BStringList senseiProps;
-	senseiProps.Add(SENSEI_ITEM);
-	senseiProps.Add(SENSEI_LABEL);
-	senseiProps.Add(SENSEI_TYPE);
 
-	while (result == B_OK) {
-		result = itemMsg.GetInfo(B_ANY_TYPE, itemIndex, &name,	&typeCode, &count);
+	// first, collect all properties and handle nested items
+	for (itemIndex = 0; result == B_OK; itemIndex++) {
+		result = itemMsg.GetInfo(B_ANY_TYPE, itemIndex, &name,	&typeCode, &propCount);
+
 		if (result != B_OK) {
 			if (result == B_BAD_INDEX) {
 				break;
@@ -781,54 +837,92 @@ status_t TTracker::ConvertSelfRelationsToCommon(
 			return result;
 		}
 
-		// handle SENSEI properties to map to SEN:relations properly
-
-		// handle nested item messages and adapt to map properties to a shallow child relations message
-		if (itemPropertyName == name) {
-			PRINT(("  > mapping nested item %s @[%d]...\n", name, itemIndex ));
-
-			// add as nested *stub* to indicate hierarchy, so we can handle this properly and create a directory later
-			properties.what = SEN_RELATIONS_GET_SELF;
-
-			// just get matching label from the type with same index
-			const char* label = itemMsg.GetString(SENSEI_LABEL, itemIndex, "");
-
-			// will be used as file name
-			properties.AddString(SEN_RELATION_TARGET_LABEL, label);
-
-			// possibly different type for self relation targets (plugins can return whatever fits the use case)
-			const char* type = itemMsg.GetString(SENSEI_TYPE, itemIndex, defaultType);
-			properties.AddString(SEN_RELATION_TARGET_TYPE, type);
+		// the message contains item properties in an array that should always line up
+		if (itemIndex > 0 && propCount != count) {
+			PRINT(("mismatch in item structure detected: property '%s' has %d elements vs %d from last.\n",
+					name, propCount, count));
+			return B_BAD_INDEX;
 		}
+		count = propCount;
 
-		// skip standard properties for remaining custom properties
-		if (! senseiProps.HasString(BString(name), true) ) {
-			PRINT(("properties at index %d with name %s and count %d:\n", itemIndex, name, count));
+		properties.Add(name);
+	}	// for
 
-			const void* data;
-			ssize_t size;
+	itemCount = propCount;	// we convert to items collecting all properties at each property index
 
-			if ((result = itemMsg.FindData(name, typeCode, itemIndex, &data, &size))!= B_OK) {
-				PRINT(("failed to get message data for property '%s' [#%d]: %s\n",
-						name, itemIndex, strerror(result)));
-				return result;
-			}
+	BString  propertyName;
+	BMessage childMsg;
+	BMessage relationProperties;
+	ssize_t  valueSize;
 
-			// map property name to common attribute name as per attribute map
-			// default is to keep the name, if no mapping was defined.
-			const char *commonName = attrMapping->GetString(name, name);
+	// now collect all properties separately into individual relation property messages
+	for (int32 itemIndex = 0; itemIndex < itemCount; itemIndex++) {
+		PRINT(("* collecting %d properties for item #%d:\n", count, itemIndex));
 
-			if ((result = properties.AddData(commonName, typeCode, data, size)) != B_OK) {
-				PRINT(("failed to add message data '%s' as '%s' to item at [%d]: %s\n",
-						name, commonName, itemIndex, strerror(result)));
-				return result;
+		for (int32 propIndex = 0; propIndex < properties.CountStrings(); propIndex++) {
+			propertyName = properties.StringAt(propIndex);
+			PRINT((" * checking property %s at #%d of item %d...\n", propertyName.String(), propIndex, itemIndex));
+
+			// handle nested item messages for mapping properties to a shallow child relations message
+			if (propertyName == SENSEI_ITEM) {
+				result = itemMsg.FindMessage(SENSEI_ITEM, itemIndex, &childMsg);
+				if (result != B_OK || childMsg.IsEmpty()) {
+					PRINT(("  > skipping empty placeholder child item for property '%s' for item #%d.\n",
+						propertyName.String(), itemIndex));
+					continue;
+				}
+
+				PRINT(("  > mapping nested item %s @[%d]...\n", propertyName.String(), itemIndex ));
+
+				// add as nested self relations message so we can later open sub folders with the cached result
+				relationProperties.what = SEN_RELATIONS_GET_SELF;
+				relationProperties.AddMessage(SEN_RELATIONS, &childMsg);
+
+				// just get matching label from the type with same index
+				const char* label = itemMsg.GetString(SENSEI_LABEL, propIndex, "");
+
+				// will be used as file name
+				relationProperties.AddString(SEN_RELATION_TARGET_LABEL, label);
+
+				// possibly different type for self relation targets (plugins can return whatever fits the use case)
+				const char* type = itemMsg.GetString(SENSEI_TYPE, propIndex, defaultType);
+				relationProperties.AddString(SEN_RELATION_TARGET_TYPE, type);
+
+			} else {
+				const void* value;
+				result = itemMsg.GetInfo(propertyName.String(), &typeCode);
+				if (result == B_OK)
+					result = itemMsg.FindData(propertyName.String(), typeCode, itemIndex, &value, &valueSize);
+				if (result != B_OK) {
+					PRINT(("  > failed to get value for property '%s' [#%d]: %s\n",
+							name, itemIndex, strerror(result)));
+					return result;
+				}
+
+				// map property name to common attribute name as per attribute map
+				// default is to keep the name, if no mapping was defined.
+				const char *commonName = attrMapping->GetString(propertyName.String(), propertyName.String());
+
+				PRINT(("  > mapping property #%d of item %d: %s -> %s...\n",
+					propIndex, itemIndex, propertyName.String(), commonName ));
+
+				result = relationProperties.AddData(commonName, typeCode, value, valueSize);
+				if (result != B_OK) {
+					PRINT(("failed to add message data '%s' as '%s' to item at [%d]: %s\n",
+							propertyName.String(), commonName, itemIndex, strerror(result)));
+					return result;
+				}
 			}
 		}
-		itemIndex++;
-	}	// while
+		// add properties in standard SEN format
+		relations->AddMessage(targetId, &relationProperties);
 
-	// add properties in standard SEN format
-	relations->AddMessage(SEN_ID_SELF, &properties);
+		// next run, collect new properties
+		relationProperties.MakeEmpty();
+	}
+
+	// remove original item and all its data
+	relations->RemoveName(SENSEI_ITEM);
 
 	return B_OK;
 }

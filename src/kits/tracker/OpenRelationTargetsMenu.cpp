@@ -420,11 +420,19 @@ status_t
 OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 {
 	status_t result;
-	BMessage itemMsg, childMsg;
+	BMessage pluginConfig, itemMsg, childMsg;
 	BString defaultType;
 
-	// get default item type from original msg received from parent menu
-	result = fEntriesToOpen.FindString(SENSEI_DEFAULT_TYPE_KEY, &defaultType);
+	// get plug config for default property type from original msg received from parent menu
+	result = fEntriesToOpen.FindMessage(SENSEI_PLUGIN_CONFIG_KEY, &pluginConfig);
+	if (result != B_OK) {
+		// at least the attrMapping msg withcommon label mapping must be there
+		PRINT(("could not get plugin config required for resolving self relations: %s\n", strerror(result) ));
+		return result;
+	}
+
+	// get optional default type from pluginConfig
+	result = pluginConfig.FindString(SENSEI_DEFAULT_TYPE_KEY, &defaultType);
 	if (result != B_OK) {
 		if (result != B_NAME_NOT_FOUND) {
 			PRINT(("error reading message from OpenRelationsMenu: %s\n", strerror(result)));
@@ -464,7 +472,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 		IconMenuItem* item;
 		// get required params, already checked / default available
 		propertiesMsg.FindString(SENSEI_LABEL, &label);
-		type.SetTo(propertiesMsg.GetString(SENSEI_TYPE, fDefaultType.String()) );
+		type = propertiesMsg.GetString(SENSEI_TYPE, fDefaultType.String());
 
 		PRINT(("got properties for item %s [%d]:\n", label.String(), index));
 		#ifdef DEBUG
@@ -498,6 +506,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 			openRelationTargetsMsg.AddBool(SEN_RELATION_IS_SELF, true);
 			openRelationTargetsMsg.AddBool(SEN_RELATION_IS_DYNAMIC, true);
 			openRelationTargetsMsg.AddString(SEN_RELATION_TYPE, type);
+			openRelationTargetsMsg.AddMessage(SENSEI_PLUGIN_CONFIG_KEY, &pluginConfig);
 
 			// add all properties of this relation item to be used as potential args by receiver
 			openRelationTargetsMsg.AddMessage(SEN_RELATION_PROPERTIES, &propertiesMsg);
@@ -508,7 +517,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 			// transparently handle just like a normal message result above, but for the subtree
 			childMsg.what = SENSEI_MESSAGE_RESULT;
 			childMsg.AddRef(SEN_RELATION_SOURCE_REF, &ref);
-			childMsg.AddString(SENSEI_DEFAULT_TYPE_KEY, defaultType);
+			childMsg.AddMessage(SENSEI_PLUGIN_CONFIG_KEY, &pluginConfig);
 
 			#ifdef DEBUG
 				PRINT(("openRelationTargetsMsg is:\n"));
@@ -566,6 +575,8 @@ status_t OpenRelationTargetsMenu::GetItemMessageInfo(
 			// this is only allowed if there is a default type
 			if (! fDefaultType.IsEmpty()) {
 				type = fDefaultType;	// just for logging, not needed else
+				// only add placeholder to keep array structure of message intact
+				properties->AddString(SENSEI_TYPE, NULL);
 				result = B_OK;	// not an error, continue as normal
 			} else {
 				PRINT(("no type specified and no defaultType provided, aborting.\n"));

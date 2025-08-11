@@ -350,8 +350,8 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const entry_ref* sourceRef) {
         message.AddString(SEN_RELATION_TYPE, defaultType);	// TODO: use the actual self relation type!
 		// add plugin needed to resolve this self relation
 		message.AddString(SENSEI_PLUGIN_KEY, pluginName);
-		// add default type (the self relation type shown in the menu)
-		message.AddString(SENSEI_DEFAULT_TYPE_KEY, defaultType);
+		// add relation config with default type and type+attr mapping
+		message.AddMessage(SENSEI_PLUGIN_CONFIG_KEY, &pluginConfig);
 
 		bool isDynamic;
 		bool isSelf;
@@ -390,11 +390,11 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const entry_ref* sourceRef) {
 		BMessage openRelationTargetsMsg(invokeCode);
 
         openRelationTargetsMsg.AddRef(SEN_RELATION_SOURCE_REF, sourceRef);
-		openRelationTargetsMsg.AddString(SEN_RELATION_TYPE, defaultType);
-		openRelationTargetsMsg.AddString(SEN_RELATION_LABEL, label);
-		openRelationTargetsMsg.AddString(SENSEI_PLUGIN_KEY, pluginName);
 		openRelationTargetsMsg.AddBool(SEN_RELATION_IS_DYNAMIC, isDynamic);
 		openRelationTargetsMsg.AddBool(SEN_RELATION_IS_SELF, isSelf);
+		openRelationTargetsMsg.AddString(SEN_RELATION_LABEL, label);
+		openRelationTargetsMsg.AddString(SENSEI_PLUGIN_KEY, pluginName);
+		openRelationTargetsMsg.AddMessage(SENSEI_PLUGIN_CONFIG_KEY, &pluginConfig);
 
         BMenuItem* item = new IconMenuItem(
             new OpenRelationTargetsMenu(label, new BMessage(message), fParentWindow, be_app_messenger),
