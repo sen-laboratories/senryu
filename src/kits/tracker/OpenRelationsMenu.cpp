@@ -175,6 +175,13 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 		srcId.SetTo("");
 	}
 
+	// get relation configs for storing in menu items later
+	BMessage relationConfigs;
+	status_t result = fRelationsReply.FindMessage(SEN_RELATION_CONFIG, &relationConfigs);
+	if (result != B_OK) {
+		PRINT(("no relation config found, continuing with defaults.\n"));
+	}
+
 	// update command for followup action in relation menu items
 	uint32 msgCmd;
 	switch (fSenCmd) {
@@ -234,17 +241,10 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 			message->AddBool(SEN_ID_TO_REF_MAP, true);	// param for internal processing to send back the id_ref-map
 		}
 
-		char label[B_ATTR_NAME_LENGTH];
-		if (mime.GetShortDescription(label) != B_OK) {
-			// this should never happen, since the MIME registry does not allow a Type without a short description
-			PRINT(("could not get short description for relation %s, falling back to type name.\n", typeName.String()));
-			typeName.CopyInto(label, 0, typeName.CountBytes(0, typeName.Length()));
-		}
-
 		BMessage *openRelationTargetsMsg = new BMessage(SEN_OPEN_RELATION_TARGET_VIEW);
         openRelationTargetsMsg->AddRef(SEN_RELATION_SOURCE_REF, sourceRef);
 		openRelationTargetsMsg->AddString(SEN_RELATION_SOURCE_ID, srcId);
-		openRelationTargetsMsg->AddString(SEN_RELATION_LABEL, label);
+		openRelationTargetsMsg->AddMessage(SEN_RELATION_CONFIG, &relationConfigs);
 
 		if (buildAssocRelations) {
 			openRelationTargetsMsg->AddString(SEN_RELATION_TYPE, SEN_ASSOC_RELATION_TYPE);
@@ -253,8 +253,22 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 			openRelationTargetsMsg->AddString(SEN_RELATION_TYPE, typeName);
 		}
 
+		// get label from relation config
+		BString  label;
+		BMessage relationConf;
+		result = relationConfigs.FindMessage(typeName.String(), &relationConf);
+
+		if (result == B_OK) {
+			label = relationConf.GetString(SEN_RELATION_NAME);
+		}
+		if (label.IsEmpty()) {
+			PRINT(("could not get relation config for type %s, falling back to FQN: %s.\n",
+				typeName.String(), strerror(result) ));
+			label = typeName;
+		}
+
         BMenuItem* item = new IconMenuItem(
-            new OpenRelationTargetsMenu(label, message, fParentWindow, fTrackerMessenger),
+            new OpenRelationTargetsMenu(label.String(), message, fParentWindow, fTrackerMessenger),
 										openRelationTargetsMsg, typeName);
 
 		// redirect open relation targets message to Tracker app directly
@@ -276,18 +290,29 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 	// always replace any previous data as the parent menu is reused!
 	openRelationsItemMsg->RemoveData(SEN_RELATION_SOURCE_REF);
 	openRelationsItemMsg->RemoveData(SEN_RELATION_SOURCE_ID);
+	openRelationsItemMsg->RemoveData(SEN_RELATION_CONFIG);
 
 	openRelationsItemMsg->AddRef(SEN_RELATION_SOURCE_REF, sourceRef);
 	openRelationsItemMsg->AddString(SEN_RELATION_SOURCE_ID, srcId);
+    openRelationsItemMsg->AddMessage(SEN_RELATION_CONFIG, &relationConfigs);
 
 	return countRelations;
 }
 
 uint32 OpenRelationsMenu::AddSelfRelationItems(const entry_ref* sourceRef) {
-	BMessage pluginConfig;
+	BMessage pluginConfig, relationConfigs;
 	int relationsAdded = 0;
     status_t result;
 
+	// Note: self relations mostly have no sourceId yet since they are dynamically resolved
+
+	// get relation config
+	result = fRelationsReply.FindMessage(SEN_RELATION_CONFIG, &relationConfigs);
+	if (result != B_OK) {
+		PRINT(("no relation config found, continuing with defaults.\n"));
+	}
+
+	// get plugin config
 	result = fRelationsReply.FindMessage(SENSEI_PLUGIN_CONFIG_KEY, &pluginConfig);
 	if (result != B_OK) {
 		PRINT(("no plugin config found / unexpected reply.\n"));
@@ -347,57 +372,41 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const entry_ref* sourceRef) {
 		// message for relation menu items, sent to SEN server for resolving
         BMessage message(SEN_RELATIONS_GET_SELF);
 		message.AddRef(SEN_RELATION_SOURCE_REF, sourceRef);
-        message.AddString(SEN_RELATION_TYPE, defaultType);	// TODO: use the actual self relation type!
+		// target types might vary, but the relation type for the menu is always the original default type
+        message.AddString(SEN_RELATION_TYPE, defaultType);
 		// add plugin needed to resolve this self relation
 		message.AddString(SENSEI_PLUGIN_KEY, pluginName);
-		// add relation config with default type and type+attr mapping
+		// add plugin config with default type and type+attr mapping
 		message.AddMessage(SENSEI_PLUGIN_CONFIG_KEY, &pluginConfig);
-
-		bool isDynamic;
-		bool isSelf;
-		BMimeType mime(defaultType.String());
-
-		if (!mime.IsInstalled()) {
-			PRINT(("skipping relation with unavailable MIME type %s...\n", defaultType.String()));
-			index++;
-			continue;
-		} else {
-			BMessage attrInfoMsg;
-			mime.GetAttrInfo(&attrInfoMsg);
-			attrInfoMsg.FindBool(SEN_RELATION_IS_DYNAMIC, &isDynamic);
-			attrInfoMsg.FindBool(SEN_RELATION_IS_SELF, &isSelf);
-
-			PRINT(("got MIME type %s, relation is %s and %s:\n",
-				defaultType.String(),
-				isDynamic ? "dynamic" : "static",
-				isSelf ? "inward" : "outward"));
-		}
-
-		// get relation label from MIME types's short description (commonly used as name)
-		char label[B_ATTR_NAME_LENGTH];
-		result = mime.GetShortDescription(label);
-
-		if (result != B_OK) {
-			PRINT(("could not get short description for relation MIME type %s, falling back to type name, reason: %s\n",
-				defaultType.String(), strerror(result) ));
-			strcpy(label, defaultType.String());
-		}
+		// add relation config
+		message.AddMessage(SEN_RELATION_CONFIG, &relationConfigs);
 
 		// message for the relation menu itself
-		// Note: we need to differentiate between invoking the menu to(to open targets in a Tracker relationview
-		//       or we want to invoke the relation itself (e.g. navigate a deep link and open the preferred app)
-		uint32 invokeCode = ((modifiers() & B_OPTION_KEY) != 0) ? SEN_OPEN_RELATION_TARGET_VIEW : B_REFS_RECEIVED;
-		BMessage openRelationTargetsMsg(invokeCode);
+		BMessage openRelationTargetsMsg(SEN_OPEN_RELATION_TARGET_VIEW);
 
+		// add only needed parts of SEN relation config as compact individual fields
         openRelationTargetsMsg.AddRef(SEN_RELATION_SOURCE_REF, sourceRef);
-		openRelationTargetsMsg.AddBool(SEN_RELATION_IS_DYNAMIC, isDynamic);
-		openRelationTargetsMsg.AddBool(SEN_RELATION_IS_SELF, isSelf);
-		openRelationTargetsMsg.AddString(SEN_RELATION_LABEL, label);
+		// add relation config
+		openRelationTargetsMsg.AddMessage(SEN_RELATION_CONFIG, &relationConfigs);
 		openRelationTargetsMsg.AddString(SENSEI_PLUGIN_KEY, pluginName);
 		openRelationTargetsMsg.AddMessage(SENSEI_PLUGIN_CONFIG_KEY, &pluginConfig);
 
+		// get label from relation config
+		BString  label;
+		BMessage relationConf;
+		result = relationConfigs.FindMessage(defaultType.String(), &relationConf);
+
+		if (result == B_OK) {
+			label = relationConf.GetString(SEN_RELATION_NAME);
+		}
+		if (label.IsEmpty()) {
+			PRINT(("could not get relation config for type %s, falling back to type name: %s.\n",
+				defaultType.String(), strerror(result) ));
+			label = defaultType;
+		}
+
         BMenuItem* item = new IconMenuItem(
-            new OpenRelationTargetsMenu(label, new BMessage(message), fParentWindow, be_app_messenger),
+            new OpenRelationTargetsMenu(label.String(), new BMessage(message), fParentWindow, be_app_messenger),
             new BMessage(openRelationTargetsMsg),
 			defaultType
         );
@@ -417,17 +426,15 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const entry_ref* sourceRef) {
 
 	// always replace any previous data as the parent menu is reused!
 	openSelfRelationsItemMsg->RemoveData(SEN_RELATION_SOURCE_REF);
-	openSelfRelationsItemMsg->RemoveData(SEN_RELATION_IS_DYNAMIC);
-	openSelfRelationsItemMsg->RemoveData(SEN_RELATION_IS_SELF);
 	openSelfRelationsItemMsg->RemoveData(SEN_RELATIONS);
+	openSelfRelationsItemMsg->RemoveData(SEN_RELATION_CONFIG);
 
 	openSelfRelationsItemMsg->AddRef(SEN_RELATION_SOURCE_REF, sourceRef);
-	openSelfRelationsItemMsg->AddBool(SEN_RELATION_IS_DYNAMIC, true);
-	openSelfRelationsItemMsg->AddBool(SEN_RELATION_IS_SELF, true);
 
 	BStringList relations;
 	result = fRelationsReply.FindStrings(SEN_RELATIONS, &relations);
 	openSelfRelationsItemMsg->AddStrings(SEN_RELATIONS,  relations);	// add the emty message if some error occurred
+    openSelfRelationsItemMsg->AddMessage(SEN_RELATION_CONFIG, &relationConfigs);
 
 	return relationsAdded;
 }

@@ -166,20 +166,24 @@ protected:
 	// SEN integration
 	bool HandleSenMessage(BMessage*);
 	bool ResolveRelation(const entry_ref*, BString*, BString*);
-	status_t GetFolderIdFromSenIdOrInode(const BMessage* message, const entry_ref* srcRef, BString* folderId);
+	status_t GetFolderIdFromInode(const entry_ref* srcRef, BString* folderId);
 	status_t ConvertSelfRelationsToCommon(const char* targetId, BMessage* relations,
 	                                      BMessage* typeMapping, BMessage* attrMapping);
 
 	status_t CreateNewAssociationEntity(const char* associationEntityType, entry_ref* targetRef);
 	status_t EditNewEntity(const entry_ref* ref);
 	status_t PrepareLaunchTarget(const entry_ref* srcRef, const char* targetId, entry_ref* targetRef, BMessage* params);
-	status_t PrepareRelationFolder(BMessage *message, RelationInfo* relationInfo);
-	status_t PrepareRelationTargetFolder(BMessage *message, RelationInfo* relationInfo);
-	status_t CreateRelationDirectory(const entry_ref* srcRef, const char* srcId,
-		                             const char* relationType, RelationInfo* relationInfo);
+	status_t PrepareRelationFolder(BMessage *message, entry_ref *relationDIr);
+	status_t PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDir);
+	status_t WriteTargetRelations(BMessage *message, BMessage *idToRefMap,
+	                              BMessage* relationConf, entry_ref *relationDirRef);
+	status_t CreateRelationDirectory(const entry_ref* srcRef,
+	                                 const char* relationType,
+	                                 const BMessage* relationConfig,
+	                                 const char* customPathFragment,
+									 entry_ref *ref);
 	status_t ConvertAttributesToMessage(const entry_ref* ref, BMessage* params);
 	status_t GetRelationAttributeInfo(const char* relationType, BMessage* attrInfo);
-	status_t GetRelationConfig(const char* relationType, RelationConfig* config);
 
 private:
 	class WatchingInterface;

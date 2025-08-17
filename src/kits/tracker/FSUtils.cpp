@@ -3917,6 +3917,9 @@ TrackerLaunch(const entry_ref* appRef, bool async)
 status_t
 TrackerLaunch(const BMessage* refs, bool async, bool openWithOK)
 {
+	PRINT(("TrackerLaunch msg:\n"));
+	refs->PrintToStream();
+
 	if (!async)
 		_TrackerLaunchDocuments(NULL, refs, openWithOK);
 	else

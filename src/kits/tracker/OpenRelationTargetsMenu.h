@@ -35,6 +35,7 @@ private:
 	BWindow*	fParentWindow;
 
 	BMessage*	fRelationTargetsReply;
+	BMessage*   frelationRoot;
 	BString 	fDefaultType;
 
 	typedef BSlowMenu _inherited;

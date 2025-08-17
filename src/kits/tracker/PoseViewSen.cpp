@@ -189,7 +189,7 @@ BPoseView::EnrichRefsFromSelection(bool wipe) {
 }
 
 
-// just handle refs extra, rest has always SEN: prefix
+// just handle refs and what code extra, rest has always SEN: prefix
 status_t
 BPoseView::ExtractSenParams(const BMessage* message, BMessage* enrichedMessage)
 {
