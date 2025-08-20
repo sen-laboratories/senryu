@@ -1,35 +1,7 @@
-/*
-Open Tracker License
-
-Terms and Conditions
-
-Copyright (c) 1991-2000, Be Incorporated. All rights reserved.
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
-of the Software, and to permit persons to whom the Software is furnished to do
-so, subject to the following conditions:
-
-The above copyright notice and this permission notice applies to all licensees
-and shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF TITLE, MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-BE INCORPORATED BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
-AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION
-WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-Except as contained in this notice, the name of Be Incorporated shall not be
-used in advertising or otherwise to promote the sale, use or other dealings in
-this Software without prior written authorization from Be Incorporated.
-
-Tracker(TM), Be(R), BeOS(R), and BeIA(TM) are trademarks or registered trademarks
-of Be Incorporated in the United States and other countries. Other brand product
-names are registered trademarks or trademarks of their respective holders.
-All rights reserved.
+/**
+ * @author Gregor Rosenauer <gregor.rosenauer@gmail.com>
+ * All Rights Reserved.
+ * Distributed under the terms of the MIT License.
 */
 
 #define DEBUG 1
@@ -523,7 +495,7 @@ TTracker::PrepareRelationFolder(BMessage *message, entry_ref* relationDirRef)
 			PRINT(("could not find relation config for type %s, skipping.\n", relationType));
 			continue;
 		}
-		result = CreateRelationDirectory(&srcRef, relationType, &relationConf, "", relationDirRef);
+		result = CreateRelationDirectory(&srcRef, relationType, &relationConf, relationDirRef);
 		if ((result != B_OK)) {
 			PRINT(("could not create directory for relation %s: %s\n", relationType, strerror(result)));
 			return result;
@@ -574,9 +546,6 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 	// add type to config for proccessing
 	relationConf.AddString(SEN_RELATION_TYPE, relationType);
 
-	PRINT(("got relation config:\n"));
-	relationConf.PrintToStream();
-
 	bool isSelf    = relationConf.GetBool(SEN_RELATION_IS_SELF);
 	bool isDynamic = relationConf.GetBool(SEN_RELATION_IS_DYNAMIC);
 
@@ -607,6 +576,12 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 		result = message->FindPointer(SEN_RELATION_ROOT, reinterpret_cast<void**>(&relationRoot));
 		if (result == B_OK && relationRoot != NULL) {
 			PRINT(("  * got relation ROOT, generating view for ALL relations of source.\n"));
+		} else {
+			PRINT(("  X failed to get expected relation ROOT, aborting.\n"));
+			if (result != B_OK)
+				return result;
+			else
+				return B_BAD_VALUE;
 		}
 
 		// get plugin config for mappings
@@ -640,10 +615,12 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 
 				return B_OK;
 			}
-		} else {
-			PRINT(("got root relations:"));
-			relations.PrintToStream();
 		}
+
+		// get selected item level
+		const char* itemPath = message->GetString(SENSEI_PATH, "");
+		PRINT(("* got item path %s.\n", itemPath));
+		relationConf.AddString(SENSEI_PATH, itemPath);
 
 		// self relations target points to source
 		result = ConvertSelfRelationsToCommon(srcId.String(), &relations, &typeMapping, &attrMapping);
@@ -653,13 +630,11 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 		}
 
 		PRINT(("successfully converted plugin result to self relations:\n"));
+
 	} else {
 		message->FindMessage(SEN_RELATIONS, &relations);
-
 		PRINT(("got relations for type %s for source %s:\n", relationType, srcRef.name) );
 	}
-
-	relations.PrintToStream();
 
 	// get ID lookup map
 	BMessage idToRefMap;
@@ -674,40 +649,82 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 		idToRefMap.AddRef(SEN_ID_SELF, &srcRef);
 	}
 
-	// get optional custom path from (optional) relation properties
-	const char* customPath = relationProperties.GetString(SENSEI_PATH, "");
-
-	BDirectory relationDir;
-	result = CreateRelationDirectory(&srcRef, relationType, &relationConf, customPath, relationDirRef);
+	// create top-level relation dir for src relation
+	result = CreateRelationDirectory(&srcRef, relationType, &relationConf, relationDirRef);
 	if ((result != B_OK)) {
 		PRINT(("could not create relation target folder: %s\n", strerror(result)));
 		return result;
 	}
 
 	// reusable optionally recursive part
-	result = WriteTargetRelations(&relations, &idToRefMap, &relationConf, relationDirRef);
+	result = WriteTargetRelations(&relations, &idToRefMap, &relationConf, NULL, relationDirRef);
 	if (result != B_OK) {
 		PRINT(("could not write relation targets to folder %s: %s\n", relationDirRef->name, strerror(result) ));
 		return result;
 	}
+
 	return result;
 }
 
 status_t TTracker::WriteTargetRelations(
-	BMessage *relations,
-	BMessage *idToRefMap,
-	BMessage* relationConf,
-	entry_ref *relationDirRef)
+	BMessage  *relations,
+	BMessage  *idToRefMap,
+	BMessage  *relationConf,
+	entry_ref *workingDirRef,
+	entry_ref *openDirRef)
 {
 	if (relations->IsEmpty() != B_OK) {
 		PRINT(("no relations found, skipping.\n"));
 		return B_OK;
 	}
 
+	if (workingDirRef == NULL) {	// start at root relation dir created before
+		PRINT(("WriteTargetRelations: starting at ROOT relation path: %s\n", openDirRef->name ));
+		workingDirRef = new entry_ref(*openDirRef);
+	}
+
 	bool isDynamic = relationConf->GetBool(SEN_RELATION_IS_DYNAMIC);
 	const char* srcId = relationConf->GetString(SEN_RELATION_SOURCE_ID);
 	const char* shortName = relationConf->GetString(SEN_RELATION_NAME);
 	const char* relationType = relationConf->GetString(SEN_RELATION_TYPE);
+
+	BDirectory relationDir(workingDirRef);
+	BPath relationDirPath(workingDirRef);
+
+	status_t result = relationDir.InitCheck();
+	if (result == B_OK)
+		result = relationDirPath.InitCheck();
+
+	if (result != B_OK) {
+		PRINT(("invalid directory for path %s: %s\n", relationDirPath.Path(), strerror(result) ));
+		return result;
+	}
+
+	// for dynamic relations, check if current working dir is the selected target we want to open later
+	BString currentPath;
+
+	if (isDynamic) {
+		relations->FindString(SENSEI_PATH, &currentPath);
+		if (currentPath.IsEmpty()) {
+			PRINT(("  * init root path."));
+			currentPath = "/0";
+		}
+
+		BString openPath;
+		relationConf->FindString(SENSEI_PATH, &openPath);
+
+		PRINT(("  > check if path is the one to open: %s (current) <-> %s (selected)\n",
+				currentPath.String(), openPath.String() ));
+
+		if (currentPath == openPath) {
+			// update open ref so caller knows what directory the user expects to enter
+			*openDirRef = *workingDirRef;
+		}
+		// done, don't confuse later processing as it's just an internal property
+		relations->RemoveName(SENSEI_PATH);
+	}
+
+	PRINT(("processing relation dir '%s'...\n", relationDirPath.Path() ));
 
 	// all relations of a particular target (possibly nested)
 	BMessage targetRelations;
@@ -719,7 +736,7 @@ status_t TTracker::WriteTargetRelations(
 		char* targetId;
 		int32 countRelations;	// there can be multiple relations for the same target
 
-		status_t result = relations->GetInfo(B_MESSAGE_TYPE, targetIndex, &targetId, NULL, &countRelations);
+		result = relations->GetInfo(B_MESSAGE_TYPE, targetIndex, &targetId, NULL, &countRelations);
 		if (result == B_OK) {
 			result = idToRefMap->FindRef(targetId, &ref);
 		} else {
@@ -732,7 +749,7 @@ status_t TTracker::WriteTargetRelations(
 			continue;	// better luck next time?
 		}
 
-		PRINT(("creating relation files for source '%s' with targetId %s and %d relations...\n",
+		PRINT(("\n*** creating relation files for source '%s' with targetId %s and %d relations...\n",
 				ref.name, targetId, countRelations));
 
 		// get properties for individual relation to the loop's targetId
@@ -743,8 +760,8 @@ status_t TTracker::WriteTargetRelations(
 
 		// create individual relation targets for each relation of the current target
         for (int32 relationIndex = 0; relationIndex < countRelations; relationIndex++) {
-
 			result = relations->FindMessage(targetId, relationIndex, &properties);
+
 			if (result != B_OK) {
 				PRINT(("  > could not get relation properties for target %s at %d: %s\n",
 					targetId, relationIndex, strerror(result) ));
@@ -769,58 +786,60 @@ status_t TTracker::WriteTargetRelations(
 			mode_t readWriteMode = (isDynamic ? 0555 : 0777);
 
 			// create file or dir with appropriate permissions
-			BDirectory relationDir(relationDirRef);
-
 			if (createDirectory) {
-				BDirectory subRelationDir;
-				BString subDirName(fileName);
-
+				BString subDirLoc(relationDirPath.Path());
+				BString subDirName(fileName);    // must already be unique from indexing above, using as folder name only
 				subDirName << " Relations";
-				if (relationIndex > 0) {
-					// human readable 1-based index, following the first relation #0 (without index)
-					subDirName << " #" << relationIndex + 1;
+
+				// add optional custom path fragment if there (for more structure e.g. with nested / self relations)
+				if (! currentPath.IsEmpty()) {
+					subDirLoc << currentPath.String();	// always leading '/' but no trailing '/'
+				} else {
+					// if not, just use relation file name from above as dir name
+					subDirLoc << subDirName.String();
 				}
 
-				result = relationDir.CreateDirectory(subDirName.String(), &subRelationDir);
+				result = create_directory(subDirLoc.String(), readWriteMode);
 				if (result != B_OK) {
-					PRINT(("  > error creating relation subdir '%s': %s\n", subDirName.String(), strerror(result) ));
+					PRINT(("  > error creating relation subdir '%s'': %s\n",
+							subDirLoc.String(), strerror(result) ));
 					return result;
 				}
 
 				// recurse to create complete relation structure for dynamic relations
 				if (isDynamic) {
 					entry_ref subDirRef;
-					BEntry subDirEntry;
-
-					subRelationDir.GetEntry(&subDirEntry);
+					BEntry subDirEntry(subDirLoc.String());
 					subDirEntry.GetRef(&subDirRef);
 
 					result = subDirEntry.InitCheck();
 					if (result == B_OK) {
-						// TODO: add support for ordered (array) and unordered (Message-property bags) here!
 						BMessage nestedRelations;
-						BMessage nestedProperties;
-
-						result = properties.FindMessage(SEN_RELATIONS, &nestedProperties);
+						result = properties.FindMessage(SEN_RELATIONS, &nestedRelations);
 
 						if (result == B_OK && ! nestedRelations.IsEmpty()) {
-							nestedRelations.AddMessage(targetId, &nestedProperties);
 							PRINT(("  >> entering relation subdir %s...\n", subDirRef.name));
 
-							result = WriteTargetRelations(&nestedRelations, idToRefMap, relationConf, &subDirRef);
+							// process nested relations in new subdir
+							result = WriteTargetRelations(&nestedRelations, idToRefMap,
+                                                           relationConf, &subDirRef, openDirRef);
 							PRINT(("  << leaving relation subdir %s...\n", subDirRef.name));
 						}
 					}
 					if (result != B_OK) {
 						PRINT(("  > error writing to relation subdir '%s': %s\n",
-								subDirName.String(), strerror(result) ));
+								subDirLoc.String(), strerror(result) ));
 						return result;
 					}
 				}
-				relationNode.SetTo(&subRelationDir, subDirName.String());
+
+				relationNode.SetTo(subDirLoc.String());
+
 			} else {
 				BFile relationTarget(&relationDir, fileName.String(), readWriteMode | B_CREATE_FILE);
 				relationNode.SetTo(&relationDir, fileName.String());
+
+				PRINT(("writing to relation file %s...\n", fileName.String() ));
 			}
 
 			result = relationNode.InitCheck();
@@ -920,16 +939,18 @@ TTracker::CreateRelationDirectory(
 	const entry_ref* srcRef,
 	const char* relationType,
 	const BMessage* relationConfig,
-	const char* customPathFragment,
 	entry_ref* relationDirRef)
 {
 	const char* relationName = relationConfig->GetString(SEN_RELATION_NAME, relationType);	// fall back
 	const char* relationLabel = relationConfig->GetString(SEN_RELATION_LABEL, relationName);
 
+	PRINT(("creating relation dir for relation '%s' with label '%s'...\n", relationName, relationLabel));
+
 	status_t result;
 	BPath relationsDirPath;
 
-	if ((result = find_directory(B_SYSTEM_TEMP_DIRECTORY, &relationsDirPath)) != B_OK) {
+	result = find_directory(B_SYSTEM_TEMP_DIRECTORY, &relationsDirPath);
+	if (result != B_OK) {
 		PRINT(("could not find temp directory: %s\n", strerror(result) ));
 		return result;
 	}
@@ -943,15 +964,17 @@ TTracker::CreateRelationDirectory(
 		return result;
 	}
 
-	BString relationDirName(relationsDirPath.Path());
-	relationDirName << "/sen/" << srcId << "/relations/" << relationName;
+	result = relationsDirPath.Append("sen");
+	relationsDirPath.Append(srcId.String());
+	relationsDirPath.Append("relations");
+	relationsDirPath.Append(relationName);
 
-	// add optional custom partial path if needed (for more structure e.g. with nested / self relations)
-	relationDirName << customPathFragment;
+	PRINT(("creating relation temp dir at: %s\n", relationsDirPath.Path() ));
 
 	// FIXME: remove old relation dir contents (only current relation dir)
-	if ((result = create_directory(relationDirName, B_READ_WRITE) != B_OK)) {
-		PRINT(("failed to create temp dir at %s: %s\n", relationDirName.String(), strerror(result) ));
+	result = create_directory(relationsDirPath.Path(), B_READ_WRITE);
+	if (result != B_OK) {
+		PRINT(("failed to create temp relations dir at %s: %s\n", relationsDirPath.Path(), strerror(result) ));
 		return result;
 	}
 
@@ -959,7 +982,7 @@ TTracker::CreateRelationDirectory(
 	// see PoseView::SaveState() and ViewState::ArchiveToStream()
 	// better yet, do this in BPoseView::SetupDefaultColumnsIfNeeded()
 
-	BDirectory relationDir(relationDirName.String());
+	BDirectory relationDir(relationsDirPath.Path());
 	BEntry relationDirEntry;
 	relationDir.GetEntry(&relationDirEntry);
 
@@ -983,6 +1006,9 @@ TTracker::CreateRelationDirectory(
 		// TODO: also attach relation message for self relations
 		if (result == B_OK) result = relationNode.WriteAttrString(META_FOLDER_NAME, &folderLabel);
 	}
+
+	// return ref
+	relationDirEntry.GetRef(relationDirRef);
 
 	return result;
 }
@@ -1029,6 +1055,7 @@ status_t TTracker::ConvertSelfRelationsToCommon(
 		PRINT(("round %d for %d items and %d properties...\n", propertyIndex, itemCount, propCount));
 
 		for (int32 itemIndex = 0; itemIndex < itemCount; itemIndex++) {
+
 			// get value for each property at the current itemIndex
 			result = relations->GetInfo(B_ANY_TYPE, itemIndex, &name, &typeCode, NULL);
 			if (result != B_OK) {
@@ -1050,12 +1077,22 @@ status_t TTracker::ConvertSelfRelationsToCommon(
 						continue;
 					}
 				}
+
 				if (childMsg.IsEmpty()) {
 					PRINT(("  > skipping empty placeholder child item for property '%s' for item #%d.\n",
 							name, itemIndex));
 					continue;
 				}
+
 				PRINT(("  > mapping nested item %s @[%d]...\n", name, itemIndex ));
+
+                // build outline in recursion (has to match algo in OpenRelationTargetsMenu!)
+                BString path;
+
+                // get any existing path (possibly inherited from parent)
+                path << relations->GetString(SENSEI_PATH, "") << "/" << propertyIndex;
+
+                childMsg.AddString(SENSEI_PATH, path);
 
 				// recursively convert child message so we can later create the entire structure from the root node
 				result = ConvertSelfRelationsToCommon(targetId, &childMsg, typeMapping, attrMapping);
@@ -1066,9 +1103,15 @@ status_t TTracker::ConvertSelfRelationsToCommon(
 				}
 
 				PRINT(("  < DONE mapping nested item %s @[%d]...\n", name, itemIndex ));
-				itemProperties.AddMessage(targetId, &childMsg);
 
-			} else {	// map flat properties
+				itemProperties.AddMessage(SEN_RELATIONS, &childMsg);
+
+			} else {    // map flat properties
+                // special handling for outline, just handed through until processed in ITEM above (don't remove below)
+                if (strncmp(name, SENSEI_PATH, strlen(SENSEI_PATH)) == 0) {
+                    continue;
+				}
+
 				result = relations->FindData(name, typeCode, propertyIndex, &value, &valueSize);
 				if (result == B_OK) {
 					// map property name to common attribute name as per attribute map
@@ -1116,8 +1159,6 @@ status_t TTracker::ConvertSelfRelationsToCommon(
 status_t TTracker::ConvertAttributesToMessage(const entry_ref* ref, BMessage* params)
 {
 	status_t result;
-
-	PRINT(("ConvertAttr2Msg: converting attributes of file %s...\n", ref->name));
 
 	BNode node(ref);
 	BPath path(ref);

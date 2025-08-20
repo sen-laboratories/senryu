@@ -1,3 +1,8 @@
+/**
+ * @author Gregor Rosenauer <gregor.rosenauer@gmail.com>
+ * All Rights Reserved.
+ * Distributed under the terms of the MIT License.
+*/
 #define DEBUG 1
 
 #include "ContainerWindow.h"
@@ -461,6 +466,14 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 		return result;
 	}
 
+	// get path (null if this is the root node of self relations)
+	BString itemPath;
+	result = fRelationTargetsReply->FindString(SENSEI_PATH, &itemPath);
+	if (result == B_NAME_NOT_FOUND) {
+		PRINT(("* SelfRelationsItem: got root path.\n"));
+	}
+	PRINT(("* path is: %s\n", itemPath.String() ));
+
 	// get ref to self from original refs received (source of relation)
 	// Note: we expect only 1 ref for self relations, but let's keep it consistent across all relation types
 	entry_ref ref;
@@ -473,8 +486,9 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 	PRINT(("building self relation target menu items...\n"));
 
 	int32 index = 0;
-	BMessage propertiesMsg;
-	BString label, type, path;
+	BMessage propertiesMsg, newRootItem;
+	// mandatory properties for all items
+	BString label, type;
 
 	while ((result = GetItemMessageInfo(&itemMsg, &childMsg, &propertiesMsg, index) == B_OK)) {
 		IconMenuItem* item;
@@ -482,11 +496,6 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 		propertiesMsg.FindString(SENSEI_LABEL, &label);
 		// always fall back to default type if needed
 		type = propertiesMsg.GetString(SENSEI_TYPE, fDefaultType.String());
-
-		PRINT(("got properties for item %s [%d]:\n", label.String(), index));
-		#ifdef DEBUG
-			propertiesMsg.PrintToStream();
-		#endif
 
 		// get relation config for type
 		BMessage relationConf;
@@ -518,33 +527,45 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 			// FIXME user AddPointer() to optimize, menus are getting too heavy and slow!
 			openRelationItemMsg.AddMessage(SENSEI_PLUGIN_CONFIG_KEY, &pluginConfig);
 
-			// add all child elements as (self) relations for display in Tracker Relation folder
-			openRelationItemMsg.AddMessage(SEN_RELATIONS, &childMsg);
-
-			// keep track of the relations root for building entire structure (e.g. in folder view)
+			// keep track of the relations root for building entire structure (i.e. in Tracker folder view)
 			BMessage* relationRoot;
+
 			// root is handed through via menu message
 			result = Superitem()->Message()->FindPointer(SEN_RELATION_ROOT, reinterpret_cast<void**>(&relationRoot));
 			if (result == B_OK && relationRoot != NULL) {
 				PRINT(("  * got relation ROOT, handing down.\n"));
-				openRelationItemMsg.AddPointer(SEN_RELATION_ROOT, &relationRoot);
+				openRelationItemMsg.AddPointer(SEN_RELATION_ROOT, relationRoot);
 			}
 			else {
 				PRINT(("  * SET relation ROOT.\n"));
-				result = openRelationItemMsg.AddPointer(SEN_RELATION_ROOT, reinterpret_cast<void*>(fRelationTargetsReply));
+				openRelationItemMsg.AddPointer(SEN_RELATION_ROOT, reinterpret_cast<void*>(fRelationTargetsReply));
 
-				if (result != B_OK) {
-					PRINT(("    > WARN: error  adding pointer to relation ROOT: %s\n", strerror(result) ));
-				}
+				// save for later below
+				relationRoot = fRelationTargetsReply;
 			}
+
+			// extend item path to new sub level
+			itemPath << "/" << index;
+			// add to invocation message so we can find out which item level was selected
+			openRelationItemMsg.AddString(SENSEI_PATH, itemPath);
+
+			// incrementally update root result with enriched properties and child root from GetItemMessageInfo
+			propertiesMsg.AddMessage(SENSEI_ITEM, &childMsg);
+
 			// now adapt childMsg for adding to menu below:
 			// transparently handle just like a normal message result above, but for the subtree
+			// so the submenu will have a SEN:relations and SENSEI_ITEM from the childMsg subtree
 			childMsg.what = SENSEI_MESSAGE_RESULT;
 			childMsg.AddRef(SEN_RELATION_SOURCE_REF, &ref);
 			childMsg.AddString(SEN_RELATION_TYPE, type);
+			childMsg.AddPointer(SEN_RELATION_ROOT, reinterpret_cast<void*>(relationRoot));
+			// also add item path here so it is propagated to sublevels
+			childMsg.AddString(SENSEI_PATH, itemPath);
+
 			childMsg.AddMessage(SENSEI_PLUGIN_CONFIG_KEY, &pluginConfig);
 			// FIXME user AddPointer() to optimize, menus are getting too heavy and slow!
 			childMsg.AddMessage(SEN_RELATION_CONFIG, &relationConfigs);	// we need all configs here to select in subtree
+			//childMsg.AddMessage(SEN_RELATION_PROPERTIES, &propertiesMsg);
 
 			item = new IconMenuItem(
 				new OpenRelationTargetsMenu(label.String(), new BMessage(childMsg), fParentWindow, be_app_messenger),
@@ -554,13 +575,22 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 
 			childMsg.MakeEmpty();
 		}
+
+		// incrementally build new updated root item for self relation result
+		newRootItem.Append(propertiesMsg);
+
 		item->SetTarget(be_app_messenger);
 		AddItem(item);
 
 		propertiesMsg.MakeEmpty();
 		index++;
 		(*targetCount)++;
-	}
+	}	// while
+
+	// replace old relation tree with enriched one
+	fRelationTargetsReply->RemoveName(SENSEI_ITEM);
+	fRelationTargetsReply->AddMessage(SENSEI_ITEM, &newRootItem);
+
 	return B_OK;
 }
 
@@ -581,6 +611,7 @@ status_t OpenRelationTargetsMenu::GetItemMessageInfo(
 		PRINT(("failed to get item label [%d]: %s\n", index, strerror(result) ));
 		return result;
 	}
+
 	// add to result
 	properties->AddString(SENSEI_LABEL, label);
 
@@ -609,26 +640,19 @@ status_t OpenRelationTargetsMenu::GetItemMessageInfo(
 		}
 	}
 
-	// keep track of structure outline (item path) so caller can retrieve a tree/xpath like outline if needed.
-	BString path;
-	// get any existing path (possibly inherited from parent)
-	path << itemMsg->GetString(SENSEI_PATH, "") << "/" << index;
-
 	// get optional child node message (empty or another node)
 	BMessage subItemMsg;
 	result = itemMsg->FindMessage(SENSEI_ITEM, index, &subItemMsg);
-	bool addOutline = (result == B_OK);
 
 	if (result != B_OK) {
 		if (result != B_NAME_NOT_FOUND) {
 			PRINT(("error looking for child node in message: %s\n", strerror(result)));
+			return result;
 		}
 	} else {
-		if (! subItemMsg.IsEmpty()) {
-			// add only path as property to subitem
-			subItemMsg.AddString(SENSEI_PATH, path);
 
-			// add item properties to child node
+		if (! subItemMsg.IsEmpty()) {
+			// add item to child node
 			childMsg->AddMessage(SENSEI_ITEM, &subItemMsg);
 		}
 	}
@@ -641,17 +665,12 @@ status_t OpenRelationTargetsMenu::GetItemMessageInfo(
 
 	result = B_OK;	// could be B_NAME_NOT_FOUND from above!
 
-	// set up once and check repeatedly below, internal properties
+	// set up once and check repeatedly below, internal properties (except for path, we want that)
 	BStringList senseiProps;
 	senseiProps.Add(SENSEI_ITEM);
 	senseiProps.Add(SENSEI_LABEL);
 	senseiProps.Add(SENSEI_PATH);
 	senseiProps.Add(SENSEI_TYPE);
-
-	// if there are sub items, always add (empty) _path to keep structure consistent
-	if (addOutline) {
-		properties->AddString(SENSEI_PATH, path);
-	}
 
 	for (int32 itemIndex = 0; result == B_OK; itemIndex++) {
 		result = itemMsg->GetInfo(B_ANY_TYPE, itemIndex, &name,	&typeCode, &count);
@@ -664,28 +683,30 @@ status_t OpenRelationTargetsMenu::GetItemMessageInfo(
 		}
 
 		// omit already parsed or non-property fields including item child nodes
-		if (! senseiProps.HasString(BString(name), true) ) {
-			PRINT(("properties at index %d with name %s and count %d:\n", index, name, count));
+		if (senseiProps.HasString(BString(name), true) ) {
+			continue;
+		}
 
-			if (index > count - 1) {
-				PRINT(("got only %d '%s' items but expected #%d\n", count, name, index));
-				break;
-			}
+		PRINT(("properties at index %d with name %s and count %d:\n", index, name, count));
 
-			// add remaining property fields
-			const void* data;
-			ssize_t size;
+		if (index > count - 1) {
+			PRINT(("got only %d '%s' items but expected #%d\n", count, name, index));
+			break;
+		}
 
-			if ((result = itemMsg->FindData(name, typeCode, index, &data, &size))!= B_OK) {
-				PRINT(("failed to get message data '%s' for item %s[%d]: %s\n",
-						name, label.String(), index, strerror(result)));
-				return result;
-			}
-			if ((result = properties->AddData(name, typeCode, data, size)) != B_OK) {
-				PRINT(("failed to add message prroperty '%s' to item %s[%d]: %s\n",
-						name, label.String(), index, strerror(result)));
-				return result;
-			}
+		// add remaining property fields
+		const void* data;
+		ssize_t size;
+
+		if ((result = itemMsg->FindData(name, typeCode, index, &data, &size))!= B_OK) {
+			PRINT(("failed to get message data '%s' for item %s[%d]: %s\n",
+					name, label.String(), index, strerror(result)));
+			return result;
+		}
+		if ((result = properties->AddData(name, typeCode, data, size)) != B_OK) {
+			PRINT(("failed to add message prroperty '%s' to item %s[%d]: %s\n",
+					name, label.String(), index, strerror(result)));
+			return result;
 		}
 	}
 

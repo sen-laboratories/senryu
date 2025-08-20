@@ -175,12 +175,11 @@ protected:
 	status_t PrepareLaunchTarget(const entry_ref* srcRef, const char* targetId, entry_ref* targetRef, BMessage* params);
 	status_t PrepareRelationFolder(BMessage *message, entry_ref *relationDIr);
 	status_t PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDir);
-	status_t WriteTargetRelations(BMessage *message, BMessage *idToRefMap,
-	                              BMessage* relationConf, entry_ref *relationDirRef);
+	status_t WriteTargetRelations(BMessage *message, BMessage *idToRefMap, BMessage* relationConf,
+	                              entry_ref *relationDirRef, entry_ref *openDirRef);
 	status_t CreateRelationDirectory(const entry_ref* srcRef,
 	                                 const char* relationType,
 	                                 const BMessage* relationConfig,
-	                                 const char* customPathFragment,
 									 entry_ref *ref);
 	status_t ConvertAttributesToMessage(const entry_ref* ref, BMessage* params);
 	status_t GetRelationAttributeInfo(const char* relationType, BMessage* attrInfo);
