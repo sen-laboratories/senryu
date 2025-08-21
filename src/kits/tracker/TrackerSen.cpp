@@ -663,6 +663,9 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 		return result;
 	}
 
+	PRINT(("finished preparing relation targets folder (struct) with starting path '%s'.\n",
+		BPath(relationDirRef).Path() ));
+
 	return result;
 }
 
@@ -700,14 +703,16 @@ status_t TTracker::WriteTargetRelations(
 		return result;
 	}
 
+	PRINT(("* working dir is now: %s...\n", relationDirPath.Path() ));
+
 	// for dynamic relations, check if current working dir is the selected target we want to open later
 	BString currentPath;
 
 	if (isDynamic) {
 		relations->FindString(SENSEI_PATH, &currentPath);
 		if (currentPath.IsEmpty()) {
-			PRINT(("  * init root path."));
 			currentPath = "/0";
+			PRINT(("  * path is ROOT: %s\n", currentPath.String() ));
 		}
 
 		BString openPath;
@@ -717,10 +722,11 @@ status_t TTracker::WriteTargetRelations(
 				currentPath.String(), openPath.String() ));
 
 		if (currentPath == openPath) {
+			PRINT(("  ! found user selected relations path %s: %s\n", currentPath.String(), relationDirPath.Path() ));
 			// update open ref so caller knows what directory the user expects to enter
 			*openDirRef = *workingDirRef;
 		}
-		// done, don't confuse later processing as it's just an internal property
+		// done for this dir, don't process further as it's just an internal property
 		relations->RemoveName(SENSEI_PATH);
 	}
 
@@ -757,6 +763,7 @@ status_t TTracker::WriteTargetRelations(
 		BNode	  relationNode;
 		BNodeInfo relationNodeInfo;
         BMessage  properties;
+		BString   fileName;
 
 		// create individual relation targets for each relation of the current target
         for (int32 relationIndex = 0; relationIndex < countRelations; relationIndex++) {
@@ -771,11 +778,15 @@ status_t TTracker::WriteTargetRelations(
 			// used for self (and later also n-ary) relations
 			bool createDirectory = properties.HasMessage(SEN_RELATIONS);
 
-			// use relation's short name as file name
-			BString fileName(shortName);
+			// determine useful file name for relation
+			// best fit: label, fallback: relation's shortname
+			fileName = properties.GetString(SEN_RELATION_LABEL_ATTR, shortName);
 
-			// number file names, they are not really important since we prefer the label anyway
-			if (relationIndex > 0) {
+			// file/dir name must be valid
+			fileName.ReplaceAll('/', '\\');
+
+			// ensure file/dir name is unique
+			if (BEntry(&relationDir, fileName.String()).Exists()) {
 				// human readable 1-based index, following the first relation #0 (without index)
 				fileName << " #" << relationIndex + 1;
 			}
@@ -787,29 +798,39 @@ status_t TTracker::WriteTargetRelations(
 
 			// create file or dir with appropriate permissions
 			if (createDirectory) {
-				BString subDirLoc(relationDirPath.Path());
-				BString subDirName(fileName);    // must already be unique from indexing above, using as folder name only
-				subDirName << " Relations";
+				BPath subDirLoc;
+				BDirectory subDir;
 
-				// add optional custom path fragment if there (for more structure e.g. with nested / self relations)
-				if (! currentPath.IsEmpty()) {
-					subDirLoc << currentPath.String();	// always leading '/' but no trailing '/'
-				} else {
-					// if not, just use relation file name from above as dir name
-					subDirLoc << subDirName.String();
-				}
+				result = relationDir.CreateDirectory(fileName, &subDir);
 
-				result = create_directory(subDirLoc.String(), readWriteMode);
 				if (result != B_OK) {
 					PRINT(("  > error creating relation subdir '%s'': %s\n",
-							subDirLoc.String(), strerror(result) ));
+							fileName.String(), strerror(result) ));
 					return result;
+				}
+
+				entry_ref subDirRef;
+				BEntry subDirEntry(&subDir, "");
+				subDirEntry.GetPath(&subDirLoc);
+				relationNode.SetTo(subDirLoc.Path());
+
+				// write relation dir icon if available
+				void*  iconBuf;
+				size_t iconSize;
+
+				result = GetSenIcon(relationType, SEN_RELATION_FOLDER_ICON, &iconBuf, &iconSize);
+				if (result == B_OK) {
+					ssize_t sizeWritten = relationNode.WriteAttr("BEOS:ICON", B_VECTOR_ICON_TYPE, 0, iconBuf, iconSize);
+					if (sizeWritten < 0) {	// can be interpreted as an error code
+						PRINT(("  x error writing folder icon %s to %s: %s\n",
+								SEN_RELATION_FOLDER_ICON, fileName.String(), strerror(sizeWritten) ));
+						// keep on going, not tragic
+					}
 				}
 
 				// recurse to create complete relation structure for dynamic relations
 				if (isDynamic) {
 					entry_ref subDirRef;
-					BEntry subDirEntry(subDirLoc.String());
 					subDirEntry.GetRef(&subDirRef);
 
 					result = subDirEntry.InitCheck();
@@ -828,13 +849,10 @@ status_t TTracker::WriteTargetRelations(
 					}
 					if (result != B_OK) {
 						PRINT(("  > error writing to relation subdir '%s': %s\n",
-								subDirLoc.String(), strerror(result) ));
+								subDirLoc.Path(), strerror(result) ));
 						return result;
 					}
 				}
-
-				relationNode.SetTo(subDirLoc.String());
-
 			} else {
 				BFile relationTarget(&relationDir, fileName.String(), readWriteMode | B_CREATE_FILE);
 				relationNode.SetTo(&relationDir, fileName.String());
@@ -844,7 +862,7 @@ status_t TTracker::WriteTargetRelations(
 
 			result = relationNode.InitCheck();
 			if (result != B_OK) {
-				PRINT(("  > error creating relation target file '%s': %s\n", fileName.String(), strerror(result) ));
+				PRINT(("  > error creating relation target file/dir '%s': %s\n", fileName.String(), strerror(result) ));
 				return result;
 			}
 
@@ -1225,6 +1243,69 @@ status_t TTracker::GetFolderIdFromInode(const entry_ref* srcRef, BString* folder
 		PRINT(("WARNING: could not get inode for srcRef %s: %s\n", srcRef->name, strerror(result) ));
 		// fall back
 		*folderId << srcRef->device << "_" << srcRef->directory << "_" << srcRef->name;
+	}
+
+	return result;
+}
+
+
+// todo: move to library or SEN core later
+status_t TTracker::GetSenIcon(const char* mimeType, const char* iconType, void** iconBuffer, size_t* iconSize) {
+	status_t result;
+
+	// check for supported icon types
+	BString type(iconType);
+	if (type != SEN_RELATION_FOLDER_ICON && type != "META:ICON") {
+		return B_BAD_VALUE;
+	}
+
+	BPath path;
+	result = find_directory(B_USER_SETTINGS_DIRECTORY, &path);
+	if (result != B_OK) {
+		fprintf(stderr, "could not find user settings directory: %s\n", strerror(result));
+		return result;
+	}
+
+	path.Append("mime_db");
+
+	BDirectory mimeDir(path.Path());
+	BEntry mimeEntry(&mimeDir, mimeType);
+
+	result = mimeEntry.InitCheck();
+	if (result != B_OK) {
+		if (! mimeEntry.Exists()) {
+			fprintf(stderr, "could not find MIME type %s in MIME DB fs: %s\n", mimeType, strerror(result));
+		} else {
+			fprintf(stderr, "error accessing MIME type %s in MIME DB fs: %s\n", mimeType, strerror(result));
+		}
+		return result;
+	}
+
+	// write config to MIME type file directly
+	BNode mimeNode(&mimeEntry);
+	if (mimeNode.InitCheck() != B_OK) {
+		fprintf(stderr, "error accessing MIME DB file %s: %s\n", mimeType, strerror(result));
+		return result;
+	}
+
+	// get size for icon attribute
+	attr_info attrInfo;
+	result = mimeNode.GetAttrInfo(iconType, &attrInfo);
+	if (result != B_OK) {
+		PRINT(("  x failed to get attr_info for icon attribute %s: %s\n", iconType, strerror(result) ));
+		return result;
+	}
+
+	*iconBuffer = new char[attrInfo.size];
+	*iconSize   = attrInfo.size;
+
+	ssize_t sizeRead = mimeNode.ReadAttr(SEN_RELATION_FOLDER_ICON, B_VECTOR_ICON_TYPE, 0, *iconBuffer, *iconSize);
+	if (sizeRead < 0) {
+		result = sizeRead;	// can be interpreted as error code
+
+		fprintf(stderr, "error reading %s icon from MIME DB type %s: %s\n",
+				iconType, mimeType, strerror(result));
+		return result;
 	}
 
 	return result;

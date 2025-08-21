@@ -166,6 +166,7 @@ protected:
 	// SEN integration
 	bool HandleSenMessage(BMessage*);
 	bool ResolveRelation(const entry_ref*, BString*, BString*);
+	status_t GetSenIcon(const char* mimeType, const char* iconType, void** icon, size_t* iconSize);
 	status_t GetFolderIdFromInode(const entry_ref* srcRef, BString* folderId);
 	status_t ConvertSelfRelationsToCommon(const char* targetId, BMessage* relations,
 	                                      BMessage* typeMapping, BMessage* attrMapping);
