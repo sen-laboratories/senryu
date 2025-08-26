@@ -168,8 +168,9 @@ protected:
 	bool ResolveRelation(const entry_ref*, BString*, BString*);
 	status_t GetSenIcon(const char* mimeType, const char* iconType, void** icon, size_t* iconSize);
 	status_t GetFolderIdFromInode(const entry_ref* srcRef, BString* folderId);
-	status_t ConvertSelfRelationsToCommon(const char* targetId, BMessage* relations,
-	                                      BMessage* typeMapping, BMessage* attrMapping);
+	status_t ConvertSelfRelationsToCommon(const char* targetId, const BMessage* relationsFlat,
+	                                      const BMessage* typeMapping, const BMessage* attrMapping,
+										  BMessage* relationsNested);
 
 	status_t CreateNewAssociationEntity(const char* associationEntityType, entry_ref* targetRef);
 	status_t EditNewEntity(const entry_ref* ref);
