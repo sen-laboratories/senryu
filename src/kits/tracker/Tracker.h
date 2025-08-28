@@ -167,7 +167,7 @@ protected:
 	bool HandleSenMessage(BMessage*);
 	bool ResolveRelation(const entry_ref*, BString*, BString*);
 	status_t GetSenIcon(const char* mimeType, const char* iconType, void** icon, size_t* iconSize);
-	status_t GetFolderIdFromInode(const entry_ref* srcRef, BString* folderId);
+	status_t GetInodeForRef(const entry_ref* srcRef, BString* inode);
 	status_t ConvertSelfRelationsToCommon(const char* targetId, const BMessage* relationsFlat,
 	                                      const BMessage* typeMapping, const BMessage* attrMapping,
 										  BMessage* relationsNested);
@@ -177,9 +177,9 @@ protected:
 	status_t PrepareLaunchTarget(const entry_ref* srcRef, const char* targetId, entry_ref* targetRef, BMessage* params);
 	status_t PrepareRelationFolder(BMessage *message, entry_ref *relationDIr);
 	status_t PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDir);
-	status_t WriteTargetRelations(BMessage *message, BMessage *idToRefMap, BMessage* relationConf,
+	status_t WriteTargetRelations(BMessage *message, BMessage* relationConf,
 	                              entry_ref *relationDirRef, entry_ref *openDirRef);
-	status_t CreateRelationDirectory(const entry_ref* srcRef,
+	status_t CreateRelationDirectory(const char* folderId,
 	                                 const char* relationType,
 	                                 const BMessage* relationConfig,
 									 entry_ref *ref);

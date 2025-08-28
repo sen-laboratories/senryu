@@ -77,11 +77,9 @@ TTracker::HandleSenMessage(BMessage* message)
 
 			BMessage argsMsg;
 
-			// get relation config - TODO: move to func
-			BMessage relationConfigs, relationConf;
-			result = message->FindMessage(SEN_RELATION_CONFIG, &relationConfigs);
-			if (result == B_OK)
-				result = relationConfigs.FindMessage(relationType.String(), &relationConf);
+			// get relation config
+			BMessage relationConf;
+			result = message->FindMessage(relationType.String(), &relationConf);
 
 			if (result != B_OK) {
 				PRINT(("could not get relation config for type %s: %s\n", relationType.String(), strerror(result) ));
@@ -486,6 +484,15 @@ TTracker::PrepareRelationFolder(BMessage *message, entry_ref* relationDirRef)
 	// create SEN relation folders of relation type, relations are expected to be unique here
 	BMessage relationConf;
 
+	// generate unique relation folder name
+	// we can safely take the inode as folderId here since it's volume-bound anyway (e.g. to /tmp)
+	BString srcId;
+	result = GetInodeForRef(&srcRef, &srcId);
+	if (result != B_OK) {
+		PRINT(("failed to create relation folder: %s\n", strerror(result) ));
+		return result;
+	}
+
 	for (int rel = 0; rel < countRelations; rel++) {
 		const char* relationType = relations.StringAt(rel).String();
 
@@ -495,7 +502,7 @@ TTracker::PrepareRelationFolder(BMessage *message, entry_ref* relationDirRef)
 			PRINT(("could not find relation config for type %s, skipping.\n", relationType));
 			continue;
 		}
-		result = CreateRelationDirectory(&srcRef, relationType, &relationConf, relationDirRef);
+		result = CreateRelationDirectory(srcId.String(), relationType, &relationConf, relationDirRef);
 		if ((result != B_OK)) {
 			PRINT(("could not create directory for relation %s: %s\n", relationType, strerror(result)));
 			return result;
@@ -553,16 +560,22 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 		isSelf ? "reflexive" : "normal",
 		isDynamic ? "dynamic": "static"));
 
-	// get SEN:ID of source for normal relations, or just a dummy SELF_ID for self relations
+	// get SEN:ID of source for normal relations, or the inode for self relations
 	BString srcId;
+	srcId = message->GetString(SEN_RELATION_SOURCE_ID);
 
-	if (isSelf) {
-		srcId = SEN_ID_SELF;
-	} else {
-		srcId = message->GetString(SEN_RELATION_SOURCE_ID);
-		if (srcId == NULL) {
-			PRINT(("could not get relation srcId for type %s\n", relationType ));
-			return B_BAD_DATA;
+	if (srcId == NULL) {	// e.g. for self relations
+		result = GetInodeForRef(&srcRef, &srcId);
+		if (result != B_OK) {
+			PRINT(("failed to create relation folder: %s\n", strerror(result) ));
+			return result;
+		}
+
+		// save ref along with relation files later, since we have no way to lookup the source by inode alone
+		relationConf.AddRef(SEN_RELATION_SOURCE_REF, &srcRef);
+
+		if (isSelf) {	// add source as target ref, too, as they are the same
+			relationConf.AddRef(SEN_RELATION_TARGET_REF, &srcRef);
 		}
 	}
 	// add to config for proccessing
@@ -637,28 +650,15 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 		PRINT(("got relations for type %s for source %s:\n", relationType, srcRef.name) );
 	}
 
-	// get ID lookup map
-	BMessage idToRefMap;
-	result = message->FindMessage(SEN_ID_TO_REF_MAP, &idToRefMap);
-
-	if (! isSelf) {
-		if (result != B_OK) {
-			ERROR("could not get ref mapping for source %s: %s\n", srcRef.name, strerror(result));
-			return result;
-		}
-	} else {
-		idToRefMap.AddRef(SEN_ID_SELF, &srcRef);
-	}
-
 	// create top-level relation dir for src relation
-	result = CreateRelationDirectory(&srcRef, relationType, &relationConf, relationDirRef);
+	result = CreateRelationDirectory(srcId.String(), relationType, &relationConf, relationDirRef);
 	if ((result != B_OK)) {
 		PRINT(("could not create relation target folder: %s\n", strerror(result)));
 		return result;
 	}
 
 	// reusable optionally recursive part
-	result = WriteTargetRelations(&relations, &idToRefMap, &relationConf, NULL, relationDirRef);
+	result = WriteTargetRelations(&relations, &relationConf, NULL, relationDirRef);
 	if (result != B_OK) {
 		PRINT(("could not write relation targets to folder %s: %s\n", relationDirRef->name, strerror(result) ));
 		return result;
@@ -672,7 +672,6 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 
 status_t TTracker::WriteTargetRelations(
 	BMessage  *relations,
-	BMessage  *idToRefMap,
 	BMessage  *relationConf,
 	entry_ref *workingDirRef,
 	entry_ref *openDirRef)
@@ -690,7 +689,8 @@ status_t TTracker::WriteTargetRelations(
 	bool isDynamic = relationConf->GetBool(SEN_RELATION_IS_DYNAMIC);
 	const char* srcId = relationConf->GetString(SEN_RELATION_SOURCE_ID);
 	const char* shortName = relationConf->GetString(SEN_RELATION_NAME);
-	const char* relationType = relationConf->GetString(SEN_RELATION_TYPE);
+	// top-level relation type, may vary for individual relations (e.g. self / n-ary relations)
+	const char* relationDefaultType = relationConf->GetString(SEN_RELATION_TYPE);
 
 	BDirectory relationDir(workingDirRef);
 	BPath relationDirPath(workingDirRef);
@@ -739,25 +739,19 @@ status_t TTracker::WriteTargetRelations(
 	// iterate through all target IDs and get relation properties for each, then populate relation targets dir
     // with matching target refs, creating files with relation properties in file attributes.
     for (int32 targetIndex = 0; targetIndex < relations->CountNames(B_MESSAGE_TYPE); targetIndex++) {
-		entry_ref ref;
 		char* targetId;
 		int32 countRelations;	// there can be multiple relations for the same target
 
 		result = relations->GetInfo(B_MESSAGE_TYPE, targetIndex, &targetId, NULL, &countRelations);
-		if (result == B_OK) {
-			result = idToRefMap->FindRef(targetId, &ref);
-		} else {
-			PRINT(("could not get info for target at index %d: %s.\n", targetIndex, strerror(result) ));
-			continue;	// better luck next time?
-		}
+
 		if (result != B_OK) {
 			PRINT(("no valid targetId found / unexpected type for targetId %s at index %d: %s.\n",
 				targetId, targetIndex, strerror(result) ));
 			continue;	// better luck next time?
 		}
 
-		PRINT(("\n*** creating relation files for source '%s' with targetId %s and %d relations...\n",
-				ref.name, targetId, countRelations));
+		PRINT(("\n*** creating relation files for sourceId '%s' with targetId %s and %d relations...\n",
+				srcId, targetId, countRelations));
 
 		// get properties for individual relation to the loop's targetId
 		// Note: there might be more than one relation to the same target with different properties!
@@ -778,6 +772,8 @@ status_t TTracker::WriteTargetRelations(
 
 			// used for self (and later also n-ary) relations
 			bool createDirectory = properties.HasMessage(SEN_RELATIONS);
+
+			const char* relationType = properties.GetString(SEN_RELATION_TYPE, relationDefaultType);
 
 			// determine useful file name for relation
 			// best fit: label, fallback: relation's shortname
@@ -843,8 +839,7 @@ status_t TTracker::WriteTargetRelations(
 							PRINT(("  >> entering relation subdir %s...\n", subDirRef.name));
 
 							// process nested relations in new subdir
-							result = WriteTargetRelations(&nestedRelations, idToRefMap,
-                                                           relationConf, &subDirRef, openDirRef);
+							result = WriteTargetRelations(&nestedRelations, relationConf, &subDirRef, openDirRef);
 							PRINT(("  << leaving relation subdir %s...\n", subDirRef.name));
 						}
 					}
@@ -870,12 +865,39 @@ status_t TTracker::WriteTargetRelations(
 			relationNode.SetPermissions(readWriteMode);
 			BNodeInfo relationNodeInfo(&relationNode);
 
-			// TODO: handle varying types (esp. for self relations with different entity types)
 			result = relationNodeInfo.SetType(relationType);
+
+			// write relation src/target IDs
 			if (result == B_OK) result = relationNode.WriteAttrString(SEN_RELATION_SOURCE_ATTR, new BString(srcId));
 			if (result == B_OK) result = relationNode.WriteAttrString(SEN_RELATION_TARGET_ATTR, new BString(targetId));
+
+			// write refs if any
+			if (result == B_OK) {
+				const void*     buffer;
+				ssize_t   		sizeRead, sizeWritten;
+
+				// we deliberately don't use FindRef since we need the raw buffer and size for writing the attribute below
+				result = relationConf->FindData(SEN_RELATION_SOURCE_REF, B_REF_TYPE, &buffer, &sizeRead);
+				if (result == B_OK) {
+					sizeWritten = relationNode.WriteAttr(SEN_RELATION_SOURCE_REF_ATTR, B_REF_TYPE, 0, buffer, sizeRead);
+					if (sizeWritten <= 0) {
+						result = sizeWritten;
+						ERROR("failed to write relation source ref: %s\n", strerror(result));
+					}
+				}
+				// same for target ref
+				result = relationConf->FindData(SEN_RELATION_TARGET_REF, B_REF_TYPE, &buffer, &sizeRead);
+				if (result == B_OK) {
+					sizeWritten = relationNode.WriteAttr(SEN_RELATION_TARGET_REF_ATTR, B_REF_TYPE, 0, buffer, sizeRead);
+					if (sizeWritten <= 0) {
+						result = sizeWritten;
+						ERROR("failed to write relation target ref: %s\n", strerror(result));
+					}
+				}
+			}
+
 			if (result != B_OK) {
-				ERROR(("  > error writing common relation file attributes: %s"), strerror(result));
+				ERROR("  > error writing common relation file attributes: %s", strerror(result));
 				return result;
 			}
 
@@ -955,7 +977,7 @@ status_t TTracker::GetRelationAttributeInfo(const char* relationType, BMessage* 
 
 status_t
 TTracker::CreateRelationDirectory(
-	const entry_ref* srcRef,
+	const char* folderId,
 	const char* relationType,
 	const BMessage* relationConfig,
 	entry_ref* relationDirRef)
@@ -974,17 +996,8 @@ TTracker::CreateRelationDirectory(
 		return result;
 	}
 
-	// generate unique relation folder name
-	// we can safely take the inode as folderId here since it's volume-bound anyway (e.g. to /tmp)
-	BString srcId;
-	result = GetFolderIdFromInode(srcRef, &srcId);
-	if (result != B_OK) {
-		PRINT(("failed to create relation folder: %s\n", strerror(result) ));
-		return result;
-	}
-
 	result = relationsDirPath.Append("sen");
-	relationsDirPath.Append(srcId.String());
+	relationsDirPath.Append(folderId);
 	relationsDirPath.Append("relations");
 	relationsDirPath.Append(relationName);
 
@@ -1018,10 +1031,11 @@ TTracker::CreateRelationDirectory(
 
 		if (result == B_OK) result = relationNodeInfo.InitCheck();
 		if (result == B_OK) result = relationNodeInfo.SetType(relationType);
+		// mark as relation folder for some special features in Tracker (e.g. add/remove relations)
 		if (result == B_OK) result = relationNode.WriteAttrString("META:TYPE", new BString(SEN_RELATION_FOLDER_TYPE));
 		// add relation properties so we can populate the folder later with proper relation targets
 		// todo: move to SEN:ID for easier uniform handling here?
-		if (result == B_OK) result = relationNode.WriteAttrString(SEN_RELATION_SOURCE_ATTR, &srcId);
+		if (result == B_OK) result = relationNode.WriteAttrString(SEN_RELATION_SOURCE_ATTR, new  BString(folderId));
 		// TODO: also attach relation message for self relations
 		if (result == B_OK) result = relationNode.WriteAttrString(META_FOLDER_NAME, &folderLabel);
 	}
@@ -1106,17 +1120,17 @@ status_t TTracker::ConvertSelfRelationsToCommon(
 
 				PRINT(("  > mapping nested item %s @[%d]...\n", name, itemIndex ));
 
+				// add emtpy nested child node to be filled with result of recursion
+				BMessage nestedProperties;
+
                 // build outline in recursion (has to match algo in OpenRelationTargetsMenu!)
                 BString path;
 
                 // get any existing path (possibly inherited from parent)
-                path << relationsFlat->GetString(SENSEI_PATH, "") << "/" << relationIndex;
+                path << relationsNested->GetString(SENSEI_PATH, "") << "/" << relationIndex;
 
 				// propagate to nested level for extension
-                childMsg.AddString(SENSEI_PATH, path);
-
-				// add emtpy nested child node to be filled with result of recursion
-				BMessage nestedProperties;
+                nestedProperties.ReplaceString(SENSEI_PATH, path);
 
 				// recursively convert child message so we can later create the entire structure from the root node
 				result = ConvertSelfRelationsToCommon(targetId, &childMsg, typeMapping, attrMapping, &nestedProperties);
@@ -1128,12 +1142,13 @@ status_t TTracker::ConvertSelfRelationsToCommon(
 
 				PRINT(("  < DONE mapping nested item %s @[%d]...\n", name, itemIndex ));
 
-				// only item node with children, no other properties
+				// if there is only the item node and no other properties on this level, add nested properties besides
 				if (propCount == 1) {
 					PRINT(("  - ITEM node w/o properties.\n"));
 					relationsNested->Append(nestedProperties);
 					continue;
 				} else {
+					// add a new relations node
 					itemProperties.AddMessage(SEN_RELATIONS, &nestedProperties);
 				}
 			} else {    // map flat properties
@@ -1219,8 +1234,7 @@ status_t TTracker::ConvertAttributesToMessage(const entry_ref* ref, BMessage* pa
 }
 
 
-// get resolved SEN:ID from reply or fall back to inode if it is a self relation
-status_t TTracker::GetFolderIdFromInode(const entry_ref* srcRef, BString* folderId)
+status_t TTracker::GetInodeForRef(const entry_ref* srcRef, BString* inode)
 {
 	// get inode as folder ID instead of SEN:ID, no need to create one for now
 	BEntry srcEntry(srcRef);
@@ -1231,13 +1245,13 @@ status_t TTracker::GetFolderIdFromInode(const entry_ref* srcRef, BString* folder
 		result = srcEntry.GetStat(&srcStat);
 
 		if (result == B_OK) {
-			*folderId << srcStat.st_ino;
+			*inode << srcStat.st_ino;
 		}
 	}
 	if (result != B_OK) {
 		PRINT(("WARNING: could not get inode for srcRef %s: %s\n", srcRef->name, strerror(result) ));
 		// fall back
-		*folderId << srcRef->device << "_" << srcRef->directory << "_" << srcRef->name;
+		*inode << srcRef->device << "_" << srcRef->directory << "_" << srcRef->name;
 	}
 
 	return result;
@@ -1276,7 +1290,7 @@ status_t TTracker::GetSenIcon(const char* mimeType, const char* iconType, void**
 		return result;
 	}
 
-	// write config to MIME type file directly
+	// read icon attribute from MIME type file directly
 	BNode mimeNode(&mimeEntry);
 	if (mimeNode.InitCheck() != B_OK) {
 		fprintf(stderr, "error accessing MIME DB file %s: %s\n", mimeType, strerror(result));
