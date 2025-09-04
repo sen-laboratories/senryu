@@ -4,6 +4,7 @@
  * Distributed under the terms of the MIT License.
 */
 
+#include <filesystem>
 #define DEBUG 1
 
 #include <Debug.h>
@@ -625,29 +626,38 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 			} else {
 				// return an empty property message for the self relation
 				PRINT(("no self relations received.\n"));
-				relations.AddMessage(SEN_ID_SELF, &relationsFlat);
+				relations.AddMessage(srcId.String(), &relationsFlat);
 
 				return B_OK;
 			}
 		}
 
+		PRINT(("\n*** got flat plugin result for self relations:\n\n"));
+		relationsFlat.PrintToStream();
+
 		// get selected item level
-		const char* itemPath = message->GetString(SENSEI_PATH, "");
-		PRINT(("* got item path %s.\n", itemPath));
-		relationConf.AddString(SENSEI_PATH, itemPath);
+		const char* itemId = message->GetString(SEN_RELATION_ITEM_ID, "");
+		if (strlen(itemId) == 0) {
+			PRINT(("x got no item ID from selection, check.\n"));
+		} else {
+			PRINT(("* got item ID %s.\n", itemId));
+		}
+		relationConf.AddString(SEN_RELATION_ITEM_ID, itemId);
 
 		// self relations target points to source
-		result = ConvertSelfRelationsToCommon(srcId.String(), &relationsFlat, &typeMapping, &attrMapping, &relations);
+		result = ConvertSelfRelationsToCommon(srcId.String(), &relationsFlat,
+											  &typeMapping, &attrMapping, &relations);
 		if (result != B_OK) {
 			PRINT(("could not convert from plugin result to self relations: %s\n", strerror(result) ));
 			return result;
 		}
 
-		PRINT(("\n*** successfully converted plugin result to self relations:\n\n"));
+		PRINT(("\n*** successfully converted plugin result to nested self relations:\n\n"));
 		relations.PrintToStream();
+
 	} else {
 		message->FindMessage(SEN_RELATIONS, &relations);
-		PRINT(("got relations for type %s for source %s:\n", relationType, srcRef.name) );
+		PRINT(("got relations for type %s for source %s:\n", relationType, srcRef.name));
 	}
 
 	// create top-level relation dir for src relation
@@ -707,28 +717,23 @@ status_t TTracker::WriteTargetRelations(
 	PRINT(("* working dir is now: %s...\n", relationDirPath.Path() ));
 
 	// for dynamic relations, check if current working dir is the selected target we want to open later
-	BString currentPath;
+	BString itemId, selectedId;
 
 	if (isDynamic) {
-		relations->FindString(SENSEI_PATH, &currentPath);
-		if (currentPath.IsEmpty()) {
-			currentPath = "/0";
-			PRINT(("  * path is ROOT: %s\n", currentPath.String() ));
+		relations->FindString(SENSEI_ITEM_ID, &itemId);
+
+		if (! itemId.IsEmpty()) {
+			relationConf->FindString(SEN_RELATION_ITEM_ID, &selectedId);
+
+			PRINT(("  > check if path is the one to open: %s (current) <-> %s (selected)\n",
+					itemId.String(), selectedId.String() ));
+
+			if (itemId == selectedId) {
+				PRINT(("  * found user selected relations path %s\n", relationDirPath.Path() ));
+				// update open ref so caller knows what directory the user expects to enter
+				*openDirRef = *workingDirRef;
+			}
 		}
-
-		BString openPath;
-		relationConf->FindString(SENSEI_PATH, &openPath);
-
-		PRINT(("  > check if path is the one to open: %s (current) <-> %s (selected)\n",
-				currentPath.String(), openPath.String() ));
-
-		if (currentPath == openPath) {
-			PRINT(("  ! found user selected relations path %s: %s\n", currentPath.String(), relationDirPath.Path() ));
-			// update open ref so caller knows what directory the user expects to enter
-			*openDirRef = *workingDirRef;
-		}
-		// done for this dir, don't process further as it's just an internal property
-		relations->RemoveName(SENSEI_PATH);
 	}
 
 	PRINT(("processing relation dir '%s'...\n", relationDirPath.Path() ));
@@ -758,7 +763,7 @@ status_t TTracker::WriteTargetRelations(
 		BNode	  relationNode;
 		BNodeInfo relationNodeInfo;
         BMessage  properties;
-		BString   fileName;
+		BString   entryName;
 
 		// create individual relation targets for each relation of the current target
         for (int32 relationIndex = 0; relationIndex < countRelations; relationIndex++) {
@@ -771,45 +776,54 @@ status_t TTracker::WriteTargetRelations(
 			}
 
 			// used for self (and later also n-ary) relations
-			bool createDirectory = properties.HasMessage(SEN_RELATIONS);
+			bool hasRelations = properties.HasMessage(SEN_RELATIONS);
 
+			// skip intermediate nodes (only contain sub nodes)
 			const char* relationType = properties.GetString(SEN_RELATION_TYPE, relationDefaultType);
 
 			// determine useful file name for relation
 			// best fit: label, fallback: relation's shortname
-			fileName = properties.GetString(SEN_RELATION_LABEL_ATTR, shortName);
-
-			// file/dir name must be valid
-			fileName.ReplaceAll('/', '\\');
-
-			// ensure file/dir name is unique
-			if (BEntry(&relationDir, fileName.String()).Exists()) {
-				// human readable 1-based index, following the first relation #0 (without index)
-				fileName << " #" << relationIndex + 1;
+			entryName = properties.GetString(SEN_RELATION_LABEL_ATTR);
+			if (entryName == NULL) {
+				PRINT(("  x WARN: expected label not found, falling back to short name.\n"));
+				entryName = shortName;
 			}
 
-			// create a file for each set of properties for all targets
+			// file/dir name must be valid
+			entryName.ReplaceAll('/', '\\');
+
+			// ensure file/dir name is unique
+			if (BEntry(&relationDir, entryName.String()).Exists()) {
+				// human readable 1-based index, following the first relation #0 (without index)
+				entryName << " #" << relationIndex + 1;
+			}
+
 			// since dynamic relations are generated, they cannot be changed
 			// Note: Haiku is single user so perms have to apply to root, too
-			mode_t readWriteMode = (isDynamic ? 0555 : 0777);
+			// TODO: there seems to be a bug in Haiku's storage kit or Tracker bc you can still delete read-only files!
+			mode_t readWriteMode;
+
+			if (hasRelations) {
+				readWriteMode = (isDynamic ? 0555 : 0777);	// ugo=rx if dynamic, else rwx
+			} else {
+				readWriteMode = (isDynamic ? 0444 : 0555);  // ugo=r  if dynamic, else rw
+			}
 
 			// create file or dir with appropriate permissions
-			if (createDirectory) {
+			if (hasRelations) {
 				BPath subDirLoc;
 				BDirectory subDir;
+				BEntry subDirEntry;
+				entry_ref subDirRef;
 
-				result = relationDir.CreateDirectory(fileName, &subDir);
-
+				result = relationDir.CreateDirectory(entryName, &subDir);
 				if (result != B_OK) {
 					PRINT(("  > error creating relation subdir '%s'': %s\n",
-							fileName.String(), strerror(result) ));
+							entryName.String(), strerror(result) ));
 					return result;
 				}
 
-				BEntry subDirEntry;
-				entry_ref subDirRef;
 				subDir.GetEntry(&subDirEntry);
-
 				subDirEntry.GetPath(&subDirLoc);
 				subDirEntry.GetRef(&subDirRef);
 				relationNode.SetTo(&subDirRef);
@@ -823,7 +837,7 @@ status_t TTracker::WriteTargetRelations(
 					ssize_t sizeWritten = relationNode.WriteAttr("BEOS:ICON", B_VECTOR_ICON_TYPE, 0, iconBuf, iconSize);
 					if (sizeWritten < 0) {	// can be interpreted as an error code
 						PRINT(("  x error writing folder icon %s to %s: %s\n",
-								SEN_RELATION_FOLDER_ICON, fileName.String(), strerror(sizeWritten) ));
+								SEN_RELATION_FOLDER_ICON, entryName.String(), strerror(sizeWritten) ));
 						// keep on going, not tragic
 					}
 				}
@@ -831,6 +845,7 @@ status_t TTracker::WriteTargetRelations(
 				// recurse to create complete relation structure for dynamic relations
 				if (isDynamic) {
 					result = subDirEntry.InitCheck();
+
 					if (result == B_OK) {
 						BMessage nestedRelations;
 						result = properties.FindMessage(SEN_RELATIONS, &nestedRelations);
@@ -850,15 +865,15 @@ status_t TTracker::WriteTargetRelations(
 					}
 				}
 			} else {
-				BFile relationTarget(&relationDir, fileName.String(), readWriteMode | B_CREATE_FILE);
-				relationNode.SetTo(&relationDir, fileName.String());
+				BFile relationTarget(&relationDir, entryName.String(), readWriteMode | B_CREATE_FILE);
+				relationNode.SetTo(&relationDir, entryName.String());
 
-				PRINT(("writing to relation file %s...\n", fileName.String() ));
+				PRINT(("writing to relation file %s...\n", entryName.String() ));
 			}
 
 			result = relationNode.InitCheck();
 			if (result != B_OK) {
-				PRINT(("  > error creating relation target file/dir '%s': %s\n", fileName.String(), strerror(result) ));
+				PRINT(("  > error creating relation target file/dir '%s': %s\n", entryName.String(), strerror(result) ));
 				return result;
 			}
 
@@ -902,8 +917,9 @@ status_t TTracker::WriteTargetRelations(
 			}
 
 			PRINT(("* writing %d property attributes for relation #%d, target %s, into file %s:\n",
-				   properties.CountNames(B_ANY_TYPE), relationIndex, targetId, fileName.String() ));
+				   properties.CountNames(B_ANY_TYPE), relationIndex, targetId, entryName.String() ));
 
+			// create a file for each set of properties for all targets
 			for (int32 propertyIndex = 0; propertyIndex < properties.CountNames(B_ANY_TYPE); propertyIndex++) {
 				// write out relation properties as file attributes according to message field type (== MIME attr type)
 				char*   propertyName;
@@ -1001,21 +1017,37 @@ TTracker::CreateRelationDirectory(
 	relationsDirPath.Append("relations");
 	relationsDirPath.Append(relationName);
 
-	PRINT(("creating relation temp dir at: %s\n", relationsDirPath.Path() ));
-
-	// FIXME: remove old relation dir contents (only current relation dir)
-	result = create_directory(relationsDirPath.Path(), B_READ_WRITE);
-	if (result != B_OK) {
-		PRINT(("failed to create temp relations dir at %s: %s\n", relationsDirPath.Path(), strerror(result) ));
-		return result;
-	}
-
 	// TODO: prepare suitable folder attribute layout using archived relation attribute columns
 	// see PoseView::SaveState() and ViewState::ArchiveToStream()
 	// better yet, do this in BPoseView::SetupDefaultColumnsIfNeeded()
 
 	BDirectory relationDir(relationsDirPath.Path());
 	BEntry relationDirEntry;
+	relationDir.GetEntry(&relationDirEntry);
+
+	if (relationDirEntry.Exists()) {
+		// sadly there is no Haiku native wrapper for this (yet?)
+		// see https://discuss.haiku-os.org/t/missing-remove-directory-to-complement-create-directory
+		PRINT(("removing existing temp relations dir %s\n", relationsDirPath.Path() ));
+
+		std::filesystem::path path(relationsDirPath.Path());
+		uint32 entriesDeleted = std::filesystem::remove_all(path);
+
+		if (entriesDeleted <= 0) {
+			PRINT(("failed to remove existing temp relations dir %s\n", relationsDirPath.Path() ));
+		}
+	} else {
+		PRINT(("creating relation temp dir at: %s\n", relationsDirPath.Path() ));
+	}
+
+	result = create_directory(relationsDirPath.Path(), B_READ_WRITE);
+	if (result != B_OK) {
+		PRINT(("failed to create temp relations dir at %s: %s\n", relationsDirPath.Path(), strerror(result) ));
+		return result;
+	}
+
+	// update Dir and ref
+	relationDir.SetTo(relationsDirPath.Path());	// force update
 	relationDir.GetEntry(&relationDirEntry);
 
 	// add a friendly display name
@@ -1077,8 +1109,6 @@ status_t TTracker::ConvertSelfRelationsToCommon(
 		return result;
 	}
 
-	PRINT(("collecting %d properties for %d items...\n", propCount, itemCount));
-
 	BMessage     itemProperties;
 	const void*  value;
 	ssize_t      valueSize;
@@ -1089,7 +1119,6 @@ status_t TTracker::ConvertSelfRelationsToCommon(
 		itemProperties.MakeEmpty();
 
 		for (int32 itemIndex = 0; itemIndex < itemCount; itemIndex++) {
-
 			// get value for each property at the current itemIndex
 			result = relationsFlat->GetInfo(B_ANY_TYPE, itemIndex, &name, &typeCode, NULL);
 			if (result != B_OK) {
@@ -1100,8 +1129,8 @@ status_t TTracker::ConvertSelfRelationsToCommon(
 
 			PRINT(("inspecting property %s at %d for item %d.\n", name, relationIndex, itemIndex));
 
-			// handle nested item messages for mapping properties to a shallow child relations message
-			if (strncmp(name, SENSEI_ITEM, strlen(SENSEI_ITEM)) == 0) {
+			// handle nested item message for mapping properties to child relations message
+			if (strncmp(name, SENSEI_ITEM, strlen(SENSEI_ITEM_ID)) == 0) {
 				BMessage  childMsg;
 				result = relationsFlat->FindMessage(SENSEI_ITEM, relationIndex, &childMsg);
 
@@ -1123,17 +1152,10 @@ status_t TTracker::ConvertSelfRelationsToCommon(
 				// add emtpy nested child node to be filled with result of recursion
 				BMessage nestedProperties;
 
-                // build outline in recursion (has to match algo in OpenRelationTargetsMenu!)
-                BString path;
-
-                // get any existing path (possibly inherited from parent)
-                path << relationsNested->GetString(SENSEI_PATH, "") << "/" << relationIndex;
-
-				// propagate to nested level for extension
-                nestedProperties.ReplaceString(SENSEI_PATH, path);
-
 				// recursively convert child message so we can later create the entire structure from the root node
-				result = ConvertSelfRelationsToCommon(targetId, &childMsg, typeMapping, attrMapping, &nestedProperties);
+				result = ConvertSelfRelationsToCommon(
+					targetId, &childMsg, typeMapping, attrMapping, &nestedProperties);
+
 				if (result != B_OK) {
 					PRINT(("  X error mapping nested item %s @[%d]: %s\n",
 							name, itemIndex, strerror(result) ));
@@ -1142,21 +1164,16 @@ status_t TTracker::ConvertSelfRelationsToCommon(
 
 				PRINT(("  < DONE mapping nested item %s @[%d]...\n", name, itemIndex ));
 
-				// if there is only the item node and no other properties on this level, add nested properties besides
-				if (propCount == 1) {
-					PRINT(("  - ITEM node w/o properties.\n"));
-					relationsNested->Append(nestedProperties);
-					continue;
-				} else {
-					// add a new relations node
-					itemProperties.AddMessage(SEN_RELATIONS, &nestedProperties);
-				}
-			} else {    // map flat properties
-                // special handling for outline, just handed through until processed in ITEM above (don't remove below)
-                if (strncmp(name, SENSEI_PATH, strlen(SENSEI_PATH)) == 0) {
-                    continue;
+				// add item ID to item itself
+				const char* itemId = relationsFlat->GetString(SENSEI_ITEM_ID, relationIndex, NULL);
+				if (itemId != NULL) {
+					nestedProperties.AddString(SENSEI_ITEM_ID, itemId);
 				}
 
+				// add subtree
+				itemProperties.AddMessage(SEN_RELATIONS, &nestedProperties);
+
+			} else {    // map flat properties
 				result = relationsFlat->FindData(name, typeCode, relationIndex, &value, &valueSize);
 				if (result == B_OK) {
 					// map property name to common attribute name as per attribute map
