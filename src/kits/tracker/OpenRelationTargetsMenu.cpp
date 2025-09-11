@@ -478,13 +478,26 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 
 	PRINT(("> building self relation target menu items...\n"));
 
-	int32 index = 0;
-	BMessage propertiesMsg, newRootItem;
+	int32     	itemCount;
+	BMessage  	propertiesMsg, newRootItem;
 	// mandatory properties for all items
-	BString label, type;
+	BString   	label, type;
 
-	// process all fields for this item (every name at the given index)
-	while ((result = GetItemMessageInfo(&itemMsg, &childMsg, &propertiesMsg, index) == B_OK)) {
+	result = itemMsg.GetInfo(B_ANY_TYPE, 0, NULL, NULL, &itemCount);
+	if (result != B_OK) {
+		ERROR("could not inspect message: %s\n", strerror(result));
+		return result;
+	}
+
+	// process all fields of this message item
+	for (int32 index = 0; index < itemCount; index++) {
+		result = GetItemMessageInfo(&itemMsg, &childMsg, &propertiesMsg, index);
+		if (result != B_OK) {
+			ERROR("  x could not inspect message item %d: %s\n", index, strerror(result));
+			//return result;
+			continue;	// TEST
+		}
+
 		IconMenuItem* item;
 		// get required params, already checked
 		propertiesMsg.FindString(SENSEI_LABEL, &label);
@@ -494,7 +507,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 
 		// get relation config for type
 		BMessage relationConf;
-		relationConfigs.FindMessage(type, &relationConf);
+		relationConfigs.FindMessage(type, &relationConf);	// TODO: just pass pointer or ommit entirely
 
 		// build menu item msg
 		BMessage openRelationItemMsg;
@@ -579,9 +592,8 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 		AddItem(item);
 
 		propertiesMsg.MakeEmpty();
-		index++;
 		(*targetCount)++;
-	}	// while
+	}	// for
 
 	// replace old relation tree with enriched one
 	fRelationTargetsReply->ReplaceMessage(SENSEI_ITEM, &newRootItem);
@@ -595,68 +607,7 @@ status_t OpenRelationTargetsMenu::GetItemMessageInfo(
 	BMessage* properties,
 	int32 index)
 {
-	// get required properties
-	// get label
-	BString label;
-	status_t result = itemMsg->FindString(SENSEI_LABEL, index, &label);
-	if (result != B_OK) {
-		if (result == B_BAD_INDEX && index > 0) {
-			return result;	// this will abort without error in calling loop
-		}
-		PRINT(("failed to get item label [%d]: %s\n", index, strerror(result) ));
-		return result;
-	}
-
-	// add to result
-	properties->AddString(SENSEI_LABEL, label);
-
-	// get type
-	BString type;
-	result = itemMsg->FindString(SENSEI_TYPE, index, &type);
-
-	if (result == B_OK) {
-		// only add if type was explicitly defined, else defaultType will be used -> smaller message
-		properties->AddString(SENSEI_TYPE, type);
-	} else {
-		if (result == B_NAME_NOT_FOUND) {
-			// this is only allowed if there is a default type
-			if (! fDefaultType.IsEmpty()) {
-				type = fDefaultType;	// just for logging, not needed else
-
-				// only add placeholder to keep array structure of message intact
-				properties->AddString(SENSEI_TYPE, NULL);
-
-				result = B_OK;	// not an error, continue as normal
-			} else {
-				PRINT(("no type specified and no defaultType provided, aborting.\n"));
-				return B_BAD_VALUE;
-			}
-		} else {
-			PRINT(("failed to get item type: %s\n", strerror(result) ));
-			return B_ERROR;
-		}
-	}
-
-	// determine if there are any non-empty child nodes
-	BMessage subItemMsg;
-
-	// get optional child node message (empty or another node)
-	result = itemMsg->FindMessage(SENSEI_ITEM, index, &subItemMsg);
-
-	if (result == B_OK) {
-		if (!subItemMsg.IsEmpty()) {
-			result = childMsg->AddMessage(SENSEI_ITEM, &subItemMsg);
-		}
-	}
-
-	if (result != B_OK) {
-		if (result != B_NAME_NOT_FOUND) {
-			PRINT(("error looking for child node in message: %s\n", strerror(result)));
-			return result;
-		}
-	}
-
-	result = B_OK;	// reset, could be B_NAME_NOT_FOUND from above!
+	status_t result;
 
 	// add all properties from this item at this index (e.g. page, position,...),
 	// building a flat structure to keep item order along with nested children.
@@ -664,46 +615,53 @@ status_t OpenRelationTargetsMenu::GetItemMessageInfo(
 	int32 count;
 	type_code typeCode;
 
-	// set up once and check repeatedly below to skip already handled internal properties
-	// (but add ALL others, including internal _path and _itemid !
-	BStringList senseiProps;
-	senseiProps.Add(SENSEI_ITEM);
-	senseiProps.Add(SENSEI_LABEL);
-	senseiProps.Add(SENSEI_TYPE);
+    // get number of data members in this item message
+    int32 fieldCount = itemMsg->CountNames(B_ANY_TYPE);
+	childMsg->MakeEmpty();
 
-	for (int32 itemIndex = 0; result == B_OK; itemIndex++) {
-		result = itemMsg->GetInfo(B_ANY_TYPE, itemIndex, &name, &typeCode, &count);
+	for (int32 fieldIndex = 0; fieldIndex < fieldCount; fieldIndex++) {
+		result = itemMsg->GetInfo(B_ANY_TYPE, fieldIndex, &name, &typeCode, &count);
 
 		if (result != B_OK) {
 			if (result == B_BAD_INDEX) {
 				break;
 			}
-			PRINT(("failed to get message info for item %s[%d]: %s\n", label.String(), itemIndex, strerror(result)));
+			PRINT(("  x failed to get message info for item #%02d: %s\n", fieldIndex, strerror(result)));
 			return result;
 		}
 
-		// omit already parsed or non-property fields including item child nodes
-		if (senseiProps.HasString(BString(name), true) ) {
-			continue;
+		if (count > 1) { // should not happen since we are expecting a single message with unique elements
+			PRINT(("  ? BOGUS message containing element arrays!\n"));
 		}
 
-		if (itemIndex > count - 1) {
-			PRINT(("got only %d '%s' items but expected at least #%d\n", count, name, index));
-			break;
-		}
-
-		// add remaining property fields
+		// add property fields
 		const void* data;
 		ssize_t size;
 
-		if ((result = itemMsg->FindData(name, typeCode, itemIndex, &data, &size))!= B_OK) {
-			PRINT(("failed to get message data '%s' for item %s[%d]: %s\n",
-					name, label.String(), index, strerror(result)));
+		if ((result = itemMsg->FindData(name, typeCode, index, &data, &size))!= B_OK) {
+			PRINT(("  x failed to get message data '%s' for item #%02d: %s\n",
+					name, index, strerror(result)));
 			return result;
 		}
+
+		// handle sub items separately (lazy menu)
+		if (typeCode == B_MESSAGE_TYPE) {
+			if (! childMsg->IsEmpty()) {
+				PRINT(("  ? WARN: structure with multiple message fields is not supported, ignoring!\n"));
+				continue;
+			}
+			if (strncmp(name, SENSEI_ITEM, strlen(name)) != 0) {
+				PRINT(("  ? WARN: unknown message field %s is not supported, ignoring!\n", name));
+				continue;
+			}
+
+			itemMsg->FindMessage(name, index, childMsg);
+			continue;
+		}
+
 		if ((result = properties->AddData(name, typeCode, data, size)) != B_OK) {
-			PRINT(("failed to add message prroperty '%s' to item %s[%d]: %s\n",
-					name, label.String(), index, strerror(result)));
+			PRINT(("  x failed to add message property '%s' to item #%02d: %s\n",
+					name, index, strerror(result)));
 			return result;
 		}
 	}

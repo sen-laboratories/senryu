@@ -922,8 +922,8 @@ status_t TTracker::WriteTargetRelations(
 			// create a file for each set of properties for all targets
 			for (int32 propertyIndex = 0; propertyIndex < properties.CountNames(B_ANY_TYPE); propertyIndex++) {
 				// write out relation properties as file attributes according to message field type (== MIME attr type)
-				char*   propertyName;
-				uint32  propertyType;
+				char*        propertyName;
+				type_code    propertyType;
 				const void*  data;
 				ssize_t	     size;
 
@@ -931,6 +931,12 @@ status_t TTracker::WriteTargetRelations(
 				if (result != B_OK) {
 					PRINT(("  error retrieving propertyName #%d for relation %d of target %s: %s\n",
 							propertyIndex, relationIndex, targetId, strerror(result) ));
+					continue;
+				}
+
+				// don't write attributes for internal properties (starting with "_"), they are only temporary
+				if (strncmp(propertyName, "_", 1) == 0) {
+					PRINT(("  - skipping internal attribute %s.\n", propertyName));
 					continue;
 				}
 
@@ -1112,11 +1118,16 @@ status_t TTracker::ConvertSelfRelationsToCommon(
 	BMessage     itemProperties;
 	const void*  value;
 	ssize_t      valueSize;
+	int32        flatProperties;
+	// for nested child node to be filled with result of recursion
+	BMessage     nestedProperties;
 
 	// now collect all properties for every item separately into individual relation property messages
 	for (int32 relationIndex = 0; relationIndex < propCount; relationIndex++) {
 		PRINT(("relation %d with %d items and %d properties...\n", relationIndex, itemCount, propCount));
 		itemProperties.MakeEmpty();
+		nestedProperties.MakeEmpty();
+		flatProperties = 0;
 
 		for (int32 itemIndex = 0; itemIndex < itemCount; itemIndex++) {
 			// get value for each property at the current itemIndex
@@ -1130,7 +1141,7 @@ status_t TTracker::ConvertSelfRelationsToCommon(
 			PRINT(("inspecting property %s at %d for item %d.\n", name, relationIndex, itemIndex));
 
 			// handle nested item message for mapping properties to child relations message
-			if (strncmp(name, SENSEI_ITEM, strlen(SENSEI_ITEM_ID)) == 0) {
+			if (strncmp(name, SENSEI_ITEM, strlen(name)) == 0) {
 				BMessage  childMsg;
 				result = relationsFlat->FindMessage(SENSEI_ITEM, relationIndex, &childMsg);
 
@@ -1149,9 +1160,6 @@ status_t TTracker::ConvertSelfRelationsToCommon(
 
 				PRINT(("  > mapping nested item %s @[%d]...\n", name, itemIndex ));
 
-				// add emtpy nested child node to be filled with result of recursion
-				BMessage nestedProperties;
-
 				// recursively convert child message so we can later create the entire structure from the root node
 				result = ConvertSelfRelationsToCommon(
 					targetId, &childMsg, typeMapping, attrMapping, &nestedProperties);
@@ -1169,10 +1177,6 @@ status_t TTracker::ConvertSelfRelationsToCommon(
 				if (itemId != NULL) {
 					nestedProperties.AddString(SENSEI_ITEM_ID, itemId);
 				}
-
-				// add subtree
-				itemProperties.AddMessage(SEN_RELATIONS, &nestedProperties);
-
 			} else {    // map flat properties
 				result = relationsFlat->FindData(name, typeCode, relationIndex, &value, &valueSize);
 				if (result == B_OK) {
@@ -1184,6 +1188,7 @@ status_t TTracker::ConvertSelfRelationsToCommon(
 							name, commonName, relationIndex, itemIndex));
 
 					itemProperties.AddData(commonName, typeCode, value, valueSize);
+					flatProperties++;
 				} else {
 					PRINT(("  X failed to add name/value for item %d, property %s [%d]: %s\n",
 						itemIndex, name, relationIndex, strerror(result) ));
@@ -1193,8 +1198,24 @@ status_t TTracker::ConvertSelfRelationsToCommon(
 		} // item loop
 
 		// add properties in standard SEN format
-		// ommit empty intermediary nodes also here
-		relationsNested->AddMessage(targetId, &itemProperties);
+		// add possible relations from optional item subtree
+		if (! nestedProperties.IsEmpty()) {
+			if (flatProperties > 0) {
+				// only add sub node if there were other (flat) properties at this level
+				itemProperties.AddMessage(SEN_RELATIONS, &nestedProperties);
+			} else {
+				PRINT(("  + appending nested properties to current item.\n"));
+				itemProperties.Append(nestedProperties);
+			}
+		}
+
+		// don't create nested nodes for intermediary nodes that contain item nodes only
+		if (flatProperties > 0) {
+			relationsNested->AddMessage(targetId, &itemProperties);
+		} else {
+			PRINT(("  + appending properties to current item.\n"));
+			relationsNested->Append(nestedProperties);
+		}
 	}  // property loop
 
 	return B_OK;
