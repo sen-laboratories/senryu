@@ -27,11 +27,10 @@ private:
 	status_t	 AddRelationTargetItems(uint32* targetCount);
 	status_t	 AddCompatibleRelationTargetItems(uint32* targetCount);
 	status_t	 AddSelfRelationTargetItems(uint32* targetCount);
-	status_t	 GetItemMessageInfo(
-					const BMessage* itemMsg,
-					BMessage* childMsg,
-					BMessage* properties,
-					int32 index = 0);
+	status_t     GetItemProperties(
+		const BMessage* itemMsg,
+		const int32     itemIndex,
+		BMessage* 		properties);
 
 	BMessage	fEntriesToOpen;
 	BMessenger	fMessenger;
