@@ -182,7 +182,7 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 
 	// get relation configs for storing in menu items later
 	BMessage relationConfigs;
-	status_t result = fRelationsReply.FindMessage(SEN_RELATION_CONFIG, &relationConfigs);
+	status_t result = fRelationsReply.FindMessage(SEN_RELATION_CONFIG_MAP, &relationConfigs);
 	if (result != B_OK) {
 		PRINT(("no relation config found, continuing with defaults.\n"));
 	}
@@ -249,7 +249,7 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 		BMessage *openRelationTargetsMsg = new BMessage(SEN_OPEN_RELATION_TARGET_VIEW);
         openRelationTargetsMsg->AddRef(SEN_RELATION_SOURCE_REF, sourceRef);
 		openRelationTargetsMsg->AddString(SEN_RELATION_SOURCE_ID, srcId);
-		openRelationTargetsMsg->AddMessage(SEN_RELATION_CONFIG, &relationConfigs);
+		openRelationTargetsMsg->AddMessage(SEN_RELATION_CONFIG_MAP, &relationConfigs);
 
 		if (buildAssocRelations) {
 			openRelationTargetsMsg->AddString(SEN_RELATION_TYPE, SEN_ASSOC_RELATION_TYPE);
@@ -295,11 +295,11 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 	// always replace any previous data as the parent menu is reused!
 	openRelationsItemMsg->RemoveData(SEN_RELATION_SOURCE_REF);
 	openRelationsItemMsg->RemoveData(SEN_RELATION_SOURCE_ID);
-	openRelationsItemMsg->RemoveData(SEN_RELATION_CONFIG);
+	openRelationsItemMsg->RemoveData(SEN_RELATION_CONFIG_MAP);
 
 	openRelationsItemMsg->AddRef(SEN_RELATION_SOURCE_REF, sourceRef);
 	openRelationsItemMsg->AddString(SEN_RELATION_SOURCE_ID, srcId);
-    openRelationsItemMsg->AddMessage(SEN_RELATION_CONFIG, &relationConfigs);
+    openRelationsItemMsg->AddMessage(SEN_RELATION_CONFIG_MAP, &relationConfigs);
 
 	return countRelations;
 }
@@ -312,9 +312,9 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const entry_ref* sourceRef) {
 	// Note: self relations mostly have no sourceId yet since they are dynamically resolved
 
 	// get relation config
-	result = fRelationsReply.FindMessage(SEN_RELATION_CONFIG, &relationConfigs);
+	result = fRelationsReply.FindMessage(SEN_RELATION_CONFIG_MAP, &relationConfigs);
 	if (result != B_OK) {
-		PRINT(("no relation config found, continuing with defaults.\n"));
+		PRINT(("no relation config map found, continuing with defaults.\n"));
 	}
 
 	// get plugin config
@@ -384,7 +384,7 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const entry_ref* sourceRef) {
 		// add plugin config with default type and type+attr mapping
 		message.AddMessage(SENSEI_PLUGIN_CONFIG_KEY, &pluginConfig);
 		// add relation config
-		message.AddMessage(SEN_RELATION_CONFIG, &relationConfigs);
+		message.AddMessage(SEN_RELATION_CONFIG_MAP, &relationConfigs);
 
 		// message for the relation menu itself
 		BMessage openRelationTargetsMsg(SEN_OPEN_RELATION_TARGET_VIEW);
@@ -432,14 +432,14 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const entry_ref* sourceRef) {
 	// always replace any previous data as the parent menu is reused!
 	openSelfRelationsItemMsg->RemoveData(SEN_RELATION_SOURCE_REF);
 	openSelfRelationsItemMsg->RemoveData(SEN_RELATIONS);
-	openSelfRelationsItemMsg->RemoveData(SEN_RELATION_CONFIG);
+	openSelfRelationsItemMsg->RemoveData(SEN_RELATION_CONFIG_MAP);
 
 	openSelfRelationsItemMsg->AddRef(SEN_RELATION_SOURCE_REF, sourceRef);
 
 	BStringList relations;
 	result = fRelationsReply.FindStrings(SEN_RELATIONS, &relations);
 	openSelfRelationsItemMsg->AddStrings(SEN_RELATIONS,  relations);	// add the emty message if some error occurred
-    openSelfRelationsItemMsg->AddMessage(SEN_RELATION_CONFIG, &relationConfigs);
+    openSelfRelationsItemMsg->AddMessage(SEN_RELATION_CONFIG_MAP, &relationConfigs);
 
 	return relationsAdded;
 }

@@ -544,18 +544,18 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 	message->FindMessage(SEN_RELATION_PROPERTIES, &relationProperties);
 
 	// get config for relation
-	BMessage relationConf;
-	result = message->FindMessage(SEN_RELATION_CONFIG, &relationConf);
+	BMessage relationConfigs;
+	result = message->FindMessage(SEN_RELATION_CONFIG_MAP, &relationConfigs);
 	if (result != B_OK) {
 		PRINT(("could not get relation config for type %s: %s\n", relationType, strerror(result) ));
 		return result;
 	}
 
 	// add type to config for proccessing
-	relationConf.AddString(SEN_RELATION_TYPE, relationType);
+	relationConfigs.AddString(SEN_RELATION_TYPE, relationType);
 
-	bool isSelf    = relationConf.GetBool(SEN_RELATION_IS_SELF);
-	bool isDynamic = relationConf.GetBool(SEN_RELATION_IS_DYNAMIC);
+	bool isSelf    = relationConfigs.GetBool(SEN_RELATION_IS_SELF);
+	bool isDynamic = relationConfigs.GetBool(SEN_RELATION_IS_DYNAMIC);
 
 	PRINT(("relation %s is %s and %s.\n", relationType,
 		isSelf ? "reflexive" : "normal",
@@ -573,14 +573,14 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 		}
 
 		// save ref along with relation files later, since we have no way to lookup the source by inode alone
-		relationConf.AddRef(SEN_RELATION_SOURCE_REF, &srcRef);
+		relationConfigs.AddRef(SEN_RELATION_SOURCE_REF, &srcRef);
 
 		if (isSelf) {	// add source as target ref, too, as they are the same
-			relationConf.AddRef(SEN_RELATION_TARGET_REF, &srcRef);
+			relationConfigs.AddRef(SEN_RELATION_TARGET_REF, &srcRef);
 		}
 	}
 	// add to config for proccessing
-	relationConf.AddString(SEN_RELATION_SOURCE_ID, srcId);
+	relationConfigs.AddString(SEN_RELATION_SOURCE_ID, srcId);
 
 	BMessage relations;
 
@@ -588,6 +588,7 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 		// get all relations for creating complete relation structure, but open only selected relation view later
 		BMessage* relationRoot;
 		result = message->FindPointer(SEN_RELATION_ROOT, reinterpret_cast<void**>(&relationRoot));
+
 		if (result == B_OK && relationRoot != NULL) {
 			PRINT(("  * got relation ROOT, generating view for ALL relations of source.\n"));
 		} else {
@@ -642,7 +643,7 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 		} else {
 			PRINT(("* got item ID %s.\n", itemId));
 		}
-		relationConf.AddString(SEN_RELATION_ITEM_ID, itemId);
+		relationConfigs.AddString(SEN_RELATION_ITEM_ID, itemId);
 
 		// self relations target points to source
 		result = ConvertSelfRelationsToCommon(srcId.String(), &relationsFlat,
@@ -661,14 +662,14 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 	}
 
 	// create top-level relation dir for src relation
-	result = CreateRelationDirectory(srcId.String(), relationType, &relationConf, relationDirRef);
+	result = CreateRelationDirectory(srcId.String(), relationType, &relationConfigs, relationDirRef);
 	if ((result != B_OK)) {
 		PRINT(("could not create relation target folder: %s\n", strerror(result)));
 		return result;
 	}
 
 	// reusable optionally recursive part
-	result = WriteTargetRelations(&relations, &relationConf, NULL, relationDirRef);
+	result = WriteTargetRelations(&relations, &relationConfigs, NULL, relationDirRef);
 	if (result != B_OK) {
 		PRINT(("could not write relation targets to folder %s: %s\n", relationDirRef->name, strerror(result) ));
 		return result;
@@ -1271,7 +1272,7 @@ status_t TTracker::ConvertAttributesToMessage(const entry_ref* ref, BMessage* pa
 	return B_OK;
 }
 
-
+// copied from SEN SelfRelationHandler
 status_t TTracker::GetInodeForRef(const entry_ref* srcRef, BString* inode)
 {
 	// get inode as folder ID instead of SEN:ID, no need to create one for now

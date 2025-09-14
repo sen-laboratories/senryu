@@ -60,6 +60,7 @@ OpenRelationTargetsMenu::OpenRelationTargetsMenu(const char* label, const BMessa
 			PRINT(("failed to set up messenger for SEN server!\n"));
 		}
 	}
+
 }
 
 OpenRelationTargetsMenu::~OpenRelationTargetsMenu()
@@ -435,7 +436,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 
 	// get relation configs for storing in menu items later
 	BMessage relationConfigs;
-	result = fEntriesToOpen.FindMessage(SEN_RELATION_CONFIG, &relationConfigs);
+	result = fEntriesToOpen.FindMessage(SEN_RELATION_CONFIG_MAP, &relationConfigs);
 	if (result != B_OK) {
 		PRINT(("no relation config found, continuing with defaults.\n"));
 	}
@@ -461,7 +462,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 	}
 
 	// get root node
-	result = fRelationTargetsReply->FindMessage(SENSEI_ITEM, &itemMsg);
+	result = fRelationTargetsReply->FindMessage(SEN_RELATIONS, &itemMsg);
 	if (result != B_OK) {
 		PRINT(("could not find any items in reply, skipping.\n"));
 		return result;
@@ -503,12 +504,12 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 			return result;
 		}
 
-		result = propertiesMsg.FindString(SENSEI_LABEL, &label);
+		result = propertiesMsg.FindString(SEN_RELATION_LABEL, &label);
 		if (result == B_OK) {
 			if (label.IsEmpty())
 				label = "<no label>";	// should always be present but allow easier debugging
 
-			result  = propertiesMsg.FindString(SENSEI_TYPE, &type);	// optional
+			result  = propertiesMsg.FindString(SEN_RELATION_TYPE, &type);	// optional
 			if (result == B_OK || result == B_NAME_NOT_FOUND) {
 				if (type.IsEmpty())
 					type = fDefaultType;
@@ -533,11 +534,22 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 		openRelationItemMsg.AddMessage(SEN_RELATION_PROPERTIES, &propertiesMsg);
 
 		// add as menu if there is a child node, else add as a plain menu item
-		if (! propertiesMsg.HasMessage(SENSEI_ITEM)) {
+		if (! propertiesMsg.HasMessage(SEN_RELATIONS)) {
 			PRINT(("    > adding self relation item [%d] '%s' of type '%s'.\n", index, label.String(), type.String() ));
 
 			// will open the target item as SEN enriched ref in Tracker
 			openRelationItemMsg.what = SEN_OPEN_RELATION_TARGET;
+			// here we know which config we need, so pass only selected type
+			BMessage selectedConfig;
+			result = relationConfigs.FindMessage(type, &selectedConfig);
+			if (result == B_OK) {
+				propertiesMsg.AddMessage(SEN_RELATION_CONFIG, &selectedConfig);
+			} else {
+				if (result != B_NAME_NOT_FOUND) {
+					PRINT(("    x failed to inspect relation configs: %s\n", strerror(result) ));
+				}
+				result = B_OK;
+			}
 
 			item = new IconMenuItem(label.String(), new BMessage(openRelationItemMsg), type.String());
 		} else {
@@ -568,15 +580,16 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 
 			// now adapt childMsg for adding to menu below:
 			// transparently handle just like a normal message result above, but for the subtree
-			// so the submenu will have a SEN:relations and SENSEI_ITEM from the childMsg subtree
+			// so the submenu will have a SEN:relations and SEN_RELATIONS from the childMsg subtree
 			propertiesMsg.what = SENSEI_MESSAGE_RESULT;
 			propertiesMsg.AddRef(SEN_RELATION_SOURCE_REF, &ref);
 			propertiesMsg.AddString(SEN_RELATION_TYPE, type.String());
 			propertiesMsg.AddPointer(SEN_RELATION_ROOT, reinterpret_cast<void*>(relationRoot));
 
 			propertiesMsg.AddMessage(SENSEI_PLUGIN_CONFIG_KEY, &pluginConfig);
-			// FIXME get from ROOT, menus are getting too heavy and slow!
-			propertiesMsg.AddMessage(SEN_RELATION_CONFIG, &relationConfigs);	// we need all configs here to select in subtree
+			// we need all configs here to select in subtree
+			// TODO: optimize by constraining to single relation per menu or use AddPointer to root config!
+			propertiesMsg.AddMessage(SEN_RELATION_CONFIG_MAP, &relationConfigs);
 
 			item = new IconMenuItem(
 				new OpenRelationTargetsMenu(
