@@ -144,6 +144,8 @@ struct fs_mount {
 
 	~fs_mount()
 	{
+		ASSERT(vnodes.IsEmpty());
+
 		mutex_destroy(&lock);
 		free(device_name);
 
@@ -1069,6 +1071,9 @@ dec_vnode_ref_count(struct vnode* vnode, bool alwaysFree, bool reenter)
 	if (vnode->IsBusy())
 		panic("dec_vnode_ref_count: called on busy vnode %p\n", vnode);
 
+	if (vnode->mount->unmounting)
+		alwaysFree = true;
+
 	bool freeNode = false;
 	bool freeUnusedNodes = false;
 
@@ -1359,7 +1364,7 @@ free_unused_vnodes(int32 level)
 		if (vnode != sUnusedVnodeList.First())
 			continue;
 
-		ASSERT(!vnode->IsBusy());
+		ASSERT(!vnode->IsBusy() && vnode->ref_count == 0);
 
 		// grab a reference
 		inc_vnode_ref_count(vnode);
@@ -3864,10 +3869,17 @@ acquire_vnode(fs_volume* volume, ino_t vnodeID)
 	ReadLocker nodeLocker(sVnodeLock);
 
 	struct vnode* vnode = lookup_vnode(volume->id, vnodeID);
-	if (vnode == NULL)
+	if (vnode == NULL) {
+		KDEBUG_ONLY(panic("acquire_vnode(%p, %" B_PRIdINO "): not found!", volume, vnodeID));
 		return B_BAD_VALUE;
+	}
 
-	inc_vnode_ref_count(vnode);
+	if (inc_vnode_ref_count(vnode) == 0) {
+		// It isn't valid to acquire another reference to a vnode that
+		// you don't already have a reference to, so this should never happen.
+		panic("acquire_vnode(%p, %" B_PRIdINO "): node wasn't used!", volume, vnodeID);
+	}
+
 	return B_OK;
 }
 
@@ -3881,8 +3893,10 @@ put_vnode(fs_volume* volume, ino_t vnodeID)
 	vnode = lookup_vnode(volume->id, vnodeID);
 	rw_lock_read_unlock(&sVnodeLock);
 
-	if (vnode == NULL)
+	if (vnode == NULL) {
+		KDEBUG_ONLY(panic("put_vnode(%p, %" B_PRIdINO "): not found!", volume, vnodeID));
 		return B_BAD_VALUE;
+	}
 
 	dec_vnode_ref_count(vnode, false, true);
 	return B_OK;
@@ -4103,6 +4117,8 @@ read_file_io_vec_pages(int fd, const file_io_vec* fileVecs, size_t fileVecCount,
 	FileDescriptorPutter descriptor(get_fd_and_vnode(fd, &vnode, true));
 	if (!descriptor.IsSet())
 		return B_FILE_ERROR;
+	if ((descriptor->open_mode & O_RWMASK) == O_WRONLY)
+		return B_FILE_ERROR;
 
 	status_t status = common_file_io_vec_pages(vnode, descriptor->cookie,
 		fileVecs, fileVecCount, vecs, vecCount, _vecIndex, _vecOffset, _bytes,
@@ -4120,6 +4136,8 @@ write_file_io_vec_pages(int fd, const file_io_vec* fileVecs, size_t fileVecCount
 	struct vnode* vnode;
 	FileDescriptorPutter descriptor(get_fd_and_vnode(fd, &vnode, true));
 	if (!descriptor.IsSet())
+		return B_FILE_ERROR;
+	if ((descriptor->open_mode & O_RWMASK) == O_RDONLY)
 		return B_FILE_ERROR;
 
 	status_t status = common_file_io_vec_pages(vnode, descriptor->cookie,
@@ -7723,6 +7741,7 @@ fs_mount(char* path, const char* device, const char* fsName, uint32 flags,
 
 		coveredNode->covered_by = mount->root_vnode;
 		coveredNode->SetCovered(true);
+		inc_vnode_ref_count(mount->root_vnode);
 	}
 	rw_lock_write_unlock(&sVnodeLock);
 
@@ -7855,6 +7874,8 @@ fs_unmount(char* path, dev_t mountID, uint32 flags, bool kernel)
 				refCount--;
 			if (vnode->covered_by != NULL)
 				refCount--;
+			if (vnode == mount->root_vnode)
+				refCount--;
 
 			if (refCount != 0) {
 				dprintf("fs_unmount(): inode %" B_PRIdINO " is still referenced\n", vnode->id);
@@ -7946,6 +7967,9 @@ fs_unmount(char* path, dev_t mountID, uint32 flags, bool kernel)
 			}
 		}
 
+		if (vnode == mount->root_vnode)
+			continue;
+
 		vnode->SetBusy(true);
 		vnode_to_be_freed(vnode);
 	}
@@ -7953,8 +7977,6 @@ fs_unmount(char* path, dev_t mountID, uint32 flags, bool kernel)
 	vnodesWriteLocker.Unlock();
 
 	// Free all vnodes associated with this mount.
-	// They will be removed from the mount list by free_vnode(), so
-	// we don't have to do this.
 	while (struct vnode* vnode = mount->vnodes.Head()) {
 		// Put the references to external covered/covering vnodes we kept above.
 		if (Vnode* coveredNode = vnode->covers)
@@ -7962,8 +7984,17 @@ fs_unmount(char* path, dev_t mountID, uint32 flags, bool kernel)
 		if (Vnode* coveringNode = vnode->covered_by)
 			put_vnode(coveringNode);
 
-		free_vnode(vnode, false);
+		// free_vnode() removes nodes from the mount list. However, the root
+		// will still be referenced by the FS, so we can't free it yet.
+		if (vnode == mount->root_vnode)
+			remove_vnode_from_mount_list(vnode, mount);
+		else
+			free_vnode(vnode, false);
 	}
+
+	// Re-add the root to the mount list, so it can be freed.
+	add_vnode_to_mount_list(mount->root_vnode, mount);
+	mount->root_vnode = NULL;
 
 	// remove the mount structure from the hash table
 	rw_lock_write_lock(&sMountLock);

@@ -105,8 +105,7 @@ AddDriversToPackage :
 	dprintf
 	null
 	random
-	<driver>tty
-	zero
+	<driver>pty
 	;
 AddDriversToPackage audio hmulti
 	: $(SYSTEM_ADD_ONS_DRIVERS_AUDIO) ;

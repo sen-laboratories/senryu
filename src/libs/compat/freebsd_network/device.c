@@ -16,11 +16,8 @@
 #include <kernel/heap.h>
 
 #include <compat/machine/resource.h>
-#include <compat/dev/mii/mii.h>
 #include <compat/sys/bus.h>
 #include <compat/net/if_media.h>
-
-#include <compat/dev/mii/miivar.h>
 
 
 spinlock __haiku_intr_spinlock;
@@ -344,29 +341,22 @@ device_is_alive(device_t device)
 
 
 device_t
-device_add_child_driver(device_t parent, const char* name, driver_t* _driver,
-	int unit)
+device_add_child(device_t parent, const char* name, int unit)
 {
 	device_t child = NULL;
 
-	if (_driver == NULL && name != NULL) {
-		if (strcmp(name, "miibus") == 0)
-			child = new_device(&miibus_driver);
-		else {
-			// find matching driver structure
-			driver_t** driver;
-			char symbol[128];
+	if (name != NULL) {
+		// find matching driver structure
+		driver_t** driver;
+		char symbol[128];
+		snprintf(symbol, sizeof(symbol), "__fbsd_%s_%s", name,
+			parent->driver->name);
 
-			snprintf(symbol, sizeof(symbol), "__fbsd_%s_%s", name,
-				parent->driver->name);
-			if (get_image_symbol(find_own_image(), symbol, B_SYMBOL_TYPE_DATA,
-					(void**)&driver) == B_OK) {
-				child = new_device(*driver);
-			} else
-				device_printf(parent, "couldn't find symbol %s\n", symbol);
-		}
-	} else if (_driver != NULL) {
-		child = new_device(_driver);
+		if (get_image_symbol(find_own_image(), symbol, B_SYMBOL_TYPE_DATA,
+				(void**)&driver) == B_OK) {
+			child = new_device(*driver);
+		} else
+			device_printf(parent, "couldn't find symbol %s\n", symbol);
 	} else
 		child = new_device(NULL);
 
@@ -388,13 +378,6 @@ device_add_child_driver(device_t parent, const char* name, driver_t* _driver,
 	}
 
 	return child;
-}
-
-
-device_t
-device_add_child(device_t parent, const char* name, int unit)
-{
-	return device_add_child_driver(parent, name, NULL, unit);
 }
 
 
@@ -515,12 +498,19 @@ bus_generic_attach(device_t dev)
 		if (child->driver == NULL) {
 			driver_t *driver = __haiku_select_miibus_driver(child);
 			if (driver == NULL) {
-				struct mii_attach_args *ma = device_get_ivars(child);
-
-				device_printf(dev, "No PHY module found (%x/%x)!\n",
-					MII_OUI(ma->mii_id1, ma->mii_id2), MII_MODEL(ma->mii_id2));
-			} else
+				char childInfo[128];
+				if (dev->methods.bus_child_pnpinfo_str != NULL
+						&& dev->methods.bus_child_pnpinfo_str(dev, child,
+							childInfo, sizeof(childInfo)) == 0) {
+					device_printf(dev, "no driver for device \"%s\"\n", childInfo);
+				} else {
+					device_printf(dev, "failed to find driver for child device\n");
+				}
+			} else {
+				device_printf(dev, "found device driver: %s\n",
+					driver->name);
 				device_set_driver(child, driver);
+			}
 		} else
 			child->methods.device_probe(child);
 
@@ -555,6 +545,37 @@ bus_generic_detach(device_t device)
 }
 
 
+driver_t *
+__haiku_probe_drivers(device_t device, driver_t *drivers[])
+{
+	driver_t *selected = NULL;
+	int best = 0;
+
+	if (drivers == NULL)
+		return NULL;
+
+	for (int i = 0; drivers[i]; i++) {
+		// Skip allocating the device softc and just call probe() directly.
+		// (Any drivers which don't support this should be patched.)
+		device->methods.device_register
+			= resolve_device_method(drivers[i], ID_device_register);
+		device->methods.device_probe
+			= resolve_device_method(drivers[i], ID_device_probe);
+
+		int result = device->methods.device_probe(device);
+		if (result >= 0 && (selected == NULL || result > best)) {
+			selected = drivers[i];
+			best = result;
+		}
+	}
+
+	device->methods.device_register = NULL;
+	device->methods.device_probe = NULL;
+
+	return selected;
+}
+
+
 //	#pragma mark - Misc, Malloc
 
 
@@ -569,35 +590,6 @@ find_root_device(int unit)
 	}
 
 	return NULL;
-}
-
-
-driver_t *
-__haiku_probe_miibus(device_t dev, driver_t *drivers[])
-{
-	driver_t *selected = NULL;
-	int i, selectedResult = 0;
-
-	if (drivers == NULL)
-		return NULL;
-
-	for (i = 0; drivers[i]; i++) {
-		device_probe_t *probe = (device_probe_t *)
-			resolve_device_method(drivers[i], ID_device_probe);
-		if (probe == NULL)
-			continue;
-
-		int result = probe(dev);
-		if (result >= 0) {
-			if (selected == NULL || result < selectedResult) {
-				selected = drivers[i];
-				selectedResult = result;
-				device_printf(dev, "Found MII: %s\n", selected->name);
-			}
-		}
-	}
-
-	return selected;
 }
 
 

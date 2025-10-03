@@ -7,7 +7,6 @@
 #include "Attribute.h"
 #include "Misc.h"
 #include "Node.h"
-#include "ramfs.h"
 #include "Volume.h"
 
 // constructor
@@ -26,6 +25,7 @@ Attribute::Attribute(Volume *volume, Node *node, const char *name,
 // destructor
 Attribute::~Attribute()
 {
+	ASSERT(fIndex == NULL);
 }
 
 // InitCheck
@@ -54,63 +54,79 @@ Attribute::SetType(uint32 type)
 status_t
 Attribute::SetSize(off_t newSize)
 {
-	status_t error = B_OK;
 	off_t oldSize = DataContainer::GetSize();
-	if (newSize != oldSize) {
-		if (fNode)
-			fNode->MarkModified(B_STAT_MODIFICATION_TIME);
+	if (newSize == oldSize)
+		return B_OK;
 
-		error = DataContainer::Resize(newSize);
-	}
-	return error;
+	uint8 oldKey[kMaxIndexKeyLength];
+	size_t oldLength = kMaxIndexKeyLength;
+	GetKey(oldKey, &oldLength);
+
+	status_t error = DataContainer::Resize(newSize);
+	if (error != B_OK)
+		return error;
+
+	off_t changeOffset = (newSize < oldSize) ? newSize : oldSize;
+	_Changed(oldKey, oldLength, changeOffset, newSize - oldSize);
+	return B_OK;
 }
 
 // WriteAt
 status_t
-Attribute::WriteAt(off_t offset, const void *buffer, size_t size,
-				   size_t *bytesWritten)
+Attribute::WriteAt(off_t offset, const void *buffer, size_t size, size_t *bytesWritten)
 {
-	// get the current key for the attribute
+	// store the current key for the attribute
 	uint8 oldKey[kMaxIndexKeyLength];
 	size_t oldLength = kMaxIndexKeyLength;
 	GetKey(oldKey, &oldLength);
 
 	// write the new value
 	status_t error = DataContainer::WriteAt(offset, buffer, size, bytesWritten);
+	if (error != B_OK)
+		return error;
 
+	// update index and live queries
+	_Changed(oldKey, oldLength, offset, size);
+	return B_OK;
+}
+
+// _Changed
+void
+Attribute::_Changed(uint8* oldKey, size_t oldLength, off_t changeOffset, ssize_t changeSize)
+{
 	// If there is an index and a change has been made within the key, notify
 	// the index.
-	if (offset < (off_t)kMaxIndexKeyLength && size > 0 && fIndex)
+	if (fIndex != NULL && changeOffset < (off_t)kMaxIndexKeyLength && changeSize != 0)
 		fIndex->Changed(this, oldKey, oldLength);
 
 	// update live queries
 	uint8 newKey[kMaxIndexKeyLength];
-	size_t newLength = kMaxIndexKeyLength;
+	size_t newLength;
 	GetKey(newKey, &newLength);
 	GetVolume()->UpdateLiveQueries(NULL, fNode, GetName(), fType, oldKey,
 		oldLength, newKey, newLength);
 
 	// node has been changed
-	if (fNode && size > 0)
+	if (fNode != NULL && changeSize != 0)
 		fNode->MarkModified(B_STAT_MODIFICATION_TIME);
-
-	return error;
 }
 
 // SetIndex
 void
 Attribute::SetIndex(AttributeIndex *index, bool inIndex)
 {
+	ASSERT(fIndex == NULL || index == NULL || fIndex == index);
+	ASSERT(!fInIndex || fInIndex != inIndex);
+
 	fIndex = index;
 	fInIndex = inIndex;
 }
 
 // GetKey
 void
-Attribute::GetKey(uint8 *key, size_t *length)
+Attribute::GetKey(uint8 key[kMaxIndexKeyLength], size_t *length)
 {
-	*length = min(*length, kMaxIndexKeyLength);
-	ReadAt(0, key, *length, length);
+	ReadAt(0, key, kMaxIndexKeyLength, length);
 }
 
 // AttachAttributeIterator

@@ -86,7 +86,7 @@ DirectoryCache::DirectoryCache(Inode* inode, bool attr)
 {
 	ASSERT(inode != NULL);
 
-	mutex_init(&fLock, NULL);
+	mutex_init(&fLock, "nfs4 DirectoryCache");
 }
 
 
@@ -237,10 +237,8 @@ DirectoryCache::_LoadSnapshot(bool trash)
 				}
 				if (!nodeFound) {
 					// The inode-name association that was cached in 'current' is no longer valid.
-					result = fInode->GetFileSystem()->TrashStaleNode(current->fNode);
-					if (result != B_OK)
-						INFORM("_LoadSnapshot: Couldn't free stale node %" B_PRIdINO "\n",
-							current->fNode);
+					fInode->GetFileSystem()->ServerUnlinkCleanup(current->fNode, fInode,
+						current->fName);
 				}
 			}
 			delete current;
@@ -301,7 +299,7 @@ DirectoryCache::_DumpLocked(void (*xprintf)(const char*, ...)) const
 
 	for (SinglyLinkedList<NameCacheEntry>::ConstIterator it = fNameCache.GetIterator();
 		const NameCacheEntry* entry = it.Next();) {
-		xprintf("\t\tino: %" B_PRIdINO "\t", entry->fNode);
+		xprintf("\tino: %" B_PRIdINO "\t", entry->fNode);
 		if (entry->fName != NULL)
 			xprintf("name: %s\n", entry->fName);
 	}

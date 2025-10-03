@@ -159,9 +159,8 @@ AddDriversToPackage :
 	console
 	dprintf
 	null
-	<driver>tty
+	<driver>pty
 	usb_modeswitch
-	zero
 	;
 AddDriversToPackage audio hmulti :
 	$(SYSTEM_ADD_ONS_DRIVERS_AUDIO) ;

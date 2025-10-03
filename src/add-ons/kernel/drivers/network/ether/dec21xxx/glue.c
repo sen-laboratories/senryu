@@ -34,15 +34,15 @@ extern void reenable_interrupts_de(device_t dev);
 extern driver_t *DRIVER_MODULE_NAME(dc, pci);
 extern driver_t *DRIVER_MODULE_NAME(de, pci);
 
-status_t
-__haiku_handle_fbsd_drivers_list(status_t (*handler)(driver_t *[], driver_t *[]))
+void
+__haiku_init_hardware()
 {
 	driver_t *drivers[] = {
 		DRIVER_MODULE_NAME(dc, pci),
 		DRIVER_MODULE_NAME(de, pci),
 		NULL
 	};
-	return (*handler)(drivers, NULL);
+	_fbsd_init_hardware_pci(drivers);
 }
 
 
@@ -64,7 +64,7 @@ __haiku_select_miibus_driver(device_t dev)
 		NULL
 	};
 
-	return __haiku_probe_miibus(dev, drivers);
+	return __haiku_probe_drivers(dev, drivers);
 }
 
 

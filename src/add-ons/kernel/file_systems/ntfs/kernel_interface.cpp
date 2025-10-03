@@ -261,6 +261,8 @@ fs_unmount(fs_volume* _volume)
 	if (ntfs_umount(volume->ntfs, false) < 0)
 		return errno;
 
+	put_vnode(_volume, FILE_root);
+
 	delete volume;
 	_volume->private_volume = NULL;
 
@@ -479,7 +481,7 @@ fs_read_pages(fs_volume* _volume, fs_vnode* _node, void* _cookie,
 
 	ntfs_inode* ni = ntfs_inode_open(volume->ntfs, node->inode);
 	if (ni == NULL)
-		return B_FILE_ERROR;
+		return B_IO_ERROR;
 	NtfsInodeCloser niCloser(ni);
 
 	if (pos < 0 || pos >= ni->data_size)
@@ -519,7 +521,7 @@ fs_write_pages(fs_volume* _volume, fs_vnode* _node, void* _cookie,
 
 	ntfs_inode* ni = ntfs_inode_open(volume->ntfs, node->inode);
 	if (ni == NULL)
-		return B_FILE_ERROR;
+		return B_IO_ERROR;
 	NtfsInodeCloser niCloser(ni);
 
 	if (pos < 0 || pos >= ni->data_size)
@@ -641,7 +643,7 @@ fs_write_stat(fs_volume* _volume, fs_vnode* _node, const struct stat* stat, uint
 
 	ntfs_inode* ni = ntfs_inode_open(volume->ntfs, node->inode);
 	if (ni == NULL)
-		return B_FILE_ERROR;
+		return B_IO_ERROR;
 	NtfsInodeCloser niCloser(ni);
 
 	bool updateTime = false;

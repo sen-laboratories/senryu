@@ -20,22 +20,71 @@ Delegation::Delegation(const OpenDelegationData& data, Inode* inode,
 	fData(data),
 	fInode(inode),
 	fAttribute(attribute),
+	fStateSeq(data.fStateSeq),
 	fUid(geteuid()),
-	fGid(getegid())
+	fGid(getegid()),
+	fRecalled(false)
 {
 	ASSERT(inode != NULL);
+	memcpy(fStateID, data.fStateID, sizeof(fStateID));
 }
 
 
 status_t
 Delegation::GiveUp(bool truncate)
 {
+	PrepareGiveUp(truncate);
+
+	return DoGiveUp(truncate);
+}
+
+
+status_t
+Delegation::PrepareGiveUp(bool truncate)
+{
+	status_t status = B_OK;
 	if (!fAttribute && !truncate)
-		fInode->SyncAndCommit(true);
+		status = fInode->Sync(true, false);
 
-	ReturnDelegation();
+	return status;
+}
 
-	return B_OK;
+
+status_t
+Delegation::DoGiveUp(bool truncate, bool wait)
+{
+	if (!fAttribute && !truncate && wait)
+		fInode->WaitAIOComplete();
+
+	status_t status = ReturnDelegation();
+
+	fInode->Commit(fUid, fGid);
+
+	return status;
+}
+
+
+void
+Delegation::GetStateIDandSeq(uint32* stateID, uint32& stateSeq) const
+{
+	memcpy(stateID, fStateID, sizeof(uint32) * 3);
+	stateSeq = fStateSeq;
+}
+
+
+void
+Delegation::Dump(void (*xprintf)(const char*, ...)) const
+{
+	xprintf("Delegation at %p for Inode at %p (ino %" B_PRIdINO ")\n", this, fInode, fInode->ID());
+	if (fData.fType == OPEN_DELEGATE_READ)
+		xprintf("\ttype OPEN_DELEGATE_READ, ");
+	else if (fData.fType == OPEN_DELEGATE_WRITE)
+		xprintf("\ttype OPEN_DELEGATE_WRITE, ");
+	xprintf("attribute %d, uid %" B_PRIu32 ", gid %" B_PRIu32 "\n", fAttribute, fUid, fGid);
+	xprintf("\tstate id and sequence %" B_PRIu32 " %" B_PRIu32 " %" B_PRIu32 " %" B_PRIu32 "\n",
+		fData.fStateID[0], fData.fStateID[1], fData.fStateID[2], fData.fStateSeq);
+
+	return;
 }
 
 

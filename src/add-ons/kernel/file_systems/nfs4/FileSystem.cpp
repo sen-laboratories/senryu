@@ -18,6 +18,7 @@
 #include "Request.h"
 #include "RootInode.h"
 #include "VnodeToInode.h"
+#include "WorkQueue.h"
 
 
 extern RPC::ServerManager* gRPCServerManager;
@@ -37,10 +38,10 @@ FileSystem::FileSystem(const MountConfiguration& configuration)
 {
 	fOpenOwner = get_random<uint64>();
 
-	mutex_init(&fOpenOwnerLock, NULL);
-	mutex_init(&fOpenLock, NULL);
-	mutex_init(&fDelegationLock, NULL);
-	mutex_init(&fCreateFileLock, NULL);
+	mutex_init(&fOpenOwnerLock, "nfs4 FileSystem::fOpenOwnerLock");
+	mutex_init(&fOpenLock, "nfs4 FileSystem::fOpenLock");
+	mutex_init(&fDelegationLock, "nfs4 FileSystem::fDelegationLock");
+	mutex_init(&fCreateFileLock, "nfs4 FileSystem::fCreateFileLock");
 }
 
 
@@ -63,8 +64,6 @@ FileSystem::~FileSystem()
 			free(const_cast<char*>(fPath[i]));
 	}
 	delete[] fPath;
-
-	delete fRoot;
 }
 
 
@@ -267,13 +266,6 @@ FileSystem::GetInode(ino_t id, Inode** _inode)
 
 	FileInfo fi;
 	status_t result = fInoIdMap.GetFileInfo(&fi, id);
-	if (result == B_ENTRY_NOT_FOUND) {
-		bool removed = false;
-		status_t getRemovedResult = get_vnode_removed(fFsVolume, id, &removed);
-		ASSERT(getRemovedResult == B_OK);
-		ASSERT(removed == true);
-	}
-
 	if (result != B_OK)
 		return result;
 
@@ -469,37 +461,36 @@ FileSystem::GetDelegation(const FileHandle& handle)
 	return it.Current();
 }
 
-/*! If a node object with this inode number exists, free it at the FS and VFS levels to
-	ensure that no operation will try to use it.
 
+/*! Mark this node removed and free it to ensure that no operation will try to use it.
+	@pre We hold a VFS ref to this node.
+	@post The ref needs to be released by the caller.
 */
 status_t
-FileSystem::TrashStaleNode(ino_t ino)
+FileSystem::TrashStaleNode(Inode* inode)
 {
-	status_t result = B_OK;
-	if (acquire_vnode(fFsVolume, ino) == B_OK) {
-		// we still have a vnode for the stale file present in memory
+	ino_t ino = inode->ID();
+	INFORM("TrashStaleNode %p %" B_PRIdINO "\n", inode, ino);
 
-		// mark it as stale
-		VnodeToInode* vti;
-		result = get_vnode(fFsVolume, ino, reinterpret_cast<void**>(&vti));
-		ASSERT(result == B_OK);
-		Inode* inode = vti->GetPointer();
-		if (inode != NULL)
-			inode->SetStale();
-		put_vnode(fFsVolume, ino);
+	inode->SetStale();
 
-		// delete it
-		result = remove_vnode(fFsVolume, ino);
-		ASSERT(result == B_OK);
-		put_vnode(fFsVolume, ino);
+	status_t result = remove_vnode(fFsVolume, ino);
+	ASSERT(result == B_OK);
 
-		// verify it is gone
-		if (acquire_vnode(fFsVolume, ino) == B_OK)
-			result = B_ERROR;
-		else
-			result = B_OK;
-	}
+	return result;
+}
+
+
+/*! Check whether the server node still has any hard links (including links that the client may be
+	unaware of).  If none, mark the client node removed.
+*/
+status_t
+FileSystem::TrashIfStale(Inode* inode)
+{
+	struct stat stat;
+	status_t result = inode->Stat(&stat, NULL, true);
+	if (result != B_OK)
+		result = TrashStaleNode(inode);
 
 	return result;
 }
@@ -515,16 +506,46 @@ FileSystem::TrashStaleNode(ino_t ino)
 	present, and will be replaced when the caller calls fInoIdMap->AddName.
 */
 void
-FileSystem::EnsureNoCollision(ino_t newID, const FileHandle& handle)
+FileSystem::EnsureNoCollision(ino_t newId, const FileHandle& handle)
 {
-	FileInfo existingInfo;
-	status_t result = fInoIdMap.GetFileInfo(&existingInfo, newID);
-	if (result == B_OK && existingInfo.fHandle != handle) {
-		// We are already using this file ID for a previously existing file.  If the server has
-		// assigned that ID to the file that we are now creating, it means someone else must have
-		// deleted the other file from the server, and the server is recycling the file ID.
-		result = TrashStaleNode(newID);
-		ASSERT(result == B_OK);
+	VnodeToInode* existingVti = NULL;
+	status_t result = get_vnode(fFsVolume, newId, reinterpret_cast<void**>(&existingVti));
+	if (result == B_OK) {
+		// We haven't finished creating the new node yet, so whatever get_vnode returned must be
+		// stale since the server just re-issued its inode number.
+		ASSERT(handle != existingVti->GetPointer()->fInfo.fHandle);
+		result = TrashStaleNode(existingVti->GetPointer());
+		if (result != B_OK)
+			INFORM("EnsureNoCollision: Couldn't trash stale node %" B_PRIdINO "\n", newId);
+		put_vnode(fFsVolume, newId);
+	}
+
+	return;
+}
+
+
+/*!	Delete a name from a client-side node after someone else has unlinked that name on the server
+	side.  If that was the last name known to the client, call TrashIfStale.
+	@param missingName A previously cached file name that is no longer valid.
+*/
+void
+FileSystem::ServerUnlinkCleanup(ino_t id, Inode* parent, const char* missingName)
+{
+	FileInfo fileInfo;
+	status_t result = fInoIdMap.GetFileInfo(&fileInfo, id);
+
+	VnodeToInode* vti = NULL;
+	result = get_vnode(fFsVolume, id, reinterpret_cast<void**>(&vti));
+	if (result == B_OK) {
+		bool noRemainingNames = false;
+		noRemainingNames = fileInfo.fNames->RemoveName(parent->fInfo.fNames, missingName);
+		if (noRemainingNames) {
+			// This client knows of no hard links to this node.
+			result = TrashIfStale(vti->GetPointer());
+			if (result != B_OK)
+				INFORM("ServerUnlinkCleanup: Couldn't trash stale node %" B_PRIdINO "\n", id);
+		}
+		put_vnode(fFsVolume, id);
 	}
 
 	return;
@@ -534,13 +555,32 @@ FileSystem::EnsureNoCollision(ino_t newID, const FileHandle& handle)
 void
 FileSystem::Dump(void (*xprintf)(const char*, ...))
 {
-	MutexLocker locker;
-	if (xprintf != kprintf)
-		locker.SetTo(fOpenLock, false);
+	xprintf("FileSystem at %p\n", this);
+	bool dumpDelegations = true;
+	bool dumpOpenFiles = true;
+	if (xprintf != kprintf) {
+		status_t status = mutex_trylock(&fDelegationLock);
+		if (status != B_OK)
+			dumpDelegations = false;
+		status = mutex_trylock(&fOpenLock);
+		if (status != B_OK)
+			dumpOpenFiles = false;
+	}
 
+	_DumpLocked(xprintf, dumpDelegations, dumpOpenFiles);
+
+	if (xprintf != kprintf) {
+		if (dumpDelegations)
+			mutex_unlock(&fDelegationLock);
+		if (dumpOpenFiles)
+			mutex_unlock(&fOpenLock);
+	}
+
+	xprintf("\n");
 	fInoIdMap.Dump(xprintf);
 
-	_DumpLocked(xprintf);
+	xprintf("\n");
+	gWorkQueue->Dump(xprintf);
 
 	return;
 }
@@ -587,17 +627,36 @@ FileSystem::_ParsePath(RequestBuilder& req, uint32& count, const char* _path)
 
 
 void
-FileSystem::_DumpLocked(void (*xprintf)(const char*, ...)) const
+FileSystem::_DumpLocked(void (*xprintf)(const char*, ...), bool dumpDelegations,
+	bool dumpOpenFiles) const
 {
-	xprintf("fOpenFiles:\n", fOpenFiles);
-	for (DoublyLinkedList<OpenState>::ConstIterator it = fOpenFiles.GetIterator();
-		const OpenState* state = it.Next();) {
-		xprintf("\tID\t\t%" B_PRIu64 "\n", state->fInfo.fFileId);
-		xprintf("\tFileHandle\t");
-		state->fInfo.fHandle.Dump(xprintf);
-		xprintf("\tInodeNames\t");
-		state->fInfo.fNames->Dump(xprintf);
-		xprintf("\t----------\n");
+	xprintf("\tRootInode at %p\n", fRoot);
+
+	xprintf("\tfOpenFiles\n", fOpenFiles);
+	if (dumpOpenFiles) {
+		uint64 entries = 0;
+		for (DoublyLinkedList<OpenState>::ConstIterator it = fOpenFiles.GetIterator();
+			const OpenState* state = it.Next(); ++entries) {
+			xprintf("\t\tOpenState at %p for ino %" B_PRIdINO "\n", state, state->fInfo.fFileId);
+		}
+		if (entries == 0)
+			xprintf("\t\tNone\n");
+	} else {
+		xprintf("\tfOpenLock is locked\n");
+	}
+
+	xprintf("\tDelegations\n");
+	if (dumpDelegations) {
+		uint64 entries = 0;
+		for (DoublyLinkedList<Delegation>::ConstIterator it = fDelegationList.GetIterator();
+			const Delegation* del = it.Next(); ++entries) {
+			xprintf("\t\tDelegation at %p for Inode at %p (ino %" B_PRIdINO ")\n", del,
+				del->GetInode(), del->GetInode()->ID());
+		}
+		if (entries == 0)
+			xprintf("\t\tNone");
+	} else {
+		xprintf("\tfDelegationLock is locked\n");
 	}
 
 	return;
