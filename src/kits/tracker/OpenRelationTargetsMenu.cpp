@@ -431,18 +431,19 @@ status_t
 OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 {
 	status_t result;
-	BMessage pluginConfig, itemMsg;
-	BString defaultType;
 
 	// get relation configs for storing in menu items later
 	BMessage relationConfigs;
 	result = fEntriesToOpen.FindMessage(SEN_RELATION_CONFIG_MAP, &relationConfigs);
+
 	if (result != B_OK) {
 		PRINT(("no relation config found, continuing with defaults.\n"));
 	}
 
 	// get plug config for default property type from original msg received from parent menu
+	BMessage pluginConfig;
 	result = fEntriesToOpen.FindMessage(SENSEI_PLUGIN_CONFIG_KEY, &pluginConfig);
+
 	if (result != B_OK) {
 		// at least the attrMapping msg with common label mapping must be there
 		PRINT(("could not get plugin config required for resolving self relations: %s\n", strerror(result) ));
@@ -450,7 +451,9 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 	}
 
 	// get optional default type from pluginConfig
+	BString defaultType;
 	result = pluginConfig.FindString(SENSEI_DEFAULT_TYPE_KEY, &defaultType);
+
 	if (result != B_OK) {
 		if (result != B_NAME_NOT_FOUND) {
 			PRINT(("error reading message from OpenRelationsMenu: %s\n", strerror(result)));
@@ -461,9 +464,8 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 		fDefaultType = defaultType;
 	}
 
-	// get root node
-	result = fRelationTargetsReply->FindMessage(SEN_RELATIONS, &itemMsg);
-	if (result != B_OK) {
+	// check for expected relation nodes
+	if (! fRelationTargetsReply->HasMessage(SEN_RELATIONS)) {
 		PRINT(("could not find any items in reply, skipping.\n"));
 		return result;
 	}
@@ -477,48 +479,37 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 		return result;
 	}
 
-	PRINT(("* building self relation target menu items...\n"));
+    // get number of data (i.e. relation) items in this message
+	int32 relationCount;
+	result = fRelationTargetsReply->GetInfo(SEN_RELATIONS, NULL, &relationCount);
 
-	char*		name;
-	type_code	typeCode;
-	BMessage  	propertiesMsg;
-	// mandatory properties for all items
-	int32		itemCount;
+	PRINT(("* building self relation target menu items for %d relations...\n", relationCount));
 
-    // get cardinality of items in this message (format requires a label and same count for all fields)
-    result = itemMsg.GetInfo(B_ANY_TYPE, 0, &name, &typeCode, &itemCount);
-    if (result != B_OK) {
-        ERROR("could not inspect message: %s\n", strerror(result));
-        return result;
-    }
-
-	// process all fields of this message item
-	for (int32 index = 0; index < itemCount; index++) {
-
+	// process all items of this level
+	for (int32 itemIndex = 0; itemIndex < relationCount; itemIndex++) {
 		BString label, type;
-		propertiesMsg.MakeEmpty();
 
-		result = GetItemProperties(&itemMsg, index, &propertiesMsg);
+		BMessage relationProperties;
+		result = fRelationTargetsReply->FindMessage(SEN_RELATIONS, itemIndex, &relationProperties);
 		if (result != B_OK) {
-			PRINT(("could not inspect message: %s\n", strerror(result) ));
-			return result;
+			PRINT(("  x could not display item %d, skipping.\n", itemIndex));
+			continue;	// try next
 		}
 
-		result = propertiesMsg.FindString(SEN_RELATION_LABEL, &label);
-		if (result == B_OK) {
-			if (label.IsEmpty())
+		result = relationProperties.FindString(SEN_RELATION_LABEL_ATTR, &label);
+		if (result == B_OK || result == B_NAME_NOT_FOUND) {
+			if (label.IsEmpty()) {
+				PRINT(("could not get label for item %d: %s\n", itemIndex, strerror(result) ));
 				label = "<no label>";	// should always be present but allow easier debugging
+			}
 
-			result  = propertiesMsg.FindString(SEN_RELATION_TYPE, &type);	// optional
+			result  = relationProperties.FindString(SEN_RELATION_TYPE, &type);	// optional
 			if (result == B_OK || result == B_NAME_NOT_FOUND) {
 				if (type.IsEmpty())
 					type = fDefaultType;
-				result = B_OK;
 			}
-		}
-		if (result != B_OK) {
-			PRINT(("could not get label/type from item %d: %s\n", index, strerror(result) ));
-			continue;
+
+			result = B_OK;
 		}
 
 		IconMenuItem* item;
@@ -531,11 +522,12 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 		openRelationItemMsg.AddString(SEN_RELATION_TYPE, type);
 
 		// add all properties of this relation item to be used as potential args by receiver
-		openRelationItemMsg.AddMessage(SEN_RELATION_PROPERTIES, &propertiesMsg);
+		openRelationItemMsg.AddMessage(SEN_RELATION_PROPERTIES, &relationProperties);
 
 		// add as menu if there is a child node, else add as a plain menu item
-		if (! propertiesMsg.HasMessage(SEN_RELATIONS)) {
-			PRINT(("    > adding self relation item [%d] '%s' of type '%s'.\n", index, label.String(), type.String() ));
+		if (! relationProperties.HasMessage(SEN_RELATIONS)) {
+			PRINT(("    > adding self relation item [%d] '%s' of type '%s' with %d properties.\n",
+					itemIndex, label.String(), type.String(), relationProperties.CountNames(B_ANY_TYPE) ));
 
 			// will open the target item as SEN enriched ref in Tracker
 			openRelationItemMsg.what = SEN_OPEN_RELATION_TARGET;
@@ -543,7 +535,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 			BMessage selectedConfig;
 			result = relationConfigs.FindMessage(type, &selectedConfig);
 			if (result == B_OK) {
-				propertiesMsg.AddMessage(SEN_RELATION_CONFIG, &selectedConfig);
+				relationProperties.AddMessage(SEN_RELATION_CONFIG, &selectedConfig);
 			} else {
 				if (result != B_NAME_NOT_FOUND) {
 					PRINT(("    x failed to inspect relation configs: %s\n", strerror(result) ));
@@ -552,8 +544,11 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 			}
 
 			item = new IconMenuItem(label.String(), new BMessage(openRelationItemMsg), type.String());
+
 		} else {
-			PRINT(("  * adding self relation menu [%d] '%s' of type '%s'.\n", index, label.String(), type.String() ));
+
+			PRINT(("  * adding self relation menu [%d] '%s' of type '%s' with %d properties.\n",
+					itemIndex, label.String(), type.String(), relationProperties.CountNames(B_ANY_TYPE) ));
 
 			openRelationItemMsg.what = SEN_OPEN_RELATION_TARGET_VIEW;
 
@@ -575,26 +570,31 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 				relationRoot = fRelationTargetsReply;
 			}
 
+			// get child node
+			BMessage childNode;
+			result = relationProperties.FindMessage(SEN_RELATIONS, &childNode);
+			ASSERT(result == B_OK);		// already checked above
+
 			// conveniently add selected item from properties directly, too
-			openRelationItemMsg.AddString(SEN_RELATION_ITEM_ID, propertiesMsg.GetString(SENSEI_ITEM_ID));
+			openRelationItemMsg.AddString(SEN_RELATION_ITEM_ID, relationProperties.GetString(SENSEI_ITEM_ID));
 
 			// now adapt childMsg for adding to menu below:
 			// transparently handle just like a normal message result above, but for the subtree
 			// so the submenu will have a SEN:relations and SEN_RELATIONS from the childMsg subtree
-			propertiesMsg.what = SENSEI_MESSAGE_RESULT;
-			propertiesMsg.AddRef(SEN_RELATION_SOURCE_REF, &ref);
-			propertiesMsg.AddString(SEN_RELATION_TYPE, type.String());
-			propertiesMsg.AddPointer(SEN_RELATION_ROOT, reinterpret_cast<void*>(relationRoot));
+			childNode.what = SENSEI_MESSAGE_RESULT;
+			childNode.AddRef(SEN_RELATION_SOURCE_REF, &ref);
+			childNode.AddString(SEN_RELATION_TYPE, type.String());
+			childNode.AddPointer(SEN_RELATION_ROOT, reinterpret_cast<void*>(relationRoot));
 
-			propertiesMsg.AddMessage(SENSEI_PLUGIN_CONFIG_KEY, &pluginConfig);
+			childNode.AddMessage(SENSEI_PLUGIN_CONFIG_KEY, &pluginConfig);
 			// we need all configs here to select in subtree
 			// TODO: optimize by constraining to single relation per menu or use AddPointer to root config!
-			propertiesMsg.AddMessage(SEN_RELATION_CONFIG_MAP, &relationConfigs);
+			childNode.AddMessage(SEN_RELATION_CONFIG_MAP, &relationConfigs);
 
 			item = new IconMenuItem(
 				new OpenRelationTargetsMenu(
 					label.String(),
-					new BMessage(propertiesMsg),
+					new BMessage(childNode),
 					fParentWindow,
 					be_app_messenger),
 				new BMessage(openRelationItemMsg),
@@ -607,46 +607,6 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 
 		(*targetCount)++;
 	}	// for
-
-	return B_OK;
-}
-
-status_t OpenRelationTargetsMenu::GetItemProperties(
-	const BMessage* itemMsg,
-	const int32     itemIndex,
-	BMessage* 		propertiesMsg)
-{
-	status_t result;
-
-	// add all properties from this item at this index (e.g. page, position,...),
-	// along with any nested children in ITEM messages.
-	char* name;
-	int32 count;
-	type_code typeCode;
-
-    // get number of data members in this item message (same for all items)
-    int32 fieldCount = itemMsg->CountNames(B_ANY_TYPE);
-
-	PRINT(("  > collecting %d properties of item %d...\n", fieldCount, itemIndex));
-
-	for (int32 fieldIndex = 0; fieldIndex < fieldCount; fieldIndex++) {
-		result = itemMsg->GetInfo(B_ANY_TYPE, fieldIndex, &name, &typeCode, &count);
-
-		if (result == B_OK) {
-			if (typeCode != B_MESSAGE_TYPE) {
-				PRINT(("  ? unexpected structure, possibly flat properties instead of nested messages?\n"));
-				continue;
-			}
-
-			BMessage properties;
-			itemMsg->FindMessage(name, itemIndex, &properties);
-			propertiesMsg->Append(properties);
-		} else {
-			PRINT(("  x failed to add message property '%s' to item: %s\n",
-					name, strerror(result)));
-			continue;
-		}
-	}
 
 	return B_OK;
 }

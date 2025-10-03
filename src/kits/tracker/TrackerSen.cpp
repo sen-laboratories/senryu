@@ -590,7 +590,7 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 		result = message->FindPointer(SEN_RELATION_ROOT, reinterpret_cast<void**>(&relationRoot));
 
 		if (result == B_OK && relationRoot != NULL) {
-			PRINT(("  * got relation ROOT, generating view for ALL relations of source.\n"));
+			PRINT(("  * got relation ROOT, generating self relation view....\n"));
 		} else {
 			PRINT(("  X failed to get expected relation ROOT, aborting.\n"));
 			if (result != B_OK)
@@ -599,62 +599,26 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 				return B_BAD_VALUE;
 		}
 
+		// TODO: check for empty root node here, too?
+		relations = *relationRoot;
+
 		// get plugin config for mappings
 		BMessage pluginConfig;
 		result = message->FindMessage(SENSEI_PLUGIN_CONFIG_KEY, &pluginConfig);
 		if (result != B_OK) {
-			PRINT(("could not get plugin config required for resolving self relations: %s\n", strerror(result) ));
+			PRINT(("  x could not get plugin config required for resolving self relations: %s\n", strerror(result) ));
 			return result;
 		}
 
-		// convert to common relations map with targetId (all point to source for self relation) and
-		// properties mapped to MIME type attribute names, using the type_mapping provided by SENSEI
-		BMessage typeMapping;
-		pluginConfig.FindMessage(SENSEI_TYPE_MAPPING, &typeMapping);
-
-		// same for attributes (e.g. page -> SEN:REL:page)
-		BMessage attrMapping;
-		pluginConfig.FindMessage(SENSEI_ATTR_MAPPING, &attrMapping);
-
-		// get root node item message
-		BMessage relationsFlat;
-		result = relationRoot->FindMessage(SENSEI_ITEM, &relationsFlat);
-
-		if (result != B_OK) {
-			if (result != B_NAME_NOT_FOUND) {
-				PRINT(("error looking for child node in message: %s\n", strerror(result)));
-				return result;
-			} else {
-				// return an empty property message for the self relation
-				PRINT(("no self relations received.\n"));
-				relations.AddMessage(srcId.String(), &relationsFlat);
-
-				return B_OK;
-			}
-		}
-
-		PRINT(("\n*** got flat plugin result for self relations:\n\n"));
-		relationsFlat.PrintToStream();
-
-		// get selected item level
+		// get selected item ID
 		const char* itemId = message->GetString(SEN_RELATION_ITEM_ID, "");
 		if (strlen(itemId) == 0) {
-			PRINT(("x got no item ID from selection, check.\n"));
+			PRINT(("  x got no item ID from selection, check.\n"));
 		} else {
-			PRINT(("* got item ID %s.\n", itemId));
+			PRINT(("  * got item ID %s.\n", itemId));
 		}
+
 		relationConfigs.AddString(SEN_RELATION_ITEM_ID, itemId);
-
-		// self relations target points to source
-		result = ConvertSelfRelationsToCommon(srcId.String(), &relationsFlat,
-											  &typeMapping, &attrMapping, &relations);
-		if (result != B_OK) {
-			PRINT(("could not convert from plugin result to self relations: %s\n", strerror(result) ));
-			return result;
-		}
-
-		PRINT(("\n*** successfully converted plugin result to nested self relations:\n\n"));
-		relations.PrintToStream();
 
 	} else {
 		message->FindMessage(SEN_RELATIONS, &relations);
@@ -1083,143 +1047,6 @@ TTracker::CreateRelationDirectory(
 	relationDirEntry.GetRef(relationDirRef);
 
 	return result;
-}
-
-
-// TODO: the array format is only needed for the PDF-Extractor to keep the order of TOC items and any children;
-//       we need to have a flag isOrdered in relationConf to switch between this and the easier
-//       default format for relations with nested messages and individual property bags.
-status_t TTracker::ConvertSelfRelationsToCommon(
-	const char* targetId, const BMessage* relationsFlat,
-	const BMessage* typeMapping, const BMessage* attrMapping,
-	BMessage* relationsNested)
-{
-	status_t result = B_OK;
-
-	// convert each item msg from self relations to a targetId->Properties msg as used in the common
-	// SEN:relations structure, mapping types to full MIME type and properties to MIME attribute names.
-	// sanity checking has already been done in SEN SelfRelations implementation.
-	char* name;
-	type_code typeCode;
-	int32 propCount = 0;
-	int32 itemCount = relationsFlat->CountNames(B_ANY_TYPE);
-
-	if (itemCount == 0) {
-		PRINT(("  - got emtpy message, bailing out.\n"));
-		return B_OK;
-	}
-
-	// get property count - same for all properties of an item in our case
-	result = relationsFlat->GetInfo(B_ANY_TYPE, 0, &name, &typeCode, &propCount);
-	if (result != B_OK) {
-		PRINT(("  X failed to get property count for item msg: %s\n", strerror(result) ));
-		return result;
-	}
-
-	BMessage     itemProperties;
-	const void*  value;
-	ssize_t      valueSize;
-	int32        flatProperties;
-	// for nested child node to be filled with result of recursion
-	BMessage     nestedProperties;
-
-	// now collect all properties for every item separately into individual relation property messages
-	for (int32 relationIndex = 0; relationIndex < propCount; relationIndex++) {
-		PRINT(("relation %d with %d items and %d properties...\n", relationIndex, itemCount, propCount));
-		itemProperties.MakeEmpty();
-		nestedProperties.MakeEmpty();
-		flatProperties = 0;
-
-		for (int32 itemIndex = 0; itemIndex < itemCount; itemIndex++) {
-			// get value for each property at the current itemIndex
-			result = relationsFlat->GetInfo(B_ANY_TYPE, itemIndex, &name, &typeCode, NULL);
-			if (result != B_OK) {
-				PRINT(("  X failed to get name/value for item #%d, property '%s' [%d]: %s\n",
-					itemIndex, name, relationIndex, strerror(result) ));
-				continue;
-			}
-
-			PRINT(("inspecting property %s at %d for item %d.\n", name, relationIndex, itemIndex));
-
-			// handle nested item message for mapping properties to child relations message
-			if (strncmp(name, SENSEI_ITEM, strlen(name)) == 0) {
-				BMessage  childMsg;
-				result = relationsFlat->FindMessage(SENSEI_ITEM, relationIndex, &childMsg);
-
-				if (result != B_OK) {
-					if (result == B_NAME_NOT_FOUND) {
-						PRINT(("  x failed to get subitem msg: %s\n", strerror(result) ));
-						continue;
-					}
-				}
-
-				if (childMsg.IsEmpty()) {
-					PRINT(("  > skipping empty placeholder child item for property '%s' for item #%d.\n",
-							name, itemIndex));
-					continue;
-				}
-
-				PRINT(("  > mapping nested item %s @[%d]...\n", name, itemIndex ));
-
-				// recursively convert child message so we can later create the entire structure from the root node
-				result = ConvertSelfRelationsToCommon(
-					targetId, &childMsg, typeMapping, attrMapping, &nestedProperties);
-
-				if (result != B_OK) {
-					PRINT(("  X error mapping nested item %s @[%d]: %s\n",
-							name, itemIndex, strerror(result) ));
-					continue;	// skip
-				}
-
-				PRINT(("  < DONE mapping nested item %s @[%d]...\n", name, itemIndex ));
-
-				// add item ID to item itself
-				const char* itemId = relationsFlat->GetString(SENSEI_ITEM_ID, relationIndex, NULL);
-				if (itemId != NULL) {
-					nestedProperties.AddString(SENSEI_ITEM_ID, itemId);
-				}
-			} else {    // map flat properties
-				result = relationsFlat->FindData(name, typeCode, relationIndex, &value, &valueSize);
-				if (result == B_OK) {
-					// map property name to common attribute name as per attribute map
-					// default is to keep the name, if no mapping was defined.
-					const char *commonName = attrMapping->GetString(name, name);
-
-					PRINT(("  * adding property '%s' ('%s') [%d] for item #%d:\n",
-							name, commonName, relationIndex, itemIndex));
-
-					itemProperties.AddData(commonName, typeCode, value, valueSize);
-					flatProperties++;
-				} else {
-					PRINT(("  X failed to add name/value for item %d, property %s [%d]: %s\n",
-						itemIndex, name, relationIndex, strerror(result) ));
-					continue;
-				}
-			}   // if (propertyName == SENSEI_ITEM)
-		} // item loop
-
-		// add properties in standard SEN format
-		// add possible relations from optional item subtree
-		if (! nestedProperties.IsEmpty()) {
-			if (flatProperties > 0) {
-				// only add sub node if there were other (flat) properties at this level
-				itemProperties.AddMessage(SEN_RELATIONS, &nestedProperties);
-			} else {
-				PRINT(("  + appending nested properties to current item.\n"));
-				itemProperties.Append(nestedProperties);
-			}
-		}
-
-		// don't create nested nodes for intermediary nodes that contain item nodes only
-		if (flatProperties > 0) {
-			relationsNested->AddMessage(targetId, &itemProperties);
-		} else {
-			PRINT(("  + appending properties to current item.\n"));
-			relationsNested->Append(nestedProperties);
-		}
-	}  // property loop
-
-	return B_OK;
 }
 
 
