@@ -586,10 +586,9 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 
 	if (isSelf) {
 		// get all relations for creating complete relation structure, but open only selected relation view later
-		BMessage* relationRoot;
-		result = message->FindPointer(SEN_RELATION_ROOT, reinterpret_cast<void**>(&relationRoot));
+		result = message->FindPointer(SEN_RELATION_ROOT, reinterpret_cast<void**>(&relations));
 
-		if (result == B_OK && relationRoot != NULL) {
+		if (result == B_OK && ! relations.IsEmpty()) {
 			PRINT(("  * got relation ROOT, generating self relation view....\n"));
 		} else {
 			PRINT(("  X failed to get expected relation ROOT, aborting.\n"));
@@ -598,9 +597,6 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 			else
 				return B_BAD_VALUE;
 		}
-
-		// TODO: check for empty root node here, too?
-		relations = *relationRoot;
 
 		// get plugin config for mappings
 		BMessage pluginConfig;

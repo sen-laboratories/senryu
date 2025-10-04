@@ -520,6 +520,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 		// add common relation properties
 		openRelationItemMsg.AddRef(SEN_RELATION_SOURCE_REF, &ref);	// use standard refs as expected by Tracker
 		openRelationItemMsg.AddString(SEN_RELATION_TYPE, type);
+		openRelationItemMsg.AddMessage(SEN_RELATION_CONFIG_MAP, &relationConfigs);
 
 		// add all properties of this relation item to be used as potential args by receiver
 		openRelationItemMsg.AddMessage(SEN_RELATION_PROPERTIES, &relationProperties);
