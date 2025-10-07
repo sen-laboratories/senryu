@@ -577,6 +577,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 			ASSERT(result == B_OK);		// already checked above
 
 			// conveniently add selected item from properties directly, too
+			// TODO: handle SEN_RELATION_ITEM_ID, too
 			openRelationItemMsg.AddString(SEN_RELATION_ITEM_ID, relationProperties.GetString(SENSEI_ITEM_ID));
 
 			// now adapt childMsg for adding to menu below:

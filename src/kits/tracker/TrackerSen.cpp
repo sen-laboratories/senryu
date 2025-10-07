@@ -476,14 +476,11 @@ TTracker::PrepareRelationFolder(BMessage *message, entry_ref* relationDirRef)
 	PRINT(("got %d relations\n", countRelations) );
 
 	BMessage relationConfigs;
-	result = message->FindMessage(SEN_RELATION_CONFIG, &relationConfigs);
+	result = message->FindMessage(SEN_RELATION_CONFIG_MAP, &relationConfigs);
 	if (result != B_OK) {
 		PRINT(("could not get relation config: %s\n", strerror(result) ));
 		return result;
 	}
-
-	// create SEN relation folders of relation type, relations are expected to be unique here
-	BMessage relationConf;
 
 	// generate unique relation folder name
 	// we can safely take the inode as folderId here since it's volume-bound anyway (e.g. to /tmp)
@@ -493,6 +490,9 @@ TTracker::PrepareRelationFolder(BMessage *message, entry_ref* relationDirRef)
 		PRINT(("failed to create relation folder: %s\n", strerror(result) ));
 		return result;
 	}
+
+	// create SEN relation folders of relation type, relations are expected to be unique here
+	BMessage relationConf;
 
 	for (int rel = 0; rel < countRelations; rel++) {
 		const char* relationType = relations.StringAt(rel).String();
@@ -543,29 +543,38 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 	BMessage relationProperties;
 	message->FindMessage(SEN_RELATION_PROPERTIES, &relationProperties);
 
-	// get config for relation
+	PRINT(("PrepareRelationTargetFolder: got relation target view message:\n"));
+	message->PrintToStream();
+
+	// get config for all relations in the result
 	BMessage relationConfigs;
+	// holds selected config
+	BMessage relationConf;
+
 	result = message->FindMessage(SEN_RELATION_CONFIG_MAP, &relationConfigs);
+	if (result == B_OK)
+		result = relationConfigs.FindMessage(relationType, &relationConf);
+
 	if (result != B_OK) {
 		PRINT(("could not get relation config for type %s: %s\n", relationType, strerror(result) ));
 		return result;
 	}
 
-	// add type to config for proccessing
-	relationConfigs.AddString(SEN_RELATION_TYPE, relationType);
+	const char* relationName = relationConf.GetString(SEN_RELATION_NAME);
+	bool isSelf    = relationConf.GetBool(SEN_RELATION_IS_SELF);
+	bool isDynamic = relationConf.GetBool(SEN_RELATION_IS_DYNAMIC);
 
-	bool isSelf    = relationConfigs.GetBool(SEN_RELATION_IS_SELF);
-	bool isDynamic = relationConfigs.GetBool(SEN_RELATION_IS_DYNAMIC);
-
-	PRINT(("relation %s is %s and %s.\n", relationType,
+	PRINT(("selected relation '%s' of type '%s' is %s and %s.\n",
+		relationName,
+		relationType,
 		isSelf ? "reflexive" : "normal",
 		isDynamic ? "dynamic": "static"));
 
 	// get SEN:ID of source for normal relations, or the inode for self relations
 	BString srcId;
-	srcId = message->GetString(SEN_RELATION_SOURCE_ID);
+	message->GetString(SEN_RELATION_SOURCE_ID, srcId);
 
-	if (srcId == NULL) {	// e.g. for self relations
+	if (srcId.IsEmpty()) {	// e.g. for self relations
 		result = GetInodeForRef(&srcRef, &srcId);
 		if (result != B_OK) {
 			PRINT(("failed to create relation folder: %s\n", strerror(result) ));
@@ -573,48 +582,45 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 		}
 
 		// save ref along with relation files later, since we have no way to lookup the source by inode alone
-		relationConfigs.AddRef(SEN_RELATION_SOURCE_REF, &srcRef);
+		relationConf.AddRef(SEN_RELATION_SOURCE_REF, &srcRef);
 
 		if (isSelf) {	// add source as target ref, too, as they are the same
-			relationConfigs.AddRef(SEN_RELATION_TARGET_REF, &srcRef);
+			relationConf.AddRef(SEN_RELATION_TARGET_REF, &srcRef);
 		}
 	}
 	// add to config for proccessing
-	relationConfigs.AddString(SEN_RELATION_SOURCE_ID, srcId);
+	relationConf.AddString(SEN_RELATION_SOURCE_ID, srcId);
 
 	BMessage relations;
 
 	if (isSelf) {
 		// get all relations for creating complete relation structure, but open only selected relation view later
-		result = message->FindPointer(SEN_RELATION_ROOT, reinterpret_cast<void**>(&relations));
+		BMessage* relationRoot;
+		result = message->FindPointer(SEN_RELATION_ROOT, reinterpret_cast<void**>(&relationRoot));
 
-		if (result == B_OK && ! relations.IsEmpty()) {
-			PRINT(("  * got relation ROOT, generating self relation view....\n"));
+		if (result == B_OK) {
+			relations = *relationRoot;
+			if (relations.IsEmpty()) {
+				PRINT(("  ? no relations contained in result root.\n"));
+				return B_OK;
+			}
 		} else {
-			PRINT(("  X failed to get expected relation ROOT, aborting.\n"));
-			if (result != B_OK)
-				return result;
-			else
-				return B_BAD_VALUE;
-		}
-
-		// get plugin config for mappings
-		BMessage pluginConfig;
-		result = message->FindMessage(SENSEI_PLUGIN_CONFIG_KEY, &pluginConfig);
-		if (result != B_OK) {
-			PRINT(("  x could not get plugin config required for resolving self relations: %s\n", strerror(result) ));
+			PRINT(("  X failed to get relation ROOT: %s\n", strerror(result) ));
 			return result;
 		}
 
-		// get selected item ID
-		const char* itemId = message->GetString(SEN_RELATION_ITEM_ID, "");
+		PRINT(("  * got relation ROOT, generating self relation view....\n"));
+
+		// get selected item ID from selected relation properties
+		const char* itemId = relationProperties.GetString(SEN_RELATION_ITEM_ID, "");
 		if (strlen(itemId) == 0) {
 			PRINT(("  x got no item ID from selection, check.\n"));
 		} else {
 			PRINT(("  * got item ID %s.\n", itemId));
 		}
 
-		relationConfigs.AddString(SEN_RELATION_ITEM_ID, itemId);
+		relationConf.AddString(SEN_RELATION_ITEM_ID, itemId);
+		relationConf.AddString(SEN_RELATION_TYPE, relationType);
 
 	} else {
 		message->FindMessage(SEN_RELATIONS, &relations);
@@ -622,14 +628,15 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 	}
 
 	// create top-level relation dir for src relation
-	result = CreateRelationDirectory(srcId.String(), relationType, &relationConfigs, relationDirRef);
+	// TODO: pass in all configs and handle mixed types properly
+	result = CreateRelationDirectory(srcId.String(), relationType, &relationConf, relationDirRef);
 	if ((result != B_OK)) {
 		PRINT(("could not create relation target folder: %s\n", strerror(result)));
 		return result;
 	}
 
 	// reusable optionally recursive part
-	result = WriteTargetRelations(&relations, &relationConfigs, NULL, relationDirRef);
+	result = WriteTargetRelations(&relations, &relationConf, NULL, relationDirRef);
 	if (result != B_OK) {
 		PRINT(("could not write relation targets to folder %s: %s\n", relationDirRef->name, strerror(result) ));
 		return result;
@@ -658,7 +665,6 @@ status_t TTracker::WriteTargetRelations(
 	}
 
 	bool isDynamic = relationConf->GetBool(SEN_RELATION_IS_DYNAMIC);
-	const char* srcId = relationConf->GetString(SEN_RELATION_SOURCE_ID);
 	const char* shortName = relationConf->GetString(SEN_RELATION_NAME);
 	// top-level relation type, may vary for individual relations (e.g. self / n-ary relations)
 	const char* relationDefaultType = relationConf->GetString(SEN_RELATION_TYPE);
@@ -675,13 +681,13 @@ status_t TTracker::WriteTargetRelations(
 		return result;
 	}
 
-	PRINT(("* working dir is now: %s...\n", relationDirPath.Path() ));
+	PRINT(("  * working dir is now: '%s'...\n", relationDirPath.Path() ));
 
 	// for dynamic relations, check if current working dir is the selected target we want to open later
 	BString itemId, selectedId;
 
 	if (isDynamic) {
-		relations->FindString(SENSEI_ITEM_ID, &itemId);
+		relations->FindString(SEN_RELATION_ITEM_ID, &itemId);
 
 		if (! itemId.IsEmpty()) {
 			relationConf->FindString(SEN_RELATION_ITEM_ID, &selectedId);
@@ -697,231 +703,240 @@ status_t TTracker::WriteTargetRelations(
 		}
 	}
 
-	PRINT(("processing relation dir '%s'...\n", relationDirPath.Path() ));
+	const char* srcId = relationConf->GetString(SEN_RELATION_SOURCE_ID);
+	if (srcId == NULL) {
+		PRINT(("  x missing relation source, expected inode or SEN:ID\n"));
+		return B_BAD_VALUE;
+	}
 
-	// all relations of a particular target (possibly nested)
-	BMessage targetRelations;
+	int32 countRelations = 0;
+	relations->GetInfo(SEN_RELATIONS, NULL, &countRelations);
 
-	// iterate through all target IDs and get relation properties for each, then populate relation targets dir
+	PRINT(("  o processing relation dir '%s' with %d relations...\n", relationDirPath.Path(), countRelations ));
+
+	// iterate through all target relations and get relation properties for each, then populate relation targets dir
     // with matching target refs, creating files with relation properties in file attributes.
-    for (int32 targetIndex = 0; targetIndex < relations->CountNames(B_MESSAGE_TYPE); targetIndex++) {
-		char* targetId;
-		int32 countRelations;	// there can be multiple relations for the same target
-
-		result = relations->GetInfo(B_MESSAGE_TYPE, targetIndex, &targetId, NULL, &countRelations);
-
-		if (result != B_OK) {
-			PRINT(("no valid targetId found / unexpected type for targetId %s at index %d: %s.\n",
-				targetId, targetIndex, strerror(result) ));
-			continue;	// better luck next time?
-		}
-
-		PRINT(("\n*** creating relation files for sourceId '%s' with targetId %s and %d relations...\n",
-				srcId, targetId, countRelations));
-
-		// get properties for individual relation to the loop's targetId
-		// Note: there might be more than one relation to the same target with different properties!
-		BNode	  relationNode;
-		BNodeInfo relationNodeInfo;
+	// Note: there can be multiple relations for the same target with different properties
+	for (int32 relationIndex = 0; relationIndex < countRelations; relationIndex++) {
+		const char*	  targetId;
         BMessage  properties;
+		BNode	  relationNode;
 		BString   entryName;
 
 		// create individual relation targets for each relation of the current target
-        for (int32 relationIndex = 0; relationIndex < countRelations; relationIndex++) {
-			result = relations->FindMessage(targetId, relationIndex, &properties);
+		result = relations->FindMessage(SEN_RELATIONS, relationIndex, &properties);
 
+		if (result != B_OK) {
+			PRINT(("  > could not get relation properties at %d: %s\n",
+				relationIndex, strerror(result) ));
+			continue;
+		}
+
+		targetId = properties.GetString(SEN_TO_ATTR);
+
+		// used for self (and later also n-ary) relations
+		bool hasRelations = properties.HasMessage(SEN_RELATIONS);
+
+		// skip intermediate nodes (only contain sub nodes)
+		const char* relationType = properties.GetString(SEN_RELATION_TYPE, relationDefaultType);
+
+		// determine useful file name for relation
+		// best fit: label, fallback: relation's shortname
+		entryName = properties.GetString(SEN_RELATION_LABEL_ATTR);
+		if (entryName == NULL) {
+			PRINT(("  x WARN: expected label not found, falling back to short name.\n"));
+			entryName = shortName;
+		}
+
+		// file/dir name must be valid
+		entryName.ReplaceAll('/', '\\');
+
+		// ensure file/dir name is unique
+		if (BEntry(&relationDir, entryName.String()).Exists()) {
+			// human readable 1-based index, following the first relation #0 (without index)
+			entryName << " #" << relationIndex + 1;
+		}
+
+		// since dynamic relations are generated, they cannot be changed
+		// Note: Haiku is single user so perms have to apply to root, too
+		// TODO: there seems to be a bug in Haiku's storage kit or Tracker bc you can still delete read-only files!
+		mode_t readWriteMode;
+
+		if (hasRelations) {
+			readWriteMode = (isDynamic ? 0555 : 0777);	// ugo=rx if dynamic, else rwx
+		} else {
+			readWriteMode = (isDynamic ? 0444 : 0555);  // ugo=r  if dynamic, else rw
+		}
+
+		// create file or dir with appropriate permissions
+		if (hasRelations) {
+			BPath subDirLoc;
+			BDirectory subDir;
+			BEntry subDirEntry;
+			entry_ref subDirRef;
+
+			result = relationDir.CreateDirectory(entryName, &subDir);
 			if (result != B_OK) {
-				PRINT(("  > could not get relation properties for target %s at %d: %s\n",
-					targetId, relationIndex, strerror(result) ));
+				PRINT(("  > error creating relation subdir '%s'': %s\n",
+						entryName.String(), strerror(result) ));
+				return result;
+			}
+
+			subDir.GetEntry(&subDirEntry);
+			subDirEntry.GetPath(&subDirLoc);
+			subDirEntry.GetRef(&subDirRef);
+			relationNode.SetTo(&subDirRef);
+
+			// write relation dir icon if available
+			void*  iconBuf;
+			size_t iconSize;
+
+			result = GetSenIcon(relationType, SEN_RELATION_FOLDER_ICON, &iconBuf, &iconSize);
+			if (result == B_OK) {
+				ssize_t sizeWritten = relationNode.WriteAttr("BEOS:ICON", B_VECTOR_ICON_TYPE, 0, iconBuf, iconSize);
+				if (sizeWritten < 0) {	// can be interpreted as an error code
+					PRINT(("  x error writing folder icon %s to %s: %s\n",
+							SEN_RELATION_FOLDER_ICON, entryName.String(), strerror(sizeWritten) ));
+					// keep on going, not tragic
+				}
+			}
+
+			// recurse to create complete relation structure for dynamic relations
+			if (isDynamic) {
+				result = subDirEntry.InitCheck();
+
+				if (result == B_OK) {
+					BMessage nestedRelations;
+					result = properties.FindMessage(SEN_RELATIONS, &nestedRelations);
+
+					if (result == B_OK && ! nestedRelations.IsEmpty()) {
+						PRINT(("  >> entering relation subdir %s...\n", subDirRef.name));
+
+						// process nested relations in new subdir
+						result = WriteTargetRelations(&nestedRelations, relationConf, &subDirRef, openDirRef);
+						if (result != B_OK) {
+							PRINT(("  x error writing target relations, aborting.\n"));
+							return result;
+						}
+
+						PRINT(("  << leaving relation subdir %s...\n", subDirRef.name));
+					}
+				}
+				if (result != B_OK) {
+					PRINT(("  x error writing to relation subdir '%s': %s\n",
+							subDirLoc.Path(), strerror(result) ));
+					return result;
+				}
+			}
+		} else {
+			BFile relationTarget(&relationDir, entryName.String(), readWriteMode | B_CREATE_FILE);
+			relationNode.SetTo(&relationDir, entryName.String());
+
+			PRINT(("  > writing to relation file %s...\n", entryName.String() ));
+		}
+
+		result = relationNode.InitCheck();
+		if (result != B_OK) {
+			PRINT(("  x error creating relation target file/dir '%s': %s\n", entryName.String(), strerror(result) ));
+			return result;
+		}
+
+		relationNode.SetPermissions(readWriteMode);
+		BNodeInfo relationNodeInfo(&relationNode);
+
+		result = relationNodeInfo.SetType(relationType);
+
+		// write relation src/target IDs
+		if (result == B_OK) result = relationNode.WriteAttrString(SEN_RELATION_SOURCE_ATTR, new BString(srcId));
+		if (result == B_OK) result = relationNode.WriteAttrString(SEN_RELATION_TARGET_ATTR, new BString(targetId));
+
+		// write refs if any
+		ssize_t sizeRead, sizeWritten;
+
+		if (result == B_OK) {
+			const void* buffer;
+
+			// we deliberately don't use FindRef since we need the raw buffer and size for writing the attribute below
+			result = relationConf->FindData(SEN_RELATION_SOURCE_REF, B_REF_TYPE, &buffer, &sizeRead);
+			if (result == B_OK) {
+				sizeWritten = relationNode.WriteAttr(SEN_RELATION_SOURCE_REF_ATTR, B_REF_TYPE, 0, buffer, sizeRead);
+				if (sizeWritten <= 0) {
+					result = sizeWritten;
+					ERROR("  x failed to write relation source ref: %s\n", strerror(result));
+					return result;
+				}
+			}
+			// same for target ref
+			result = relationConf->FindData(SEN_RELATION_TARGET_REF, B_REF_TYPE, &buffer, &sizeRead);
+			if (result == B_OK) {
+				sizeWritten = relationNode.WriteAttr(SEN_RELATION_TARGET_REF_ATTR, B_REF_TYPE, 0, buffer, sizeRead);
+				if (sizeWritten <= 0) {
+					result = sizeWritten;
+					ERROR("  x failed to write relation target ref: %s\n", strerror(result));
+					return result;
+				}
+			}
+		}
+
+		if (result != B_OK) {
+			ERROR("  x error writing common relation file attributes: %s\n", strerror(result));
+			return result;
+		}
+
+		int32 countProperties = properties.CountNames(B_ANY_TYPE);
+
+		PRINT(("  * writing %d property attributes for relation #%d, target %s, into file %s:\n",
+			   properties.CountNames(B_ANY_TYPE), relationIndex, targetId, entryName.String() ));
+
+		// create a file for each set of properties for all targets
+		for (int32 propertyIndex = 0; propertyIndex < countProperties; propertyIndex++) {
+			// write out relation properties as file attributes according to message field type (== MIME attr type)
+			char*        propertyName;
+			type_code    propertyType;
+			const void*  data;
+			ssize_t	     size;
+
+			result = properties.GetInfo(B_ANY_TYPE, propertyIndex, &propertyName, &propertyType, NULL);
+			if (result != B_OK) {
+				PRINT(("  x error retrieving propertyName #%d for relation %d of target %s: %s\n",
+						propertyIndex, relationIndex, targetId, strerror(result) ));
 				continue;
 			}
 
-			// used for self (and later also n-ary) relations
-			bool hasRelations = properties.HasMessage(SEN_RELATIONS);
-
-			// skip intermediate nodes (only contain sub nodes)
-			const char* relationType = properties.GetString(SEN_RELATION_TYPE, relationDefaultType);
-
-			// determine useful file name for relation
-			// best fit: label, fallback: relation's shortname
-			entryName = properties.GetString(SEN_RELATION_LABEL_ATTR);
-			if (entryName == NULL) {
-				PRINT(("  x WARN: expected label not found, falling back to short name.\n"));
-				entryName = shortName;
+			// don't write attributes for internal properties (starting with "_"),
+			// they are only temporary or have already been translated to full names.
+			if (strncmp(propertyName, "_", 1) == 0) {
+				PRINT(("  - skipping internal attribute %s.\n", propertyName));
+				continue;
 			}
 
-			// file/dir name must be valid
-			entryName.ReplaceAll('/', '\\');
-
-			// ensure file/dir name is unique
-			if (BEntry(&relationDir, entryName.String()).Exists()) {
-				// human readable 1-based index, following the first relation #0 (without index)
-				entryName << " #" << relationIndex + 1;
-			}
-
-			// since dynamic relations are generated, they cannot be changed
-			// Note: Haiku is single user so perms have to apply to root, too
-			// TODO: there seems to be a bug in Haiku's storage kit or Tracker bc you can still delete read-only files!
-			mode_t readWriteMode;
-
-			if (hasRelations) {
-				readWriteMode = (isDynamic ? 0555 : 0777);	// ugo=rx if dynamic, else rwx
-			} else {
-				readWriteMode = (isDynamic ? 0444 : 0555);  // ugo=r  if dynamic, else rw
-			}
-
-			// create file or dir with appropriate permissions
-			if (hasRelations) {
-				BPath subDirLoc;
-				BDirectory subDir;
-				BEntry subDirEntry;
-				entry_ref subDirRef;
-
-				result = relationDir.CreateDirectory(entryName, &subDir);
-				if (result != B_OK) {
-					PRINT(("  > error creating relation subdir '%s'': %s\n",
-							entryName.String(), strerror(result) ));
-					return result;
-				}
-
-				subDir.GetEntry(&subDirEntry);
-				subDirEntry.GetPath(&subDirLoc);
-				subDirEntry.GetRef(&subDirRef);
-				relationNode.SetTo(&subDirRef);
-
-				// write relation dir icon if available
-				void*  iconBuf;
-				size_t iconSize;
-
-				result = GetSenIcon(relationType, SEN_RELATION_FOLDER_ICON, &iconBuf, &iconSize);
-				if (result == B_OK) {
-					ssize_t sizeWritten = relationNode.WriteAttr("BEOS:ICON", B_VECTOR_ICON_TYPE, 0, iconBuf, iconSize);
-					if (sizeWritten < 0) {	// can be interpreted as an error code
-						PRINT(("  x error writing folder icon %s to %s: %s\n",
-								SEN_RELATION_FOLDER_ICON, entryName.String(), strerror(sizeWritten) ));
-						// keep on going, not tragic
-					}
-				}
-
-				// recurse to create complete relation structure for dynamic relations
-				if (isDynamic) {
-					result = subDirEntry.InitCheck();
-
-					if (result == B_OK) {
-						BMessage nestedRelations;
-						result = properties.FindMessage(SEN_RELATIONS, &nestedRelations);
-
-						if (result == B_OK && ! nestedRelations.IsEmpty()) {
-							PRINT(("  >> entering relation subdir %s...\n", subDirRef.name));
-
-							// process nested relations in new subdir
-							result = WriteTargetRelations(&nestedRelations, relationConf, &subDirRef, openDirRef);
-							PRINT(("  << leaving relation subdir %s...\n", subDirRef.name));
-						}
-					}
-					if (result != B_OK) {
-						PRINT(("  > error writing to relation subdir '%s': %s\n",
-								subDirLoc.Path(), strerror(result) ));
-						return result;
-					}
-				}
-			} else {
-				BFile relationTarget(&relationDir, entryName.String(), readWriteMode | B_CREATE_FILE);
-				relationNode.SetTo(&relationDir, entryName.String());
-
-				PRINT(("writing to relation file %s...\n", entryName.String() ));
-			}
-
-			result = relationNode.InitCheck();
+			result = properties.FindData(propertyName, propertyType, &data, &size);
 			if (result != B_OK) {
-				PRINT(("  > error creating relation target file/dir '%s': %s\n", entryName.String(), strerror(result) ));
+				PRINT(("  skipping property %s for relation %d of target %s, error: %s\n",
+						propertyName, relationIndex, targetId, strerror(result) ));
+				continue;
+			}
+
+			// relation property name and type == MIME type attr name and type
+			PRINT(("  > writing relation property %s into attribute.\n", propertyName));
+
+			sizeWritten = relationNode.WriteAttr(propertyName, propertyType, 0, data, size);
+			if (sizeWritten < size) {
+				if (result < 0)
+					result = sizeWritten;
+				else
+					result = B_BAD_VALUE;
+
+				ERROR(("  x failed to write relation property attribute %s: %s.\n"),
+					propertyName, strerror(result));
+
 				return result;
 			}
+		}   // properties loop
+		// sync after finished writing attributes
+		relationNode.Sync();
 
-			relationNode.SetPermissions(readWriteMode);
-			BNodeInfo relationNodeInfo(&relationNode);
-
-			result = relationNodeInfo.SetType(relationType);
-
-			// write relation src/target IDs
-			if (result == B_OK) result = relationNode.WriteAttrString(SEN_RELATION_SOURCE_ATTR, new BString(srcId));
-			if (result == B_OK) result = relationNode.WriteAttrString(SEN_RELATION_TARGET_ATTR, new BString(targetId));
-
-			// write refs if any
-			if (result == B_OK) {
-				const void*     buffer;
-				ssize_t   		sizeRead, sizeWritten;
-
-				// we deliberately don't use FindRef since we need the raw buffer and size for writing the attribute below
-				result = relationConf->FindData(SEN_RELATION_SOURCE_REF, B_REF_TYPE, &buffer, &sizeRead);
-				if (result == B_OK) {
-					sizeWritten = relationNode.WriteAttr(SEN_RELATION_SOURCE_REF_ATTR, B_REF_TYPE, 0, buffer, sizeRead);
-					if (sizeWritten <= 0) {
-						result = sizeWritten;
-						ERROR("failed to write relation source ref: %s\n", strerror(result));
-					}
-				}
-				// same for target ref
-				result = relationConf->FindData(SEN_RELATION_TARGET_REF, B_REF_TYPE, &buffer, &sizeRead);
-				if (result == B_OK) {
-					sizeWritten = relationNode.WriteAttr(SEN_RELATION_TARGET_REF_ATTR, B_REF_TYPE, 0, buffer, sizeRead);
-					if (sizeWritten <= 0) {
-						result = sizeWritten;
-						ERROR("failed to write relation target ref: %s\n", strerror(result));
-					}
-				}
-			}
-
-			if (result != B_OK) {
-				ERROR("  > error writing common relation file attributes: %s", strerror(result));
-				return result;
-			}
-
-			PRINT(("* writing %d property attributes for relation #%d, target %s, into file %s:\n",
-				   properties.CountNames(B_ANY_TYPE), relationIndex, targetId, entryName.String() ));
-
-			// create a file for each set of properties for all targets
-			for (int32 propertyIndex = 0; propertyIndex < properties.CountNames(B_ANY_TYPE); propertyIndex++) {
-				// write out relation properties as file attributes according to message field type (== MIME attr type)
-				char*        propertyName;
-				type_code    propertyType;
-				const void*  data;
-				ssize_t	     size;
-
-				result = properties.GetInfo(B_ANY_TYPE, propertyIndex, &propertyName, &propertyType, NULL);
-				if (result != B_OK) {
-					PRINT(("  error retrieving propertyName #%d for relation %d of target %s: %s\n",
-							propertyIndex, relationIndex, targetId, strerror(result) ));
-					continue;
-				}
-
-				// don't write attributes for internal properties (starting with "_"), they are only temporary
-				if (strncmp(propertyName, "_", 1) == 0) {
-					PRINT(("  - skipping internal attribute %s.\n", propertyName));
-					continue;
-				}
-
-				result = properties.FindData(propertyName, propertyType, &data, &size);
-				if (result != B_OK) {
-					PRINT(("  skipping property %s for relation %d of target %s, error: %s\n",
-							propertyName, relationIndex, targetId, strerror(result) ));
-					continue;
-				}
-
-				// relation property name and type == MIME type attr name and type
-				PRINT(("  > writing relation property %s into attribute.\n", propertyName));
-
-				result = relationNode.WriteAttr(propertyName, propertyType, 0, data, size);
-				if (result < size) {
-					ERROR(("  > failed to write relation property attribute %s: %s.\n"),
-						propertyName, strerror(result));
-				}
-			}   // properties loop
-			// sync after finished writing attributes
-			relationNode.Sync();
-
-        } // target relations loop
-	}
+	} // relations loop
 
 	return B_OK;
 }
@@ -968,7 +983,8 @@ TTracker::CreateRelationDirectory(
 	const char* relationName = relationConfig->GetString(SEN_RELATION_NAME, relationType);	// fall back
 	const char* relationLabel = relationConfig->GetString(SEN_RELATION_LABEL, relationName);
 
-	PRINT(("creating relation dir for relation '%s' with label '%s'...\n", relationName, relationLabel));
+	PRINT(("* creating relation dir for relation '%s' with name '%s' and label '%s'...\n",
+			relationType, relationName, relationLabel));
 
 	status_t result;
 	BPath relationsDirPath;
@@ -981,8 +997,9 @@ TTracker::CreateRelationDirectory(
 
 	result = relationsDirPath.Append("sen");
 	relationsDirPath.Append(folderId);
-	relationsDirPath.Append("relations");
-	relationsDirPath.Append(relationName);
+	// Note: since relations are required to be a subtype of relation,
+	//       this will automatically create a relation subdir, handy:)
+	relationsDirPath.Append(relationType);
 
 	// TODO: prepare suitable folder attribute layout using archived relation attribute columns
 	// see PoseView::SaveState() and ViewState::ArchiveToStream()
@@ -995,7 +1012,7 @@ TTracker::CreateRelationDirectory(
 	if (relationDirEntry.Exists()) {
 		// sadly there is no Haiku native wrapper for this (yet?)
 		// see https://discuss.haiku-os.org/t/missing-remove-directory-to-complement-create-directory
-		PRINT(("removing existing temp relations dir %s\n", relationsDirPath.Path() ));
+		PRINT(("* removing existing temp relations dir %s\n", relationsDirPath.Path() ));
 
 		std::filesystem::path path(relationsDirPath.Path());
 		uint32 entriesDeleted = std::filesystem::remove_all(path);
@@ -1126,7 +1143,7 @@ status_t TTracker::GetSenIcon(const char* mimeType, const char* iconType, void**
 
 	// check for supported icon types
 	BString type(iconType);
-	if (type != SEN_RELATION_FOLDER_ICON && type != "META:ICON") {
+	if (type == NULL || type != SEN_RELATION_FOLDER_ICON || type != "META:ICON") {
 		return B_BAD_VALUE;
 	}
 
@@ -1144,12 +1161,12 @@ status_t TTracker::GetSenIcon(const char* mimeType, const char* iconType, void**
 
 	result = mimeEntry.InitCheck();
 	if (result != B_OK) {
-		if (! mimeEntry.Exists()) {
-			fprintf(stderr, "could not find MIME type %s in MIME DB fs: %s\n", mimeType, strerror(result));
-		} else {
-			fprintf(stderr, "error accessing MIME type %s in MIME DB fs: %s\n", mimeType, strerror(result));
-		}
+		fprintf(stderr, "error accessing MIME type %s in MIME DB: %s\n", mimeType, strerror(result));
 		return result;
+	}
+	if (! mimeEntry.Exists()) {
+		fprintf(stderr, "could not find MIME type %s in MIME DB: %s\n", mimeType, strerror(result));
+		return B_ENTRY_NOT_FOUND;
 	}
 
 	// read icon attribute from MIME type file directly
@@ -1163,7 +1180,8 @@ status_t TTracker::GetSenIcon(const char* mimeType, const char* iconType, void**
 	attr_info attrInfo;
 	result = mimeNode.GetAttrInfo(iconType, &attrInfo);
 	if (result != B_OK) {
-		PRINT(("  x failed to get attr_info for icon attribute %s: %s\n", iconType, strerror(result) ));
+		PRINT(("  x failed to get attr_info of type '%s' for icon attribute '%s': %s\n",
+			mimeType, iconType, strerror(result) ));
 		return result;
 	}
 
