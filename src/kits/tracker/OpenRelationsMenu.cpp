@@ -92,9 +92,11 @@ OpenRelationsMenu::StartBuildingItemList()
 		case SEN_RELATIONS_GET_ALL_SELF:
 			relationType = "SELF";
 			break;
-		case SEN_RELATIONS_GET_COMPATIBLE:
+		case SEN_RELATIONS_GET_COMPATIBLE: {
 			relationType = "COMPATIBLE";
+			message.AddBool(SEN_MSG_CONFIGS, true);
 			break;
+		}
 		default:
 			relationType = "UNKNOWN/UNEXPECTED";
 	}
@@ -203,10 +205,12 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 
 	BString propertyName(SEN_RELATIONS);	// default: handle normal relations
 	BString relationFilter = fRelationsReply.GetString(SEN_MSG_FILTER);
+	bool buildAssocRelations = false;
 
 	// only sent for compatible relation types
 	if (relationFilter == SEN_MSG_FILTER_COMPATIBLE) {
-		propertyName = SEN_RELATION_COMPATIBLE_TYPES;	// adapt message processing to parse association relations below
+		propertyName = SEN_RELATION_TARGET_TYPE;	// adapt message processing to parse association relations below
+		buildAssocRelations = true;
 	}
 
 	PRINT(("getting compatible relation items for relations using property %s...\n", propertyName.String() ));
@@ -217,7 +221,6 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 
     int32 index = 0, countRelations = 0;
 	BString typeName;
-	bool buildAssocRelations = (propertyName == SEN_RELATION_COMPATIBLE_TYPES);
 
     while (fRelationsReply.FindString(propertyName.String(), index++, &typeName) == B_OK) {
 		// check if associated MIME type is installed (needed for Tracker display)

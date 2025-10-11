@@ -248,6 +248,7 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 
 		BMessage senFindClassReply;
 		result = fSenMessenger->SendMessage(&senFindClassMsg, &senFindClassReply);
+
 		if (result == B_OK) {
 			PRINT(("got %d matching classification types from SEN:\n", senFindClassReply.CountNames(B_REF_TYPE) ));
 			senFindClassReply.PrintToStream();
@@ -285,7 +286,7 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 		mimeExcludes.Add(SEN_CLASS_SUPERTYPE);
 
 		// here we got a list of compatible target types
-		result = fRelationTargetsReply->FindStrings(SEN_RELATION_COMPATIBLE_TYPES, &targetTypes);
+		result = fRelationTargetsReply->FindStrings(SEN_RELATION_TARGET_TYPE, &targetTypes);
 		if (result != B_OK) {
 			if (result != B_NAME_NOT_FOUND) {	// param is optional
 				PRINT(("failed to retrieve target types for relation: %s\n", strerror(result)));
