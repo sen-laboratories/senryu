@@ -372,6 +372,11 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 		return result;
 	}
 
+	BMessage 	relationConfigMap, relationConfig;
+	result = fRelationTargetsReply->FindMessage(SEN_RELATION_CONFIG_MAP, &relationConfigMap);
+	if (result == B_OK)
+		result = relationConfigMap.FindMessage(relationType.String(), &relationConfig);
+
 	char*       idKey;
     type_code   typeCode;
     int32       refCount;
@@ -389,6 +394,9 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 				BMessage itemMessage(SEN_OPEN_RELATION_TARGET);
 				itemMessage.AddRef(SEN_RELATION_SOURCE_REF, &ref);
 				itemMessage.AddString(SEN_RELATION_TYPE, relationType);
+
+				// add relation config applicable to this item
+				itemMessage.AddMessage(SEN_RELATION_CONFIG, &relationConfig);
 
 				BMessage itemProps;
 				result = relations.FindMessage(idKey, &itemProps);
@@ -412,7 +420,7 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 		}
 	}	// for id_ref ...
 
-	// cache relations in oparent pen relations menu item message itself,
+	// cache relations in parent open relations menu item message itself,
 	// so we can reuse it for the relation target view
 	BMenuItem *openRelationTargetsItem = Supermenu()->FindItem(SEN_OPEN_RELATION_TARGET_VIEW);
 	ASSERT(openRelationTargetsItem != NULL);
@@ -522,9 +530,6 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 		openRelationItemMsg.AddString(SEN_RELATION_TYPE, type);
 		openRelationItemMsg.AddMessage(SEN_RELATION_CONFIG_MAP, &relationConfigs);
 
-		// add all properties of this relation item to be used as potential args by receiver
-		openRelationItemMsg.AddMessage(SEN_RELATION_PROPERTIES, &relationProperties);
-
 		// add as menu if there is a child node, else add as a plain menu item
 		if (! relationProperties.HasMessage(SEN_RELATIONS)) {
 			PRINT(("    > adding self relation item [%d] '%s' of type '%s' with %d properties.\n",
@@ -532,9 +537,11 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 
 			// will open the target item as SEN enriched ref in Tracker
 			openRelationItemMsg.what = SEN_OPEN_RELATION_TARGET;
-			// here we know which config we need, so pass only selected type
+
+			// here we know which config we need, so pass only selected type inside properties
 			BMessage selectedConfig;
 			result = relationConfigs.FindMessage(type, &selectedConfig);
+
 			if (result == B_OK) {
 				relationProperties.AddMessage(SEN_RELATION_CONFIG, &selectedConfig);
 			} else {
@@ -543,6 +550,9 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 				}
 				result = B_OK;
 			}
+
+			// add all properties of this relation item to be used as potential args by receiver
+			openRelationItemMsg.AddMessage(SEN_RELATION_PROPERTIES, &relationProperties);
 
 			item = new IconMenuItem(label.String(), new BMessage(openRelationItemMsg), type.String());
 
@@ -579,6 +589,9 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 			// conveniently add selected item from properties directly, too
 			// TODO: handle SEN_RELATION_ITEM_ID, too
 			openRelationItemMsg.AddString(SEN_RELATION_ITEM_ID, relationProperties.GetString(SENSEI_ITEM_ID));
+
+			// add all properties of this relation menu item to be used as potential args by receiver
+			openRelationItemMsg.AddMessage(SEN_RELATION_PROPERTIES, &relationProperties);
 
 			// now adapt childMsg for adding to menu below:
 			// transparently handle just like a normal message result above, but for the subtree

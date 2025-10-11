@@ -76,35 +76,39 @@ TTracker::HandleSenMessage(BMessage* message)
 				return true;	// we are done
 			}
 
-			BMessage argsMsg;
+			BMessage relationProperties;
 
-			// get relation config
-			BMessage relationConf;
-			result = message->FindMessage(relationType.String(), &relationConf);
+			// relation properties act as arguments for launch app
+			result = message->FindMessage(SEN_RELATION_PROPERTIES, &relationProperties);
+			if (result != B_OK) {
+				if (result != B_NAME_NOT_FOUND) {
+					PRINT(("error getting relation properties from refs msg: %s\n", strerror(result)));
+					return true;
+				}
+			}
 
+			PRINT(("got relation properties:\n"));
+			relationProperties.PrintToStream();
+
+			// get selected relation config from map
+			BMessage relationConfig;
+
+			result = message->FindMessage(SEN_RELATION_CONFIG, &relationConfig);
 			if (result != B_OK) {
 				PRINT(("could not get relation config for type %s: %s\n", relationType.String(), strerror(result) ));
 				return true;	// abort
 			}
 
-			bool selfRelation = relationConf.GetBool(SEN_RELATION_IS_SELF, false);
+			bool selfRelation = relationConfig.GetBool(SEN_RELATION_IS_SELF, false);
 
 			PRINT(("got relation config for type %s (is %s)\n",
 				relationType.String(), (selfRelation ? "SELF" : "NORMAL") ));
 
-			relationConf.PrintToStream();
+			PRINT(("relationConfig is:\n"));
+			relationConfig.PrintToStream();
 
 			if (selfRelation) {
 				PRINT(("resolving SELF relation...\n"));
-
-				// pass on attributes from self relation properties
-				result = message->FindMessage(SEN_RELATION_PROPERTIES, &argsMsg);
-				if (result != B_OK) {
-					if (result != B_NAME_NOT_FOUND) {
-						PRINT(("error getting relf relation arguments from refs msg: %s\n", strerror(result)));
-						return true;
-					}
-				}
 
 				// get SEN relation handler for navigation from relation type's default app
 				BMimeType senHandlerMime(relationType);
@@ -141,7 +145,7 @@ TTracker::HandleSenMessage(BMessage* message)
 				if (ResolveRelation(&srcRef, &srcId, &targetId)) {
 					PRINT(("resolved SEN Relation target %s for ref %s\n", targetId.String(), srcRef.name));
 
-					result = PrepareLaunchTarget(&srcRef, targetId.String(), &targetRef, &argsMsg);
+					result = PrepareLaunchTarget(&srcRef, targetId.String(), &targetRef, &relationProperties);
 					if (result != B_OK) {
 						PRINT(("failed to resolve relation target for ref %s: %s\n", srcRef.name, strerror(result)));
 						return true;
