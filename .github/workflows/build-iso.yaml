@@ -20,33 +20,13 @@ jobs:
         run: |
           # The container is based on Debian/Ubuntu
           apt-get update
-          apt-get install -y python3-pip python3-pillow xxd
-
-      - name: Generate Neon Heartbeat Assets
-        run: |
-          mkdir -p generated
-          # Process raw PNGs into luminosity states and dual circuits
-          for img in data/artwork/boot_splash/senryu_boot-splash_*.png; do
-            python3 scripts/splash-image-cutter.py "$img" "generated/"
-          done
-          
-          # Convert processed PNGs to C headers for the kernel/bootloader
-          cd generated
-          for f in *.png; do
-            xxd -i "$f" > "${f%.png}.h"
-          done
-          
-          # Create master header for inclusion in video_splash.cpp
-          echo "// SENryu Neon Heartbeat" > all_stages.h
-          for h in *.h; do
-            echo "#include \"$h\"" >> all_stages.h
-          done
+          apt-get install -y nasm xxd python3-pillow
 
       - name: Configure Haiku Build
         run: |
           # We use the pre-built cross-tools in the container
           # This saves hours of compilation time
-          ./configure --build-cross-tools x86_64 ../buildtools
+          ./configure --build-cross-tools x86_64 --cross-tools-source ../buildtools
 
       - name: Build SENryu ISO
         run: |
