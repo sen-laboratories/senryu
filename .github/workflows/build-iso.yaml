@@ -9,7 +9,7 @@ jobs:
   build-senryu-iso:
     runs-on: ubuntu-latest
     container:
-      image: waddlesplash/haiku-cross-x86_64:latest
+      image: haiku/cross-compiler:x86_64-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
