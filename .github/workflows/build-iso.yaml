@@ -18,8 +18,8 @@ jobs:
     
       - name: Install Build Essentials
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          apt-get update
+          apt-get install -y \
             git build-essential nasm xxd python3-pillow \
             autoconf automake bison flex gawk \
             libz-dev libcurl4-openssl-dev
@@ -28,7 +28,7 @@ jobs:
         run: |
           # We use the pre-built cross-tools in the container
           # This saves hours of compilation time
-          ./configure --build-cross-tools x86_64 --cross-tools-source ../buildtools
+          ./configure --build-cross-tools x86_64 --cross-tools-source ../buildtools --distro-compatibility compatible
 
       - name: Build SENryu ISO
         run: |
