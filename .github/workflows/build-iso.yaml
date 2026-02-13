@@ -44,7 +44,6 @@ jobs:
       - name: Build SENryu ISO
         working-directory: ./senryu
         run: |
-          cd senryu
           # Build the test app first to verify assets
           jam -q NeonHeartbeat
           # Build the nightly anyboot image (the ISO)
