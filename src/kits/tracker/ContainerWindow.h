@@ -77,7 +77,7 @@ enum {
 	// flags that describe opening of the window
 	kRestoreWorkspace	= 0x1,
 	kIsHidden			= 0x2,
-		// set when opening a window during initial Tracker start
+	// set when opening a window during initial Tracker start
 	kRestoreDecor		= 0x4
 };
 
@@ -253,11 +253,12 @@ protected:
 	virtual void PopulateMoveCopyNavMenu(BNavMenu*, uint32,
 		const entry_ref*, bool);
 
-	virtual void SetupOpenWithMenu(BMenu*);
-	virtual void SetupOpenWithMenu(BMenu*, const entry_ref* ref);
+	virtual void SetupNewAssociationMenu(BMenu* parent, const entry_ref* ref);
+	virtual void SetupNewRelationMenu(BMenu*, const entry_ref* ref = NULL);
+	virtual void SetupOpenRelationsMenu(BMenu*, const entry_ref* ref = NULL);
+	virtual void SetupOpenWithMenu(BMenu*, const entry_ref* ref = NULL);
 	virtual void SetupNewTemplatesMenu(BMenu*, MenuContext context);
-	virtual void SetupEditQueryItem(BMenu*);
-	virtual void SetupEditQueryItem(BMenu*, const entry_ref* ref);
+	virtual void SetupEditQueryItem(BMenu*, const entry_ref* ref = NULL);
 	virtual void SetupDiskMenu(BMenu*);
 	virtual void SetupMountMenu(BMenu*, MenuContext context);
 	virtual void SetupMountMenu(BMenu*, MenuContext context, const entry_ref* ref);
@@ -287,7 +288,7 @@ protected:
 	void LoadAddOn(BMessage*);
 	void EachAddOn(void (*)(void* context, const struct AddOnInfo*,
 			bool primary, BContainerWindow*, BMenu*),
-		void*, BStringList&, BMenu*);
+			void*, BStringList&, BMenu*);
 
 protected:
 	LockingList<BWindow>* fWindowList;
@@ -324,6 +325,11 @@ protected:
 	BMenuItem* fCopyToItem;
 	BMenuItem* fCreateLinkItem;
 	BMenuItem* fOpenWithItem;
+	BMenuItem* fOpenRelationsItem;
+	BMenuItem* fOpenSelfRelationsItem;
+	BMenuItem* fNewAssociationItem;
+	BMenuItem* fNewRelationItem;
+	BMenuItem* fEnrichItem;
 	BMenuItem* fEditQueryItem;
 	BMenuItem* fMountItem;
 	ModelMenuItem* fNavigationItem;

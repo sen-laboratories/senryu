@@ -381,11 +381,15 @@ GetThumbnailFromAttr(Model* model, BBitmap* icon, BSize size)
 			}
 			// else we did not find a thumbnail
 		} else {
-			// file changed, remove all thumb attrs
-			char attrName[B_ATTR_NAME_LENGTH];
-			while (node->GetNextAttrName(attrName) == B_OK) {
-				if (BString(attrName).StartsWith(kAttrThumbnail))
-					node->RemoveAttr(attrName);
+			// only remove thumbnail attributes for mime type we handle and update,
+			// as they may have been created by other means (scripts, apps) and need no frequent update
+			if (ShouldGenerateThumbnail(model->MimeType())) {
+				// file changed, remove all thumb attrs
+				char attrName[B_ATTR_NAME_LENGTH];
+				while (node->GetNextAttrName(attrName) == B_OK) {
+					if (BString(attrName).StartsWith(kAttrThumbnail))
+						node->RemoveAttr(attrName);
+				}
 			}
 		}
 	}

@@ -61,6 +61,8 @@ for architectureObject in [ MultiArchSubDirSetup ] {
 			NavMenu.cpp
 			NodePreloader.cpp
 			NodeWalker.cpp
+			OpenRelationsMenu.cpp
+			OpenRelationTargetsMenu.cpp
 			OpenWithWindow.cpp
 			OverrideAlert.cpp
 			PendingNodeMonitorCache.cpp
@@ -68,6 +70,7 @@ for architectureObject in [ MultiArchSubDirSetup ] {
 			PoseList.cpp
 			PoseView.cpp
 			PoseViewScripting.cpp
+            PoseViewSen.cpp
 			QueryContainerWindow.cpp
 			QueryPoseView.cpp
 			RecentItems.cpp
@@ -80,6 +83,7 @@ for architectureObject in [ MultiArchSubDirSetup ] {
 			StatusWindow.cpp
 			TaskLoop.cpp
 			TemplatesMenu.cpp
+            TemplateUtils.cpp
 			Tests.cpp
 			TextWidget.cpp
 			Thumbnails.cpp
@@ -87,6 +91,7 @@ for architectureObject in [ MultiArchSubDirSetup ] {
 			Tracker.cpp
 			TrackerInitialState.cpp
 			TrackerScripting.cpp
+			TrackerSen.cpp
 			TrackerSettings.cpp
 			TrackerSettingsWindow.cpp
 			TrackerString.cpp
@@ -135,6 +140,7 @@ DoCatalogs libtracker.so :
 	NavMenu.cpp
 	OpenWithWindow.cpp
 	PoseView.cpp
+    PoseViewSen.cpp
 	QueryContainerWindow.cpp
 	QueryPoseView.cpp
 	RegExp.cpp
@@ -143,8 +149,10 @@ DoCatalogs libtracker.so :
 	Shortcuts.cpp
 	StatusWindow.cpp
 	TemplatesMenu.cpp
+    TemplateUtils.cpp
 	TextWidget.cpp
 	Tracker.cpp
+    TrackerSen.cpp
 	TrackerInitialState.cpp
 	TrackerSettingsWindow.cpp
 	VirtualDirectoryWindow.cpp

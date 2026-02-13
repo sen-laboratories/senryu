@@ -40,6 +40,7 @@ All rights reserved.
 #include <Entry.h>
 
 #include "LockingList.h"
+#include "Sen.h"
 #include "SettingsHandler.h"
 #include "Utilities.h"
 
@@ -62,19 +63,15 @@ class HexScalarValueSetting;
 class TaskLoop;
 class TrackerSettingsWindow;
 
-
 typedef LockingList<BWindow> WindowList;
 	// this is because MW can't handle nested templates
-
 
 const uint32 kNextSpecifier = 'snxt';
 const uint32 kPreviousSpecifier = 'sprv';
 const uint32 B_ENTRY_SPECIFIER = 'sref';
 
-
 #define kPropertyEntry "Entry"
 #define kPropertySelection "Selection"
-
 
 class TTracker : public BApplication  {
 public:
@@ -103,7 +100,7 @@ public:
 		// closes parent, waits for child to open first
 
 	void SelectChildInParentSoon(const entry_ref* parent,
-			const node_ref* child);
+			const node_ref* child, const node_ref* edit = NULL);
 		// waits till child shows up in parent and selects it
 
 	void SelectPoseAtLocationSoon(node_ref parent, BPoint location);
@@ -166,6 +163,29 @@ protected:
 	bool GetProperty(BMessage*, int32, const char*, BMessage*);
 	bool SetProperty(BMessage*, BMessage*, int32, const char*, BMessage*);
 
+	// SEN integration
+	bool HandleSenMessage(BMessage*);
+	bool ResolveRelation(const entry_ref*, BString*, BString*);
+	status_t GetSenIcon(const char* mimeType, const char* iconType, void** icon, size_t* iconSize);
+	status_t GetInodeForRef(const entry_ref* srcRef, BString* inode);
+	status_t ConvertSelfRelationsToCommon(const char* targetId, const BMessage* relationsFlat,
+	                                      const BMessage* typeMapping, const BMessage* attrMapping,
+										  BMessage* relationsNested);
+
+	status_t CreateNewAssociationEntity(const char* associationEntityType, entry_ref* targetRef);
+	status_t EditNewEntity(const entry_ref* ref);
+	status_t PrepareLaunchTarget(const entry_ref* srcRef, const char* targetId, entry_ref* targetRef, BMessage* params);
+	status_t PrepareRelationFolder(BMessage *message, entry_ref *relationDIr);
+	status_t PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDir);
+	status_t WriteTargetRelations(BMessage *message, BMessage* relationConf,
+	                              entry_ref *relationDirRef, entry_ref *openDirRef);
+	status_t CreateRelationDirectory(const char* folderId,
+	                                 const char* relationType,
+	                                 const BMessage* relationConfig,
+									 entry_ref *ref);
+	status_t ConvertAttributesToMessage(const entry_ref* ref, BMessage* params);
+	status_t GetRelationAttributeInfo(const char* relationType, BMessage* attrInfo);
+
 private:
 	class WatchingInterface;
 
@@ -176,7 +196,7 @@ private:
 	bool LaunchAndCloseParentIfOK(const entry_ref* launchThis,
 			const node_ref* closeThis, const BMessage* messageToBundle);
 	bool SelectChildInParent(const entry_ref* parent,
-			const node_ref* child);
+			const node_ref* child, const node_ref* edit = NULL);
 	void SelectPoseAtLocationInParent(node_ref parent, BPoint location);
 	bool CloseParentWindowCommon(BContainerWindow*);
 
@@ -220,7 +240,8 @@ private:
 	status_t OpenRef(const entry_ref*, const node_ref* nodeToClose = NULL,
 			const node_ref* nodeToSelect = NULL,
 			OpenSelector selector = kOpen,
-			const BMessage* messageToBundle = NULL);
+			const BMessage* messageToBundle = NULL,
+			const node_ref* nodeToEdit = NULL);
 
 	MimeTypeList*			fMimeTypeList;
 	WindowList				fWindowList;
