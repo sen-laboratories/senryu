@@ -10,11 +10,21 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: haiku/cross-compiler:x86_64-r1beta4
-    steps:
-      - name: Checkout Code
+      steps:
+      - name: Fix Git Ownership
+        # This clears the "dubious ownership" error for the workspace
+        run: git config --global --add safe.directory '*'
+  
+      - name: Checkout SENryu
         uses: actions/checkout@v4
         with:
-          submodules: true
+          path: senryu
+  
+      - name: Checkout Buildtools
+        uses: actions/checkout@v4
+        with:
+          repository: haiku/buildtools
+          path: buildtools
     
       - name: Install Build Essentials
         run: |
@@ -28,10 +38,12 @@ jobs:
         run: |
           # We use the pre-built cross-tools in the container
           # This saves hours of compilation time
-          ./configure --build-cross-tools x86_64 --cross-tools-source ../buildtools --distro-compatibility compatible
+          ./configure --build-cross-tools x86_64 --cross-tools-source $(pwd)/../buildtools --distro-compatibility compatible
 
       - name: Build SENryu ISO
         run: |
+          # Build the test app first to verify assets
+          jam -q NeonHeartbeat
           # Build the nightly anyboot image (the ISO)
           # We increase the 'j' count for the GitHub worker's CPU
           jam -q -j$(nproc) @nightly-anyboot
