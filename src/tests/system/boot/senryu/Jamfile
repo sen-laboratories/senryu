@@ -1,0 +1,59 @@
+SubDir HAIKU_TOP src tests system boot senryu ;
+
+# Access headers needed for the bootloader/kernel environment
+UsePrivateHeaders [ FDirName system boot ] ;
+UsePrivateKernelHeaders ;
+
+local SCRIPTS_DIR = [ FDirName $(HAIKU_TOP) build scripts ] ;
+local GEN_DIR = [ FDirName $(HAIKU_TOP) generated build ] ;
+local ARTWORK_DIR = [ FDirName $(HAIKU_TOP) data artwork boot_splash ] ;
+local SANITIZE_PY = [ FDirName $(SCRIPTS_DIR) generate_senryu_boot_splash.py ] ;
+
+rule GenerateNeonHeaders sources
+{
+    for raw in $(sources) {
+        # Extract stage index (0-7)
+        local name = [ MATCH ".*_([0-9]+)\\.png" : $(raw) ] ;
+
+        # Define the 12 expected headers per stage (3 circuits * 4 states)
+        # States: cold, warm, vibrant, overdrive
+        # Circuits: sen, ryu, wave_icons
+        local h_files =
+            sen_$(name)_cold.h sen_$(name)_warm.h sen_$(name)_vibrant.h sen_$(name)_overdrive.h
+            ryu_$(name)_cold.h ryu_$(name)_warm.h ryu_$(name)_vibrant.h ryu_$(name)_overdrive.h
+            wave_icons_$(name)_cold.h wave_icons_$(name)_warm.h wave_icons_$(name)_vibrant.h wave_icons_$(name)_overdrive.h ;
+
+        local target_headers = [ FGristFiles $(h_files) ] ;
+
+        # Ensure Jam knows where to find/place these
+        MakeLocate $(target_headers) : $(GEN_DIR) ;
+
+        # Dependency: headers depend on the raw PNG and the Python script
+        Depends $(target_headers) : $(raw) $(SANITIZE_PY) ;
+
+        # Trigger the script
+        RunNeonCutter $(target_headers) : $(raw) ;
+
+        # Ensure Main.cpp is blocked until assets are ready
+        Includes [ FGristFiles Main.cpp ] : $(target_headers) ;
+    }
+}
+
+actions RunNeonCutter
+{
+    mkdir -p "$(GEN_DIR)"
+    python3 "$(SANITIZE_PY)" "$(>)" "$(GEN_DIR)"
+    # Clean up variable names in headers using xxd
+    (cd "$(GEN_DIR)" && for f in *.png; do xxd -i "$f" > "${f%.png}.h"; done)
+}
+
+# 1. Process all artwork stages
+local raw_files = [ Glob $(ARTWORK_DIR) : senryu_boot-splash_*.png ] ;
+GenerateNeonHeaders $(raw_files) ;
+
+# 2. Define the Test Application
+# Includes translation kit for rendering, be kit for the window/app
+SimpleTest NeonHeartbeat :
+    NeonDaemon.cpp
+    : be translation
+;
