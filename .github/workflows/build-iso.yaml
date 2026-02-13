@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: haiku/cross-compiler:x86_64-r1beta4
-      steps:
+    steps:
       - name: Fix Git Ownership
         # This clears the "dubious ownership" error for the workspace
         run: git config --global --add safe.directory '*'
