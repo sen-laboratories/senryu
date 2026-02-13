@@ -35,13 +35,14 @@ jobs:
             libz-dev libcurl4-openssl-dev
       
       - name: Configure Haiku Build
+        working-directory: ./senryu
         run: |
           # We use the pre-built cross-tools in the container
           # This saves hours of compilation time
-          cd senryu
           ./configure --build-cross-tools x86_64 --cross-tools-source $(pwd)/../buildtools --distro-compatibility compatible
 
       - name: Build SENryu ISO
+        working-directory: ./senryu
         run: |
           cd senryu
           # Build the test app first to verify assets
