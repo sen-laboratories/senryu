@@ -4,10 +4,10 @@ SubDir HAIKU_TOP src tests system boot senryu ;
 UsePrivateHeaders [ FDirName system boot ] ;
 UsePrivateKernelHeaders ;
 
-local SCRIPTS_DIR = [ FDirName $(HAIKU_TOP) build scripts ] ;
-local GEN_DIR = [ FDirName $(HAIKU_TOP) generated build ] ;
-local ARTWORK_DIR = [ FDirName $(HAIKU_TOP) data artwork boot_splash ] ;
-local SANITIZE_PY = [ FDirName $(SCRIPTS_DIR) generate_senryu_boot_splash.py ] ;
+SCRIPTS_DIR = [ FDirName $(HAIKU_TOP) build scripts ] ;
+SANITIZE_PY = [ FDirName $(SCRIPTS_DIR) generate_senryu_boot_splash.py ] ;
+GEN_DIR = [ FDirName $(HAIKU_TOP) generated build boot_splash ] ;
+ARTWORK_DIR = [ FDirName $(HAIKU_TOP) data artwork boot_splash ] ;
 
 rule GenerateNeonHeaders sources
 {
@@ -15,7 +15,7 @@ rule GenerateNeonHeaders sources
         # Extract stage index (0-7)
         local name = [ MATCH ".*_([0-9]+)\\.png" : $(raw) ] ;
 
-        # Define the 12 expected headers per stage (3 circuits * 4 states)
+        # Define the 16 expected headers per stage (4 circuits * 4 wave states)
         # States: cold, warm, vibrant, overdrive
         # Circuits: sen, ryu, wave_icons
         local h_files =
@@ -34,17 +34,16 @@ rule GenerateNeonHeaders sources
         # Trigger the script
         RunNeonCutter $(target_headers) : $(raw) ;
 
-        # Ensure Main.cpp is blocked until assets are ready
-        Includes [ FGristFiles Main.cpp ] : $(target_headers) ;
+        # Ensure test app is blocked until assets are ready
+        Includes [ FGristFiles NeonDaemon.cpp ] : $(target_headers) ;
     }
 }
 
 actions RunNeonCutter
 {
-    mkdir -p "$(GEN_DIR)"
     python3 "$(SANITIZE_PY)" "$(>)" "$(GEN_DIR)"
     # Clean up variable names in headers using xxd
-    (cd "$(GEN_DIR)" && for f in *.png; do xxd -i "$f" > "${f%.png}.h"; done)
+    (cd "$(GEN_DIR)" && for f in *.png; do tinyxxd -i "$f" > "${f%.png}.h"; done)
 }
 
 # 1. Process all artwork stages
@@ -55,5 +54,5 @@ GenerateNeonHeaders $(raw_files) ;
 # Includes translation kit for rendering, be kit for the window/app
 SimpleTest NeonHeartbeat :
     NeonDaemon.cpp
-    : be translation
+    : be translation stdc++
 ;
