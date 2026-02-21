@@ -7,48 +7,95 @@
 #include <cstdio>
 #include <ctime>
 #include <map>
-#include <String.h>
 #include <Directory.h>
 #include <Path.h>
+#include "NeonAssets.h" // The merged master header
 
 // Storage for our three circuits
 std::map<BString, BBitmap*> fCircuits;
 
 const int32  kMsgTick = 'tick';
-const BPoint kSenOffset(0, 0);
-const BPoint kRyuOffset(230, 0);
+// Global circuit origins (Top-Left of the BBOXes)
+const BPoint kSenOrigin(0, 0);
+const BPoint kRyuOrigin(230, 0);
+const BPoint kStageOrigin(482, 0);
+
+// --- Configuration from Python Image Cutter ---
+static const int kTotalStages = 7;
+
+// Bounding Box Dimensions (Width/Height)
+#define SEN_SIZE   BRect(0, 0, 226 - 1, 112 - 1)
+#define RYU_SIZE   BRect(0, 0, 176 - 1, 182 - 1)
+#define STAGE_SIZE BRect(0, 0, 542 - 1, 388 - 1)
+
+// --- The Neon Schema ---
+#define FOR_EACH_STATE(DO, circuit, stage) \
+DO(circuit, stage, cold) \
+DO(circuit, stage, warm) \
+DO(circuit, stage, vibrant) \
+DO(circuit, stage, overdrive)
+
+#define FOR_EACH_STATIC_STATE(DO, circuit) \
+DO(circuit, cold) \
+DO(circuit, warm) \
+DO(circuit, vibrant) \
+DO(circuit, overdrive)
 
 class NeonView : public BView {
 public:
 	NeonView(BRect frame) : BView(frame, "NeonView", B_FOLLOW_ALL, B_WILL_DRAW),
 		fStage(0), fAutoMode(false), fFlickerFrame(0), fFadeAlpha(0.0) {
 		SetViewColor(51, 102, 152); // Haiku Blue background
-		srand(time(NULL));
-		InitAssets("../../../../../../../../build/boot_splash/");
+		srand(time(nullptr));
+		InitAssets();
 	}
 
-	void InitAssets(const char* assetPath) {
-		BDirectory dir(assetPath);
-		BEntry entry;
+	/**
+	 * Helper to create a BBitmap from tinyxxd raw data.
+	 * Assumes the cutter outputs B_RGBA32 or similar raw format.
+	 * Adjust the width/height to match your splash-image-cutter.py output.
+	 */
+	BBitmap* CreateBitmapFromRaw(const unsigned char* data, size_t length, float width, float height)
+	{
+		BRect rect(0, 0, width - 1, height - 1);
+		BBitmap* bitmap = new BBitmap(rect, B_RGBA32);
 
-		while (dir.GetNextEntry(&entry) == B_OK) {
-			BPath path;
-			entry.GetPath(&path);
-			BString fileName = path.Leaf();
-
-			// Pattern: sen_0_warm.png, ryu_2_overdrive.png, etc.
-			if (fileName.EndsWith(".png")) {
-				entry_ref ref;
-				entry.GetRef(&ref);
-
-				BBitmap* bitmap = BTranslationUtils::GetBitmap(&ref);
-				if (bitmap) {
-					// Remove extension for the map key (e.g., "sen_0_warm")
-					fileName.Truncate(fileName.Length() - 4);
-					fCircuits[fileName] = bitmap;
-				}
-			}
+		// Copy the raw pixel data into the bitmap
+		if (bitmap->ImportData(data, length, 0, B_RGBA32) != B_OK) {
+			// Fallback for older Haiku/simpler buffers
+			bitmap->SetBits(data, length, 0, B_RGBA32);
 		}
+
+		return bitmap;
+	}
+
+	void NeonDaemon::InitAssets()
+	{
+		// 1. Register Static Circuits (sen, ryu) - No stages
+		#define REGISTER_STATIC(circuit, state) \
+		fCircuits[BString().SetToFormat("%s_%s", #circuit, #state)] = \
+		CreateBitmapFromRaw(circuit##_##state##_png, \
+		circuit##_##state##_png_len, \
+		(BString(#circuit) == "sen" ? SEN_SIZE : RYU_SIZE));
+
+		FOR_EACH_STATIC_STATE(REGISTER_STATIC, sen)
+		FOR_EACH_STATIC_STATE(REGISTER_STATIC, ryu)
+
+		// 2. Register Staged Circuit (wave_icons)
+		#define REGISTER_STAGED(circuit, stage, state) \
+			fCircuits[BString().SetToFormat("%s_%d_%s", #circuit, stage, #state)] = \
+			CreateBitmapFromRaw(circuit##_##stage##_##state##_png, \
+			circuit##_##stage##_##state##_png_len, STAGE_SIZE);
+
+		for (int s = 0; s < kTotalStages; s++) {
+			if (s == 0)      { FOR_EACH_STATE(REGISTER_STAGED, wave_icons, 0) }
+			else if (s == 1) { FOR_EACH_STATE(REGISTER_STAGED, wave_icons, 1) }
+			else if (s == 2) { FOR_EACH_STATE(REGISTER_STAGED, wave_icons, 2) }
+			else if (s == 3) { FOR_EACH_STATE(REGISTER_STAGED, wave_icons, 3) }
+		}
+
+		#undef REGISTER_STATIC
+		#undef REGISTER_STAGED
 	}
 
 	void Draw(BRect updateRect) override {
@@ -93,27 +140,27 @@ public:
 private:
 	void _DrawStage() {
 		// 1. Draw Background for the current stage
-		_BlitNeon("stage", fStage, "warm", BPoint(0.0, 0.0));
+		_BlitNeon("wave_icons", fStage, "warm", kStageOrigin);
 
 		// draw neon logo
 		int stability = (fStage * 100) / 7;
 
 		// 2. Circuit 1: SEN (Top-Left)
 		if ((rand() % 100) < stability) {
-			_BlitNeon("sen", -1, "warm", kSenOffset);
+			_BlitNeon("sen", -1, "warm", kSenOrigin);
 		} else if (fFlickerFrame % 4 == 0) {
 			int roll = rand() % 3;
-			if (roll == 0) _BlitNeon("sen", -1, "cold", kSenOffset);
-			else if (roll == 1) _BlitNeon("sen", -1, "vibrant", kSenOffset);
+			if (roll == 0) _BlitNeon("sen", -1, "cold", kSenOrigin);
+			else if (roll == 1) _BlitNeon("sen", -1, "vibrant", kSenOrigin);
 		}
 
 		// 3. Circuit 2: Ryu (Bottom-Right)
 		if ((rand() % 100) < (stability - 10)) {
-			_BlitNeon("ryu", -1, "warm", kRyuOffset);
+			_BlitNeon("ryu", -1, "warm", kRyuOrigin);
 		} else if (fFlickerFrame % 7 == 0) {
 			int roll = rand() % 3;
-			if (roll == 0) _BlitNeon("ryu", -1, "cold", kRyuOffset);
-			else if (roll == 1) _BlitNeon("ryu", -1, "vibrant", kRyuOffset);
+			if (roll == 0) _BlitNeon("ryu", -1, "cold", kSenOrigin);
+			else if (roll == 1) _BlitNeon("ryu", -1, "vibrant", kSenOrigin);
 		}
 
 		// 4. Final Transition
@@ -133,7 +180,7 @@ private:
 		BString key;
 		if (stage >= 0) {    // wave
 			key.SetToFormat("%s_%d_%s", part, stage, state); // states: "cold", "warm", etc.
-		} else {
+		} else {			// SEN / ryu circuits
 			key.SetToFormat("%s_%s", part, state); // states: "cold", "warm", etc.
 		}
 

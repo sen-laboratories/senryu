@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import sys, os, re, PIL
+import sys, os, re
 from PIL import Image, ImageEnhance
 
 # 1024x768 Scaled BBoxes for SEN, ryu and boot stage sections
@@ -10,17 +10,31 @@ SEN_BBOX   = (0,   0, 226,  112)    # Top-left part of the logo
 RYU_BBOX   = (230, 0, 406,  182)    # Bottom-right part of the logo
 STAGE_BBOX = (482, 0, 1024, 388)    # boot stage wave and glowing icons
 
-# Define the 16-color Neon Palette
-pal = [
-          0,0,0, 47,47,47, 80,80,80, 120,180,255,          # Blue/Grey
-          60,90,180, 46,191,212, 20,100,110, 244,244,244,  # Teal/White
-          247,242,225, 255,51,204, 150,0,100, 100,255,100, # Pink/Green
-          255,165,0, 200,200,200, 30,30,60, 255,255,255    # Accents
-      ] + [0]*720
+# SEN-16 Palette (Extended Neon)
+sen_palette = [
+    0, 0, 0,        # 0: Pure Black
+    47, 47, 47,     # 1: Dark Grey
+    80, 80, 80,     # 2: Mid Grey
+    120, 180, 255,  # 3: Primary Blue (Neon)
+    60, 90, 180,    # 4: Deep Blue (Gradient)
+    46, 191, 212,   # 5: Scooter (Teal)
+    20, 100, 110,   # 6: Deep Teal
+    244, 244, 244,  # 7: Wild Sand (White-ish)
+    247, 242, 225,  # 8: Cream
+    255, 51, 204,   # 9: Razzle Rose (Magenta)
+    150, 0, 100,    # 10: Deep Rose
+    100, 255, 100,  # 11: Accent Green (optional)
+    255, 165, 0,    # 12: Accent Orange (optional)
+    200, 200, 200,  # 13: Light Grey
+    30, 30, 60,     # 14: Midnight Blue (Shadows)
+    255, 255, 255   # 15: Pure White
+]
+# Pad remaining to 256 for PIL
+sen_palette += [0] * (768 - len(sen_palette))
 
 def generate_neon_logo(input_path, out_dir):
     base_img = Image.open(input_path).convert("RGB").resize((SPLASH_WIDTH, SPLASH_HEIGHT), Image.Resampling.LANCZOS)
-    p_img = Image.new('P', (1,1)); p_img.putpalette(pal)
+    p_img = Image.new('P', (1,1)); p_img.putpalette(sen_palette)
 
     # Process both parts
     for part_name, bbox in [("sen", SEN_BBOX), ("ryu", RYU_BBOX)]:
@@ -36,8 +50,7 @@ def generate_neon_states(input_path, out_dir):
 
     # Load and scale
     base_img = Image.open(input_path).convert("RGB").resize((1024, 768), Image.Resampling.LANCZOS)
-
-    p_img = Image.new('P', (1,1)); p_img.putpalette(pal)
+    p_img = Image.new('P', (1,1)); p_img.putpalette(sen_palette)
 
     # If it's the background, just save one version and generate the logo states once
     if index == 0:

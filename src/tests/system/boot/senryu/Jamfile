@@ -4,39 +4,38 @@ SubDir HAIKU_TOP src tests system boot senryu ;
 UsePrivateHeaders [ FDirName system boot ] ;
 UsePrivateKernelHeaders ;
 
-SCRIPTS_DIR = [ FDirName $(HAIKU_TOP) build scripts ] ;
-SANITIZE_PY = [ FDirName $(SCRIPTS_DIR) generate_senryu_boot_splash.py ] ;
-GEN_DIR = [ FDirName $(HAIKU_TOP) generated build boot_splash ] ;
-ARTWORK_DIR = [ FDirName $(HAIKU_TOP) data artwork boot_splash ] ;
+local SCRIPTS_DIR = [ FDirName $(HAIKU_TOP) build scripts ] ;
+local SANITIZE_PY = [ FDirName $(SCRIPTS_DIR) generate_senryu_boot_splash.py ] ;
+local GEN_DIR = [ FDirName $(HAIKU_TOP) generated build boot_splash ] ;
+local ARTWORK_DIR = [ FDirName $(HAIKU_TOP) data artwork boot_splash ] ;
+
+# The Master Header target
+local MASTER_HEADER = [ Join $(GEN_DIR) : NeonAssets.h ] ;
 
 rule GenerateNeonHeaders sources
 {
+    local all_headers ;
     for raw in $(sources) {
-        # Extract stage index (0-7)
         local name = [ MATCH ".*_([0-9]+)\\.png" : $(raw) ] ;
-
-        # Define the 16 expected headers per stage (4 circuits * 4 wave states)
-        # States: cold, warm, vibrant, overdrive
-        # Circuits: sen, ryu, wave_icons
         local h_files =
             sen_$(name)_cold.h sen_$(name)_warm.h sen_$(name)_vibrant.h sen_$(name)_overdrive.h
             ryu_$(name)_cold.h ryu_$(name)_warm.h ryu_$(name)_vibrant.h ryu_$(name)_overdrive.h
             wave_icons_$(name)_cold.h wave_icons_$(name)_warm.h wave_icons_$(name)_vibrant.h wave_icons_$(name)_overdrive.h ;
 
         local target_headers = [ FGristFiles $(h_files) ] ;
-
-        # Ensure Jam knows where to find/place these
         MakeLocate $(target_headers) : $(GEN_DIR) ;
 
-        # Dependency: headers depend on the raw PNG and the Python script
         Depends $(target_headers) : $(raw) $(SANITIZE_PY) ;
-
-        # Trigger the script
         RunNeonCutter $(target_headers) : $(raw) ;
-
-        # Ensure test app is blocked until assets are ready
-        Includes [ FGristFiles NeonDaemon.cpp ] : $(target_headers) ;
+        all_headers += $(target_headers) ;
     }
+
+    # Create the single master header
+    Depends $(MASTER_HEADER) : $(all_headers) ;
+    MergeNeonHeaders $(MASTER_HEADER) : $(all_headers) ;
+
+    # Ensure the source file waits for the master header
+    Includes [ FGristFiles NeonDaemon.cpp ] : $(MASTER_HEADER) ;
 }
 
 actions RunNeonCutter
@@ -46,13 +45,22 @@ actions RunNeonCutter
     (cd "$(GEN_DIR)" && for f in *.png; do tinyxxd -i "$f" > "${f%.png}.h"; done)
 }
 
+actions MergeNeonHeaders
+{
+    echo "// Auto-generated SENryu Neon Assets" > "$(1)"
+    echo "#pragma once" >> "$(1)"
+    for f in $([2]); do
+        cat "$f" >> "$(1)"
+        echo "" >> "$(1)"
+    done
+}
+
 # 1. Process all artwork stages
 local raw_files = [ Glob $(ARTWORK_DIR) : senryu_boot-splash_*.png ] ;
 GenerateNeonHeaders $(raw_files) ;
 
 # 2. Define the Test Application
-# Includes translation kit for rendering, be kit for the window/app
 SimpleTest NeonHeartbeat :
     NeonDaemon.cpp
-    : be translation stdc++
+    : be
 ;
