@@ -9,7 +9,7 @@
 #include <map>
 #include <Directory.h>
 #include <Path.h>
-#include "NeonAssets.h" // The merged master header
+#include "NeonAssets.h"
 
 // Storage for our three circuits
 std::map<BString, BBitmap*> fCircuits;
@@ -88,10 +88,10 @@ public:
 			circuit##_##stage##_##state##_png_len, STAGE_SIZE);
 
 		for (int s = 0; s < kTotalStages; s++) {
-			if (s == 0)      { FOR_EACH_STATE(REGISTER_STAGED, wave_icons, 0) }
-			else if (s == 1) { FOR_EACH_STATE(REGISTER_STAGED, wave_icons, 1) }
-			else if (s == 2) { FOR_EACH_STATE(REGISTER_STAGED, wave_icons, 2) }
-			else if (s == 3) { FOR_EACH_STATE(REGISTER_STAGED, wave_icons, 3) }
+			if (s == 0)      { FOR_EACH_STATE(REGISTER_STAGED, stage, 0) }
+			else if (s == 1) { FOR_EACH_STATE(REGISTER_STAGED, stage, 1) }
+			else if (s == 2) { FOR_EACH_STATE(REGISTER_STAGED, stage, 2) }
+			else if (s == 3) { FOR_EACH_STATE(REGISTER_STAGED, stage, 3) }
 		}
 
 		#undef REGISTER_STATIC
@@ -140,7 +140,7 @@ public:
 private:
 	void _DrawStage() {
 		// 1. Draw Background for the current stage
-		_BlitNeon("wave_icons", fStage, "warm", kStageOrigin);
+		_BlitNeon("stage_", fStage, "warm", kStageOrigin);
 
 		// draw neon logo
 		int stability = (fStage * 100) / 7;

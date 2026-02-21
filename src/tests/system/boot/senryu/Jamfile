@@ -10,7 +10,8 @@ local GEN_DIR = [ FDirName $(HAIKU_TOP) generated build boot_splash ] ;
 local ARTWORK_DIR = [ FDirName $(HAIKU_TOP) data artwork boot_splash ] ;
 
 # The Master Header target
-local MASTER_HEADER = [ Join $(GEN_DIR) : NeonAssets.h ] ;
+local MASTER_HEADER = [ FGristFiles NeonAssets.h ] ;
+MakeLocate $(MASTER_HEADER) : $(GEN_DIR) ;
 
 rule GenerateNeonHeaders sources
 {
@@ -20,12 +21,15 @@ rule GenerateNeonHeaders sources
         local h_files =
             sen_$(name)_cold.h sen_$(name)_warm.h sen_$(name)_vibrant.h sen_$(name)_overdrive.h
             ryu_$(name)_cold.h ryu_$(name)_warm.h ryu_$(name)_vibrant.h ryu_$(name)_overdrive.h
-            wave_icons_$(name)_cold.h wave_icons_$(name)_warm.h wave_icons_$(name)_vibrant.h wave_icons_$(name)_overdrive.h ;
+            stage_$(name)_cold.h stage_$(name)_warm.h stage_$(name)_vibrant.h stage_$(name)_overdrive.h ;
 
         local target_headers = [ FGristFiles $(h_files) ] ;
         MakeLocate $(target_headers) : $(GEN_DIR) ;
-
         Depends $(target_headers) : $(raw) $(SANITIZE_PY) ;
+        
+        SANITIZE_PY on $(target_headers) = $(SANITIZE_PY) ;
+        GEN_DIR on $(target_headers) = $(GEN_DIR) ;
+        
         RunNeonCutter $(target_headers) : $(raw) ;
         all_headers += $(target_headers) ;
     }
@@ -41,16 +45,18 @@ rule GenerateNeonHeaders sources
 actions RunNeonCutter
 {
     python3 "$(SANITIZE_PY)" "$(>)" "$(GEN_DIR)"
-    # Clean up variable names in headers using xxd
+    # Clean up variable names in headers using tinyxxd
     (cd "$(GEN_DIR)" && for f in *.png; do tinyxxd -i "$f" > "${f%.png}.h"; done)
 }
 
+# executed by sh
 actions MergeNeonHeaders
 {
     echo "// Auto-generated SENryu Neon Assets" > "$(1)"
     echo "#pragma once" >> "$(1)"
-    for f in $([2]); do
-        cat "$f" >> "$(1)"
+    for header in $(>) ; do
+        echo "> merging header ${header}"
+        cat "${header}" >> "$(1)"
         echo "" >> "$(1)"
     done
 }
@@ -60,7 +66,7 @@ local raw_files = [ Glob $(ARTWORK_DIR) : senryu_boot-splash_*.png ] ;
 GenerateNeonHeaders $(raw_files) ;
 
 # 2. Define the Test Application
-SimpleTest NeonHeartbeat :
+SimpleTest NeonDaemon :
     NeonDaemon.cpp
     : be
 ;
