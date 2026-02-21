@@ -17,13 +17,24 @@ rule GenerateNeonHeaders sources
 {
     local all_headers ;
     for raw in $(sources) {
+# Match EXACTLY one or more digits after the last underscore
         local name = [ MATCH ".*_([0-9]+)\\.png" : $(raw) ] ;
-        local h_files =
-            sen_$(name)_cold.h sen_$(name)_warm.h sen_$(name)_vibrant.h sen_$(name)_overdrive.h
-            ryu_$(name)_cold.h ryu_$(name)_warm.h ryu_$(name)_vibrant.h ryu_$(name)_overdrive.h
-            stage_$(name)_cold.h stage_$(name)_warm.h stage_$(name)_vibrant.h stage_$(name)_overdrive.h ;
+
+        # Ensure 'name' is just a single digit for the stage circuits
+        # If the circuit is 'sen' or 'ryu', we don't use 'name' at all!
+
+        local circuit = [ MATCH "(.*)_[0-9]+\\.png" : $(raw) ] ;
+        local h_files ;
+
+        if $(circuit) = "stage" {
+            h_files = stage_$(name)_cold.h stage_$(name)_warm.h stage_$(name)_vibrant.h stage_$(name)_overdrive.h ;
+        } else {
+            # Static circuits (sen, ryu) - No $(name) index in the header filename!
+            h_files = $(circuit)_cold.h $(circuit)_warm.h $(circuit)_vibrant.h $(circuit)_overdrive.h ;
+        }
 
         local target_headers = [ FGristFiles $(h_files) ] ;
+
         MakeLocate $(target_headers) : $(GEN_DIR) ;
         Depends $(target_headers) : $(raw) $(SANITIZE_PY) ;
         

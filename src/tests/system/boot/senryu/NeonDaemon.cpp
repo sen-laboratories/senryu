@@ -23,6 +23,17 @@ const BPoint kStageOrigin(482, 0);
 // --- Configuration from Python Image Cutter ---
 static const int kTotalStages = 7;
 
+// Define our states as an enum for index-based lookup (last enum ~ count)
+enum NeonState { COLD = 0, WARM, VIBRANT, OVERDRIVE, STATE_COUNT};
+
+class NeonDaemon {
+	// [Stage][State]
+	BBitmap* fStageBitmaps[kTotalStages][STATE_COUNT];
+	// [State]
+	BBitmap* fSenBitmaps[STATE_COUNT];
+	BBitmap* fRyuBitmaps[STATE_COUNT];
+};
+
 // Bounding Box Dimensions (Width/Height)
 #define SEN_SIZE   BRect(0, 0, 226 - 1, 112 - 1)
 #define RYU_SIZE   BRect(0, 0, 176 - 1, 182 - 1)
@@ -71,31 +82,28 @@ public:
 
 	void NeonDaemon::InitAssets()
 	{
-		// 1. Register Static Circuits (sen, ryu) - No stages
-		#define REGISTER_STATIC(circuit, state) \
-		fCircuits[BString().SetToFormat("%s_%s", #circuit, #state)] = \
-		CreateBitmapFromRaw(circuit##_##state##_png, \
-		circuit##_##state##_png_len, \
-		(BString(#circuit) == "sen" ? SEN_SIZE : RYU_SIZE));
+		// Macro to fill the arrays directly via pointer assignment
+		#define FILL_STATIC(circuit, array) \
+		array[COLD]      = CreateBitmapFromRaw(circuit##_cold_png, circuit##_cold_png_len, circuit##_SIZE); \
+		array[WARM]      = CreateBitmapFromRaw(circuit##_warm_png, circuit##_warm_png_len, circuit##_SIZE); \
+		array[VIBRANT]   = CreateBitmapFromRaw(circuit##_vibrant_png, circuit##_vibrant_png_len, circuit##_SIZE); \
+		array[OVERDRIVE] = CreateBitmapFromRaw(circuit##_overdrive_png, circuit##_overdrive_png_len, circuit##_SIZE);
 
-		FOR_EACH_STATIC_STATE(REGISTER_STATIC, sen)
-		FOR_EACH_STATIC_STATE(REGISTER_STATIC, ryu)
+		#define FILL_STAGE(s) \
+		fStageBitmaps[s][COLD]      = CreateBitmapFromRaw(stage_##s##_cold_png, stage_##s##_cold_png_len, STAGE_SIZE); \
+		fStageBitmaps[s][WARM]      = CreateBitmapFromRaw(stage_##s##_warm_png, stage_##s##_warm_png_len, STAGE_SIZE); \
+		fStageBitmaps[s][VIBRANT]   = CreateBitmapFromRaw(stage_##s##_vibrant_png, stage_##s##_vibrant_png_len, STAGE_SIZE); \
+		fStageBitmaps[s][OVERDRIVE] = CreateBitmapFromRaw(stage_##s##_overdrive_png, stage_##s##_overdrive_png_len, STAGE_SIZE);
 
-		// 2. Register Staged Circuit (wave_icons)
-		#define REGISTER_STAGED(circuit, stage, state) \
-			fCircuits[BString().SetToFormat("%s_%d_%s", #circuit, stage, #state)] = \
-			CreateBitmapFromRaw(circuit##_##stage##_##state##_png, \
-			circuit##_##stage##_##state##_png_len, STAGE_SIZE);
+		FILL_STATIC(sen, fSenBitmaps)
+		FILL_STATIC(ryu, fRyuBitmaps)
 
-		for (int s = 0; s < kTotalStages; s++) {
-			if (s == 0)      { FOR_EACH_STATE(REGISTER_STAGED, stage, 0) }
-			else if (s == 1) { FOR_EACH_STATE(REGISTER_STAGED, stage, 1) }
-			else if (s == 2) { FOR_EACH_STATE(REGISTER_STAGED, stage, 2) }
-			else if (s == 3) { FOR_EACH_STATE(REGISTER_STAGED, stage, 3) }
+		for (int i = 0; i < kTotalStages; i++) {
+			FILL_STAGE(i)
 		}
 
-		#undef REGISTER_STATIC
-		#undef REGISTER_STAGED
+		#undef FILL_STATIC
+		#undef FILL_STAGE
 	}
 
 	void Draw(BRect updateRect) override {
