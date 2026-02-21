@@ -6,69 +6,101 @@ UsePrivateKernelHeaders ;
 
 local SCRIPTS_DIR = [ FDirName $(HAIKU_TOP) build scripts ] ;
 local SANITIZE_PY = [ FDirName $(SCRIPTS_DIR) generate_senryu_boot_splash.py ] ;
-local GEN_DIR = [ FDirName $(HAIKU_TOP) generated build boot_splash ] ;
+local GEN_DIR		  = [ FDirName $(HAIKU_TOP) generated build boot_splash ] ;
 local ARTWORK_DIR = [ FDirName $(HAIKU_TOP) data artwork boot_splash ] ;
 
 # The Master Header target
 local MASTER_HEADER = [ FGristFiles NeonAssets.h ] ;
 MakeLocate $(MASTER_HEADER) : $(GEN_DIR) ;
 
-rule GenerateNeonHeaders sources
+local GENERATED_HEADERS ;
+
+rule GenerateNeonHeaders
 {
-    local all_headers ;
-    for raw in $(sources) {
-# Match EXACTLY one or more digits after the last underscore
-        local name = [ MATCH ".*_([0-9]+)\\.png" : $(raw) ] ;
+    local stages = 0 1 2 3 4 5 6 7 ;
+    local states = cold warm vibrant overdrive ;
+    local GENERATED_HEADERS ;
 
-        # Ensure 'name' is just a single digit for the stage circuits
-        # If the circuit is 'sen' or 'ryu', we don't use 'name' at all!
+    for s in $(stages)
+    {
+        # 1. Define the source PNG for THIS stage
+        local raw = [ FDirName $(ARTWORK_DIR) senryu_boot-splash_$(s).png ] ;
+        local current_headers ;
 
-        local circuit = [ MATCH "(.*)_[0-9]+\\.png" : $(raw) ] ;
-        local h_files ;
-
-        if $(circuit) = "stage" {
-            h_files = stage_$(name)_cold.h stage_$(name)_warm.h stage_$(name)_vibrant.h stage_$(name)_overdrive.h ;
-        } else {
-            # Static circuits (sen, ryu) - No $(name) index in the header filename!
-            h_files = $(circuit)_cold.h $(circuit)_warm.h $(circuit)_vibrant.h $(circuit)_overdrive.h ;
+        # 2. Add the staged headers for THIS specific stage index
+        for state in $(states) {
+            current_headers += stage_$(s)_$(state).h ;
         }
 
-        local target_headers = [ FGristFiles $(h_files) ] ;
+        # 3. Add the static headers ONLY for the first stage (index 0)
+        # These are cut from the first splash image.
+        if $(s) = 0 {
+            for state in $(states) {
+                current_headers += sen_$(state).h ryu_$(state).h ;
+            }
+        }
 
+        # 4. Convert to targets and locate
+        local target_headers = [ FGristFiles $(current_headers) ] ;
         MakeLocate $(target_headers) : $(GEN_DIR) ;
-        Depends $(target_headers) : $(raw) $(SANITIZE_PY) ;
-        
+
+        # BINDINGS: Pass specific variables to the action for this target set
         SANITIZE_PY on $(target_headers) = $(SANITIZE_PY) ;
         GEN_DIR on $(target_headers) = $(GEN_DIR) ;
+        # Use :BS to give the shell clean names (e.g. stage_0_cold.h)
+        HEADER_NAMES on $(target_headers) = $(target_headers:BS) ;
+
+        # Dependencies
+        Depends $(target_headers) : $(raw) $(SANITIZE_PY) ;
         
+        # Execute the cutter for THIS specific PNG
         RunNeonCutter $(target_headers) : $(raw) ;
-        all_headers += $(target_headers) ;
+
+        GENERATED_HEADERS += $(target_headers) ;
     }
 
-    # Create the single master header
-    Depends $(MASTER_HEADER) : $(all_headers) ;
-    MergeNeonHeaders $(MASTER_HEADER) : $(all_headers) ;
+    # 5. Master Merge Setup (outside the loop)
+    GENERATED_HEADER_NAMES on $(MASTER_HEADER) = $(GENERATED_HEADERS:BS) ;
+    MASTER_HEADER_PATH on $(MASTER_HEADER) = $(MASTER_HEADER:G=) ;
+    GEN_DIR on $(MASTER_HEADER) = $(GEN_DIR) ;
+    
+    Depends $(MASTER_HEADER) : $(GENERATED_HEADERS) ;
+    MergeNeonHeaders $(MASTER_HEADER) ;
 
-    # Ensure the source file waits for the master header
     Includes [ FGristFiles NeonDaemon.cpp ] : $(MASTER_HEADER) ;
 }
 
 actions RunNeonCutter
 {
     python3 "$(SANITIZE_PY)" "$(>)" "$(GEN_DIR)"
-    # Clean up variable names in headers using tinyxxd
-    (cd "$(GEN_DIR)" && for f in *.png; do tinyxxd -i "$f" > "${f%.png}.h"; done)
+    
+    cd "$(GEN_DIR)"
+    for h_file in $(HEADER_NAMES) ; do
+        # Strip .h to get the base name
+        base="${h_file%.h}"
+        
+        # If the file exists as a .png, convert it
+        if [ -f "${base}.png" ]; then
+            (tinyxxd -i "${base}.png" > "$h_file" 2>/dev/null || xxd -i "${base}.png" > "$h_file")
+        else
+            # DEBUG: This will show up in your Jam output if a file is missing
+            echo "Warning: Expected ${base}.png but it was not created by the script."
+        fi
+    done
 }
 
 # executed by sh
 actions MergeNeonHeaders
-{
-    echo "// Auto-generated SENryu Neon Assets" > "$(1)"
-    echo "#pragma once" >> "$(1)"
-    for header in $(>) ; do
-        echo "> merging header ${header}"
-        cat "${header}" >> "$(1)"
-        echo "" >> "$(1)"
+{	  
+    printf "// Auto-generated SENryu Neon Assets\n" > "$(MASTER_HEADER_PATH)"
+    printf "#pragma once" >> "$(MASTER_HEADER_PATH)"
+ 
+ 	  cd "$(GEN_DIR)"
+   
+    for header in $(GENERATED_HEADER_NAMES:BS) ; do
+        printf "> merging header ${header}...\n"
+        cat "${header}" >> "$(MASTER_HEADER_PATH)"
+        printf "\n" >> "$(MASTER_HEADER_PATH)"
     done
 }
 

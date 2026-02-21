@@ -9,7 +9,7 @@
 #include <map>
 #include <Directory.h>
 #include <Path.h>
-#include "NeonAssets.h"
+#include "../../../../../generated/build/boot_splash/NeonAssets.h"
 
 // Storage for our three circuits
 std::map<BString, BBitmap*> fCircuits;

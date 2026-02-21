@@ -57,7 +57,6 @@ def generate_neon_states(input_path, out_dir):
         final = base_img.quantize(palette=p_img, dither=Image.Dither.FLOYDSTEINBERG)
         final.save(os.path.join(out_dir, "stage_0.png"))
         generate_neon_logo(input_path, out_dir)
-        return
 
     # For stages, create 4 luminosity levels
     crop = base_img.crop(STAGE_BBOX)
