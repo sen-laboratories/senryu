@@ -103,7 +103,7 @@ private:
 				capacity = 2 * fCapacity;
 
 			Member* elements
-				= (Member*)realloc(fElements, capacity * sizeof(Member));
+				= (Member*)realloc((void*)fElements, capacity * sizeof(Member));
 			if (!elements)
 				return B_NO_MEMORY;
 

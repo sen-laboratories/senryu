@@ -1,4 +1,4 @@
-1	hungarian	x-vnd.Haiku-StyledEdit	1077895429
+1	hungarian	x-vnd.Haiku-StyledEdit	4205187966
 Document statistics	Statistics		Statisztika
 Cannot revert, file not found: \"%s\".	RevertToSavedAlert		Nem vonható vissza, a fájl \"%s\" nem található.
 Cut	Menus		Kivágás
@@ -6,7 +6,6 @@ Center	Menus		Középre
 Increase size	Menus		Méret növelés
 Page setup…	Menus		Oldalbeállítás…
 Wrap-around search	FindandReplaceWindow		Folyamatos keresés
-Untitled 	StyledEditWindow		Névtelen
 OK	Statistics		Rendben
 Find	FindandReplaceWindow		Keresés
 New	Menus		Új

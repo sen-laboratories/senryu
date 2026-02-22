@@ -26,6 +26,18 @@ typedef dev_t nspace_id;
 #include <SupportDefs.h>
 
 
+#define INFO(x...) dprintf("\33[34mnfs\33[0m: Info: " x)
+#define ERROR(x...) dprintf("\33[34mnfs\33[0m: Error: " x)
+
+#ifdef DEBUG
+#	define TRACE(x...) dprintf("\33[34mnfs\33[0m: Trace: " x)
+#	define CALLED() dprintf("\33[34mnfs\33[0m: Called: %s\n", __PRETTY_FUNCTION__)
+#else
+#	define TRACE(x...)
+#	define CALLED()
+#endif
+
+
 struct mount_nfs_params {
 	unsigned int serverIP;
 	char *server;

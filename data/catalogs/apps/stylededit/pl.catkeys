@@ -1,4 +1,4 @@
-1	polish	x-vnd.Haiku-StyledEdit	3760185556
+1	polish	x-vnd.Haiku-StyledEdit	2592510797
 Document statistics	Statistics		Statystyki dokumentu
 Cannot revert, file not found: \"%s\".	RevertToSavedAlert		Nie można przywrócić, nie znaleziono pliku: „%s”.
 Cut	Menus		Wytnij
@@ -6,7 +6,6 @@ Center	Menus		Wyśrodkuj
 Increase size	Menus		Zwiększ rozmiar
 Page setup…	Menus		Ustawienia strony…
 Wrap-around search	FindandReplaceWindow		Szukanie owijające
-Untitled 	StyledEditWindow		Bez tytułu 
 OK	Statistics		OK
 Find	FindandReplaceWindow		Znajdź
 New	Menus		Nowy

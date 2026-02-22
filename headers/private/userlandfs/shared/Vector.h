@@ -286,7 +286,7 @@ void
 _VECTOR_CLASS_NAME::_MoveItems(Value* items, int32 offset, int32 count)
 {
 	if (count > 0 && offset != 0)
-		memmove(items + offset, items, count * sizeof(Value));
+		memmove((void*)(items + offset), items, count * sizeof(Value));
 }
 
 // Insert
@@ -722,7 +722,7 @@ _VECTOR_CLASS_NAME::_Resize(size_t count)
 	newSize = ((newSize - 1) / fChunkSize + 1) * fChunkSize;
 	// resize if necessary
 	if ((size_t)newSize != fCapacity) {
-		Value* newItems = (Value*)realloc(fItems, newSize * sizeof(Value));
+		Value* newItems = (Value*)realloc((void*)fItems, newSize * sizeof(Value));
 		if (newItems) {
 			fItems = newItems;
 			fCapacity = newSize;

@@ -97,7 +97,11 @@ namespace CppUnit {
       }
 
     private:
+#if __GNUC__ == 2
       auto_ptr<TestSuite> m_suite;
+#else
+      std::unique_ptr<TestSuite> m_suite;
+#endif
   };
 
 }  // namespace CppUnit

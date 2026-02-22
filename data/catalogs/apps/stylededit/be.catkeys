@@ -1,11 +1,10 @@
-1	belarusian	x-vnd.Haiku-StyledEdit	727465241
+1	belarusian	x-vnd.Haiku-StyledEdit	3854757778
 Document statistics	Statistics		Статыстыка дакументу
 Cannot revert, file not found: \"%s\".	RevertToSavedAlert		Немагчыма вярнуцца, файл \"%s\" ня знойдзены.
 Cut	Menus		Выразаць
 Center	Menus		Цэнтар
 Page setup…	Menus		Наладкі старонкі…
 Wrap-around search	FindandReplaceWindow		Пошук з пераходам
-Untitled 	StyledEditWindow		Без назвы 
 OK	Statistics		ОК
 Find	FindandReplaceWindow		Шукаць
 New	Menus		Новы

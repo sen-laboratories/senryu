@@ -1,4 +1,4 @@
-1	italian	x-vnd.Haiku-StyledEdit	1077895429
+1	italian	x-vnd.Haiku-StyledEdit	4205187966
 Document statistics	Statistics		Statistiche sul documento
 Cannot revert, file not found: \"%s\".	RevertToSavedAlert		Impossibile ripristinare, file non trovato: \"%s\".
 Cut	Menus		Taglia
@@ -6,7 +6,6 @@ Center	Menus		Centra
 Increase size	Menus		Aumenta dimensioni
 Page setup…	Menus		Imposta pagina…
 Wrap-around search	FindandReplaceWindow		Cerca in tutto il documento
-Untitled 	StyledEditWindow		Senza nome 
 OK	Statistics		OK
 Find	FindandReplaceWindow		Cerca
 New	Menus		Nuovo

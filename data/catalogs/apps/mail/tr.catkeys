@@ -1,4 +1,4 @@
-1	turkish	x-vnd.Be-MAIL	218437132
+1	turkish	x-vnd.Be-MAIL	3439134129
 Set to Saved	Mail		Kaydedilenlere ekle
 Your main text contains %ld unencodable characters. Perhaps a different character set would work better? Hit Send to send it anyway (a substitute character will be used in place of the unencodable ones), or choose Cancel to go back and try fixing it up.	Mail		Ana metniniz %ld kodlanamayan karakter içeriyor. Gönder’e basmak bu iletinizi gönderir; ancak kodlanamayan karakterin yerine bir başkası kullanılır. Bu durumda başka bir karakter kümesi kullanmayı deneyebilirsiniz. Sorunu çözmeyi denemek için Vazgeç’e tıklayın.
 Text wrapping:	Mail		Metin kaydırma:
@@ -48,6 +48,7 @@ Show icons only	Mail		Yalnızca simgeler
 Subject:	Mail		Konu:
 OK	Mail		Tamam
 UTF-8	Mail	This string is used as a key to set default message compose encoding. It must be correct IANA name from http://cgit.haiku-os.org/haiku/tree/src/kits/textencoding/character_sets.cpp Translate it only if you want to change default message compose encoding for your locale. If you don't know what is it and why it may needs changing, just leave \"UTF-8\".	UTF-8
+All people	AddressTextControl		Herkes
 Quit	Mail		Çık
 Title:	Mail		Başlık:
 Account from mail	Mail		E-posta hesabı
@@ -73,6 +74,7 @@ Off	Mail		Kapalı
 Set to %s	Mail		%s olarak ayarla
 Signature:	Mail		İmza:
 Forward without attachments	Mail		Ekler olmadan ilet
+None	Settings		Yok
 queries	B_USER_DIRECTORY/mail/queries		sorgular
 View	Mail		Görüntü
 Signatures	Mail		İmzalar

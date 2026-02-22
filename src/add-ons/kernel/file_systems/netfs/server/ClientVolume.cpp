@@ -281,7 +281,7 @@ ClientVolume::GetDirectory(dev_t volumeID, ino_t nodeID)
 	VolumeManager* volumeManager = VolumeManager::GetDefault();
 
 	// get the directory
-	Directory* dir = GetDirectory(volumeID, nodeID);
+	Directory* dir = volumeManager->GetDirectory(volumeID, nodeID);
 	if (!dir)
 		return NULL;
 

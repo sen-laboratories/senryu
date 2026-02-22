@@ -268,7 +268,7 @@ BSize
 CharacterView::MinSize()
 {
 	return BLayoutUtils::ComposeSize(ExplicitMinSize(),
-		BSize(fCharacterHeight, fCharacterHeight + fTitleHeight));
+		BSize(fCharacterWidth, fCharacterHeight + fTitleHeight));
 }
 
 
@@ -374,8 +374,7 @@ CharacterView::MouseDown(BPoint where)
 			UnicodeToUTF8(fCurrentCharacter, text, sizeof(text));
 
 			fMenu = new NoMarginMenu();
-			fMenu->AddItem(new PreviewItem(text, fCharacterWidth,
-				fCharacterHeight));
+			fMenu->AddItem(new PreviewItem(text, fCharacterWidth - fGap, fCharacterHeight));
 			fMenu->SetFont(&fCharacterFont);
 			fMenu->SetFontSize(fCharacterFont.Size() * 2.5);
 			fMenu->ItemAt(0)->SetEnabled(_HasGlyphForCharacter(text));
@@ -509,8 +508,6 @@ CharacterView::MouseMoved(BPoint where, uint32 transit,
 void
 CharacterView::Draw(BRect updateRect)
 {
-	const int32 kXGap = fGap / 2;
-
 	BFont font;
 	GetFont(&font);
 
@@ -536,7 +533,7 @@ CharacterView::Draw(BRect updateRect)
 		DrawString(kUnicodeBlocks[i].name, BPoint(3, y + fTitleBase));
 
 		y += fTitleHeight;
-		int32 x = kXGap;
+		int32 x = (int32)fDataRect.left;
 		SetFont(&fCharacterFont);
 
 		for (uint32 c = kUnicodeBlocks[i].start; c <= kUnicodeBlocks[i].end;
@@ -546,12 +543,13 @@ CharacterView::Draw(BRect updateRect)
 				// Stroke frame around the active character
 				bool selection = fHasCharacter && fCurrentCharacter == c;
 				if (selection) {
+					int32 xInset = fGap / 2;
+					BRect enclosingRect(x + xInset, y, x - xInset + fCharacterWidth - 1,
+						y + fCharacterHeight - fGap);
 					SetHighColor(highlight);
-					FillRect(BRect(x, y, x + fCharacterWidth,
-						y + fCharacterHeight - fGap));
+					FillRect(enclosingRect);
 					SetHighColor(enclose);
-					StrokeRect(BRect(x, y, x + fCharacterWidth,
-						y + fCharacterHeight - fGap));
+					StrokeRect(enclosingRect);
 				}
 
 				// Draw character
@@ -568,14 +566,14 @@ CharacterView::Draw(BRect updateRect)
 						y + fCharacterBase));
 			}
 
-			x += fCharacterWidth + fGap;
-			if (x + fCharacterWidth + kXGap >= fDataRect.right) {
+			x += fCharacterWidth;
+			if (x + fCharacterWidth > fDataRect.right) {
 				y += fCharacterHeight;
-				x = kXGap;
+				x = (int32)fDataRect.left;
 			}
 		}
 
-		if (x != kXGap)
+		if (x != fDataRect.left)
 			y += fCharacterHeight;
 		y += fTitleGap;
 
@@ -600,18 +598,13 @@ CharacterView::_BlockAt(BPoint point) const
 	uint32 guess = (max + min) / 2;
 
 	while ((max >= min) && (guess < kNumUnicodeBlocks - 1 )) {
-		if (fTitleTops[guess] <= point.y && fTitleTops[guess + 1] >= point.y) {
-			if (!IsShowingBlock(guess))
-				return -1;
-			else
-				return guess;
-		}
+		if (fTitleTops[guess] <= point.y && fTitleTops[guess + 1] > point.y)
+			return guess;
 
-		if (fTitleTops[guess + 1] < point.y) {
+		if (fTitleTops[guess + 1] <= point.y)
 			min = guess + 1;
-		} else {
+		else
 			max = guess - 1;
-		}
 
 		guess = (max + min) / 2;
 	}
@@ -624,6 +617,13 @@ bool
 CharacterView::_GetCharacterAt(BPoint point, uint32& character,
 	BRect* _frame) const
 {
+	if (point.x < fDataRect.left)
+		return false;
+
+	int32 column = (int32)(point.x - fDataRect.left) / fCharacterWidth;
+	if (column >= fCharactersPerLine)
+		return false;
+
 	int32 i = _BlockAt(point);
 	if (i == -1)
 		return false;
@@ -632,31 +632,15 @@ CharacterView::_GetCharacterAt(BPoint point, uint32& character,
 	if (y > point.y)
 		return false;
 
-	const int32 startX = fGap / 2;
-	if (startX > point.x)
-		return false;
-
-	int32 endX = startX + fCharactersPerLine * (fCharacterWidth + fGap);
-	if (endX < point.x)
-		return false;
-
-	for (uint32 c = kUnicodeBlocks[i].start; c <= kUnicodeBlocks[i].end;
-			c += fCharactersPerLine, y += fCharacterHeight) {
-		if (y + fCharacterHeight <= point.y)
-			continue;
-
-		int32 pos = (int32)((point.x - startX) / (fCharacterWidth + fGap));
-		if (c + pos > kUnicodeBlocks[i].end)
-			return false;
-
-		// Found character at position
-
-		character = c + pos;
+	int32 row = ((int32)point.y - y) / fCharacterHeight;
+	uint32 c = kUnicodeBlocks[i].start + column + fCharactersPerLine * row;
+	if (c <= kUnicodeBlocks[i].end) {
+		character = c;
 
 		if (_frame != NULL) {
-			_frame->Set(startX + pos * (fCharacterWidth + fGap),
-				y, startX + (pos + 1) * (fCharacterWidth + fGap) - 1,
-				y + fCharacterHeight);
+			int x = (int32)fDataRect.left + column * fCharacterWidth;
+			y += row * fCharacterHeight;
+			_frame->Set(x, y, x + fCharacterWidth - 1, y + fCharacterHeight - 1);
 		}
 
 		return true;
@@ -692,6 +676,7 @@ CharacterView::_UpdateFontSize()
 	if (fGap < 3)
 		fGap = 3;
 
+	fCharacterWidth += fGap;
 	fCharacterHeight += fGap;
 	fTitleGap = fGap * 3;
 }
@@ -709,9 +694,13 @@ CharacterView::_UpdateSize()
 	fDataRect.right = bounds.Width();
 	fDataRect.bottom = 0;
 
-	fCharactersPerLine = int32(bounds.Width() / (fGap + fCharacterWidth));
+	fCharactersPerLine = int32(bounds.Width() / fCharacterWidth);
 	if (fCharactersPerLine == 0)
 		fCharactersPerLine = 1;
+
+	int32 waste = bounds.IntegerWidth() - fCharacterWidth * fCharactersPerLine;
+	fCharacterWidth += waste / fCharactersPerLine;
+	fDataRect.left = (int)((waste % fCharactersPerLine) / 2);
 
 	for (uint32 i = 0; i < kNumUnicodeBlocks; i++) {
 		fTitleTops[i] = (int32)ceilf(fDataRect.bottom);
@@ -780,13 +769,13 @@ CharacterView::_FrameFor(uint32 character) const
 	// find block containing the character
 	int32 blockNumber = BlockForCharacter(character);
 
-	if (blockNumber > 0) {
+	if (blockNumber >= 0) {
 		int32 diff = character - kUnicodeBlocks[blockNumber].start;
 		int32 y = fTitleTops[blockNumber] + fTitleHeight
 			+ (diff / fCharactersPerLine) * fCharacterHeight;
-		int32 x = fGap / 2 + diff % fCharactersPerLine;
+		int32 x = (diff % fCharactersPerLine) * fCharacterWidth + (int32)fDataRect.left;
 
-		return BRect(x, y, x + fCharacterWidth + fGap, y + fCharacterHeight);
+		return BRect(x, y, x + fCharacterWidth - 1, y + fCharacterHeight - 1);
 	}
 
 	return BRect();

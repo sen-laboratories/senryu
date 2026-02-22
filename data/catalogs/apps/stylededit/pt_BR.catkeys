@@ -1,4 +1,4 @@
-1	portuguese (brazil)	x-vnd.Haiku-StyledEdit	2796309255
+1	portuguese (brazil)	x-vnd.Haiku-StyledEdit	1628634496
 Document statistics	Statistics		Estatísticas do documento
 Cannot revert, file not found: \"%s\".	RevertToSavedAlert		Impossível reverter, arquivo não encontrado: \"%s\".
 Cut	Menus		Recortar
@@ -6,7 +6,6 @@ Center	Menus		Centralizado
 Increase size	Menus		Aumentar tamanho
 Page setup…	Menus		Configurar página…
 Wrap-around search	FindandReplaceWindow		Localizar em torno de
-Untitled 	StyledEditWindow		Sem título 
 OK	Statistics		OK
 Find	FindandReplaceWindow		Localizar
 New	Menus		Novo

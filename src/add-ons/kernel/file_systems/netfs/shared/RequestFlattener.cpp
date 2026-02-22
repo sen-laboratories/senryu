@@ -26,7 +26,7 @@ Writer::Pad(int32 size)
 	if (size > 8)
 		return B_BAD_VALUE;
 
-	char buffer[8];
+	char buffer[8] = {0};
 	return Write(buffer, size);
 }
 

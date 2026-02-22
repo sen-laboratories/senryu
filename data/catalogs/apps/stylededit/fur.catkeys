@@ -1,4 +1,4 @@
-1	friulian	x-vnd.Haiku-StyledEdit	1077895429
+1	friulian	x-vnd.Haiku-StyledEdit	4205187966
 Document statistics	Statistics		Statistichis sul document
 Cannot revert, file not found: \"%s\".	RevertToSavedAlert		Impussibil ripristinâ, file no cjatât: \"%s\".
 Cut	Menus		Taie
@@ -6,7 +6,6 @@ Center	Menus		Centre
 Increase size	Menus		Aumente dimension
 Page setup…	Menus		Configure pagjine…
 Wrap-around search	FindandReplaceWindow		Cîr tor ator tal document
-Untitled 	StyledEditWindow		Cence non 
 OK	Statistics		Va ben
 Find	FindandReplaceWindow		Cjate
 New	Menus		Gnûf

@@ -1,4 +1,4 @@
-1	dutch; flemish	x-vnd.Haiku-StyledEdit	3760185556
+1	dutch; flemish	x-vnd.Haiku-StyledEdit	2592510797
 Document statistics	Statistics		Documentstatistieken
 Cannot revert, file not found: \"%s\".	RevertToSavedAlert		Kan niet herstellen, het bestand \"%s\" werd niet gevonden.
 Cut	Menus		Knippen
@@ -6,7 +6,6 @@ Center	Menus		Centreren
 Increase size	Menus		Vergroten
 Page setup…	Menus		Pagina-configuratie...
 Wrap-around search	FindandReplaceWindow		Rondgaand zoeken
-Untitled 	StyledEditWindow		Naamloos
 OK	Statistics		Oké
 Find	FindandReplaceWindow		Zoeken
 New	Menus		Nieuw

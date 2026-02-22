@@ -38,7 +38,7 @@ namespace CppUnit {
       /** Auto-register the suite factory in the specified registry.
        * \param name Name of the registry.
        */
-      AutoRegisterSuite( const string &name )
+      AutoRegisterSuite( const std::string &name )
       {
         TestFactory *factory = new TestSuiteFactory<TestCaseType>();
         TestFactoryRegistry::getRegistry( name ).registerFactory( factory );

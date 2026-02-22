@@ -1,4 +1,4 @@
-1	german	x-vnd.Be-MAIL	218437132
+1	german	x-vnd.Be-MAIL	3439134129
 Set to Saved	Mail		Status setzen: Saved
 Your main text contains %ld unencodable characters. Perhaps a different character set would work better? Hit Send to send it anyway (a substitute character will be used in place of the unencodable ones), or choose Cancel to go back and try fixing it up.	Mail		Der Text enthält %ld nicht kodierbare Zeichen. Eine andere Zeichenkodierung könnte helfen. 'Senden' klicken, um die Nachricht trotzdem zu senden (Ersatzzeichen werden für die nicht kodierbaren Zeichen verwendet), oder den Vorgang abbrechen, um das Problem zu lösen.
 Text wrapping:	Mail		Zeilenumbruch:
@@ -48,6 +48,7 @@ Show icons only	Mail		Nur Icons zeigen
 Subject:	Mail		Betreff:
 OK	Mail		OK
 UTF-8	Mail	This string is used as a key to set default message compose encoding. It must be correct IANA name from http://cgit.haiku-os.org/haiku/tree/src/kits/textencoding/character_sets.cpp Translate it only if you want to change default message compose encoding for your locale. If you don't know what is it and why it may needs changing, just leave \"UTF-8\".	UTF-8
+All people	AddressTextControl		Alle Kontakte
 Quit	Mail		Beenden
 Title:	Mail		Titel:
 Account from mail	Mail		Konto der Nachricht
@@ -73,6 +74,7 @@ Off	Mail		Aus
 Set to %s	Mail		Status setzen: %s
 Signature:	Mail		Signatur:
 Forward without attachments	Mail		Mit Anhängen weiterleiten
+None	Settings		Keine
 queries	B_USER_DIRECTORY/mail/queries		Queries
 View	Mail		Ansicht
 Signatures	Mail		Signaturen

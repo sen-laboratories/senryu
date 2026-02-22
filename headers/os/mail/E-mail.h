@@ -15,6 +15,7 @@ struct entry_ref;
 
 // E-Mail attributes
 #define B_MAIL_ATTR_NAME		"MAIL:name"				// indexed string
+#define B_MAIL_ATTR_LABEL		"MAIL:label"			// indexed string
 #define B_MAIL_ATTR_STATUS		"MAIL:status"			// indexed string
 #define B_MAIL_ATTR_PRIORITY	"MAIL:priority"			// indexed string
 #define B_MAIL_ATTR_TO			"MAIL:to"				// indexed string

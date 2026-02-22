@@ -1,4 +1,4 @@
-1	english	x-vnd.Haiku-StyledEdit	1077895429
+1	english	x-vnd.Haiku-StyledEdit	4205187966
 Document statistics	Statistics		文件統計
 Cannot revert, file not found: \"%s\".	RevertToSavedAlert		無法恢復，未找到檔案：\"%s\"。
 Cut	Menus		剪下
@@ -6,7 +6,6 @@ Center	Menus		中心
 Increase size	Menus		增大尺寸
 Page setup…	Menus		頁面設定…
 Wrap-around search	FindandReplaceWindow		環繞搜尋
-Untitled 	StyledEditWindow		無標題
 OK	Statistics		確認
 Find	FindandReplaceWindow		尋找
 New	Menus		新創

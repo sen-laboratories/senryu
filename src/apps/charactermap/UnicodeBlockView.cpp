@@ -6,6 +6,8 @@
 
 #include "UnicodeBlockView.h"
 
+#include <ControlLook.h>
+
 #include <stdio.h>
 #include <string.h>
 
@@ -135,6 +137,7 @@ UnicodeBlockView::_CreateBlocks()
 			minWidth = width;
 	}
 
+	minWidth += 2 * be_control_look->DefaultLabelSpacing();
 	SetExplicitMinSize(BSize(minWidth / 2, 32));
 	SetExplicitMaxSize(BSize(minWidth, B_SIZE_UNSET));
 
@@ -148,7 +151,7 @@ UnicodeBlockView::SelectBlockForCharacter(uint32 character)
 	// find block containing the character
 	int32 blockNumber = BlockForCharacter(character);
 
-	if (blockNumber > 0) {
+	if (blockNumber >= 0) {
 		BlockListItem* block = fBlocks.ItemAt(blockNumber);
 
 		int32 blockIndex = IndexOf(block);

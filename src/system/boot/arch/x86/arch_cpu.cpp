@@ -327,6 +327,7 @@ determine_cpu_conversion_factor(uint8 channel)
 			&& (info.regs.ecx & IA32_FEATURE_EXT_HYPERVISOR) != 0) {
 		get_current_cpuid(&info, 0x40000000, 0);
 		const uint32 maxVMM = info.regs.eax;
+
 		if (maxVMM >= 0x40000010) {
 			get_current_cpuid(&info, 0x40000010, 0);
 
@@ -338,6 +339,29 @@ determine_cpu_conversion_factor(uint8 channel)
 
 			dprintf("TSC frequency read from hypervisor CPUID leaf\n");
 			return;
+		}
+
+		if (maxVMM >= 0x40000003) {
+			// Hyper-V does not implement the standard hypervisor timing interface
+			// "Hv#1" here indicates Hyper-V
+			get_current_cpuid(&info, 0x40000001, 0);
+			if (info.regs.eax == 0x31237648) {
+				// Check for HV_X64_MSR_TSC_FREQUENCY presence
+				// TSC frequency is represented in Hz
+				get_current_cpuid(&info, 0x40000003, 0);
+				if ((info.regs.eax & (1 << 11)) != 0) {
+					uint64 clockSpeed = x86_read_msr(0x40000022);
+					if (clockSpeed > 0) {
+						gTimeConversionFactor = (uint64(1000000) << 32) / clockSpeed;
+
+						gKernelArgs.arch_args.system_time_cv_factor = gTimeConversionFactor;
+						gKernelArgs.arch_args.cpu_clock_speed = clockSpeed;
+
+						dprintf("TSC frequency read from Hyper-V MSR\n");
+						return;
+					}
+				}
+			}
 		}
 	}
 

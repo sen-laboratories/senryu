@@ -5,6 +5,7 @@
 #include <SupportDefs.h>
 
 #include <cppunit/Portability.h>
+#include <cppunit/extensions/HelperMacros.h>
 
 // Handy defines :-)
 #define CHK CPPUNIT_ASSERT

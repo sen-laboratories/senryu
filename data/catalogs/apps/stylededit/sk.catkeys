@@ -1,11 +1,10 @@
-1	slovak	x-vnd.Haiku-StyledEdit	727465241
+1	slovak	x-vnd.Haiku-StyledEdit	3854757778
 Document statistics	Statistics		Štatistika dokumentu
 Cannot revert, file not found: \"%s\".	RevertToSavedAlert		Nie je možné vrátiť späť, súbor nebol nájdený: „%s“.
 Cut	Menus		Vystrihnúť
 Center	Menus		Stred
 Page setup…	Menus		Nastavenie stránky…
 Wrap-around search	FindandReplaceWindow		Pokračovať v hľadaní od začiatku
-Untitled 	StyledEditWindow		Bez názvu 
 OK	Statistics		OK
 Find	FindandReplaceWindow		Nájsť
 New	Menus		Nový

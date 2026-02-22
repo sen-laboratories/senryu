@@ -1,4 +1,4 @@
-1	romanian	x-vnd.Haiku-StyledEdit	1077895429
+1	romanian	x-vnd.Haiku-StyledEdit	4205187966
 Document statistics	Statistics		Statisticile documentului
 Cannot revert, file not found: \"%s\".	RevertToSavedAlert		Nu se poate reveni, fișierul nu a fost găsit: \„%s\”.
 Cut	Menus		Taie
@@ -6,7 +6,6 @@ Center	Menus		Centru
 Increase size	Menus		Mărește dimensiunea
 Page setup…	Menus		Configurări pagină…
 Wrap-around search	FindandReplaceWindow		Căutare încadrată
-Untitled 	StyledEditWindow		Fără titlu 
 OK	Statistics		OK
 Find	FindandReplaceWindow		Găsește
 New	Menus		Nou

@@ -3,31 +3,27 @@
  * Distributed under the terms of the MIT License.
  */
 
-
-#include "DateTimeTest.h"
-
 #include <DateTime.h>
 
-#include <cppunit/TestSuite.h>
+#include <TestCase.h>
+#include <TestSuiteAddon.h>
+#include <TestUtils.h>
 
 
-class DateTimeTest : public BTestCase {
-	public:
-		DateTimeTest(std::string name = "");
+using CppUnit::TestFixture;
 
-		void test(void);
+
+class DateTimeTest : public TestFixture {
+	CPPUNIT_TEST_SUITE(DateTimeTest);
+	CPPUNIT_TEST(SetToMinusOne_IsValidAndReturnsCorrectProperties);
+	CPPUNIT_TEST_SUITE_END();
+public:
+	void SetToMinusOne_IsValidAndReturnsCorrectProperties();
 };
 
 
-DateTimeTest::DateTimeTest(std::string name)
-	:
-	BTestCase(name)
-{
-}
-
-
 void
-DateTimeTest::test()
+DateTimeTest::SetToMinusOne_IsValidAndReturnsCorrectProperties()
 {
 	BDateTime dateTime;
 
@@ -44,12 +40,4 @@ DateTimeTest::test()
 }
 
 
-CppUnit::Test*
-DateTimeTestSuite()
-{
-	CppUnit::TestSuite* testSuite = new CppUnit::TestSuite();
-
-	testSuite->addTest(new DateTimeTest("BDateTime"));
-
-	return testSuite;
-}
+CPPUNIT_TEST_SUITE_NAMED_REGISTRATION(DateTimeTest, getTestSuiteName());

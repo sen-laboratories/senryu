@@ -1,4 +1,4 @@
-1	swedish	x-vnd.Be-MAIL	218437132
+1	swedish	x-vnd.Be-MAIL	3439134129
 Set to Saved	Mail		Set till Sparad
 Your main text contains %ld unencodable characters. Perhaps a different character set would work better? Hit Send to send it anyway (a substitute character will be used in place of the unencodable ones), or choose Cancel to go back and try fixing it up.	Mail		Din text innehåller %ld tecken som inte kan hanteras. En annan teckenuppsättning kanske skulle fungera bättre? Klicka Skicka för att skicka det ändå (Ersättnings tecken kommer att användas till de tecken som inte kunde översättas), eller välj avbryt och försök att fixa felet.
 Text wrapping:	Mail		Textradbrytning:
@@ -48,6 +48,7 @@ Show icons only	Mail		Visa iconer bara
 Subject:	Mail		Ämne:
 OK	Mail		OK
 UTF-8	Mail	This string is used as a key to set default message compose encoding. It must be correct IANA name from http://cgit.haiku-os.org/haiku/tree/src/kits/textencoding/character_sets.cpp Translate it only if you want to change default message compose encoding for your locale. If you don't know what is it and why it may needs changing, just leave \"UTF-8\".	UTF-8
+All people	AddressTextControl		Alla människor
 Quit	Mail		Avsluta
 Title:	Mail		Titel:
 Account from mail	Mail		Konto från mail
@@ -73,6 +74,7 @@ Off	Mail		Av
 Set to %s	Mail		Ställ in %s
 Signature:	Mail		Signatur:
 Forward without attachments	Mail		Vidarebefordra utan bifigade filer
+None	Settings		Ingen
 queries	B_USER_DIRECTORY/mail/queries		frågor
 View	Mail		Visa
 Signatures	Mail		Signaturer

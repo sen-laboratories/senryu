@@ -1,4 +1,4 @@
-1	french	x-vnd.Haiku-StyledEdit	3760185556
+1	french	x-vnd.Haiku-StyledEdit	2592510797
 Document statistics	Statistics		Statistiques du document
 Cannot revert, file not found: \"%s\".	RevertToSavedAlert		Rétablissement impossible, fichier non trouvé : « %s ».
 Cut	Menus		Couper
@@ -6,7 +6,6 @@ Center	Menus		Centré
 Increase size	Menus		Augmenter la taille
 Page setup…	Menus		Mise en page…
 Wrap-around search	FindandReplaceWindow		Recherche en boucle
-Untitled 	StyledEditWindow		Sans titre
 OK	Statistics		OK
 Find	FindandReplaceWindow		Trouver
 New	Menus		Nouveau

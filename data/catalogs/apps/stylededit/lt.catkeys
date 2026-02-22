@@ -1,11 +1,10 @@
-1	lithuanian	x-vnd.Haiku-StyledEdit	727465241
+1	lithuanian	x-vnd.Haiku-StyledEdit	3854757778
 Document statistics	Statistics		Dokumento statistika
 Cannot revert, file not found: \"%s\".	RevertToSavedAlert		Negrįžtama, failas nerastas: „%s“.
 Cut	Menus		Iškirpti
 Center	Menus		Centrinė
 Page setup…	Menus		Puslapio nuostatos…
 Wrap-around search	FindandReplaceWindow		Tęsti paiešką nuo dokumento pradžios
-Untitled 	StyledEditWindow		Bevardis 
 OK	Statistics		Gerai
 Find	FindandReplaceWindow		Ieškoti
 New	Menus		Naujas

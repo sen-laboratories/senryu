@@ -4,5 +4,6 @@
 class BTestSuite;
 
 extern "C" CPPUNIT_API BTestSuite* getTestSuite();
+extern "C" CPPUNIT_API const char* getTestSuiteName();
 
 #endif	// _beos_test_suite_addon_h_

@@ -55,6 +55,8 @@ static vint32 refcount = 0; /* we only want to read the config once ? */
 static status_t
 read_config(void)
 {
+	CALLED();
+
 	void *handle;
 	const char *str, *endptr;
 
@@ -99,6 +101,8 @@ read_config(void)
 status_t
 create_socket(fs_nspace *ns)
 {
+	CALLED();
+
 	struct sockaddr_in addr;
 	uint16 port=conf_high_port;
 
@@ -170,6 +174,8 @@ connect_socket(fs_nspace *ns)
 status_t
 init_postoffice(fs_nspace *ns)
 {
+	CALLED();
+
 	status_t result;
 
 	ns->tid=spawn_kernel_thread ((thread_func)postoffice_func,"NFSv2 Postoffice",B_NORMAL_PRIORITY,ns);
@@ -207,6 +213,8 @@ shutdown_postoffice(fs_nspace *ns)
 status_t
 postoffice_func(fs_nspace *ns)
 {
+	CALLED();
+
 	uint8 *buffer=(uint8 *)malloc(B_UDP_MAX_SIZE);
 
 	while (!ns->quit) {
@@ -229,7 +237,7 @@ postoffice_func(fs_nspace *ns)
 
 				while (release_sem (call->sem) == B_INTERRUPTED);
 			} else {
-				dprintf("nfs: postoffice: can't find pending call to remove "
+				ERROR("postoffice: can't find pending call to remove "
 					"for xid %" B_PRId32 "\n", xid);
 			}
 		}
@@ -245,6 +253,8 @@ uint8 *
 send_rpc_call(fs_nspace *ns, const struct sockaddr_in *addr, int32 prog,
 	int32 vers, int32 proc, const struct XDROutPacket *packet)
 {
+	CALLED();
+
 	int32 xid;
 	size_t authSize;
 	struct PendingCall *pending;
@@ -325,7 +335,7 @@ send_rpc_call(fs_nspace *ns, const struct sockaddr_in *addr, int32 prog,
 
 	call = RPCPendingCallsFindAndRemovePendingCall(&ns->pendingCalls, xid, addr);
 
-	dprintf("nfs: xid %" B_PRId32 " timed out, removing from queue", xid);
+	ERROR("xid %" B_PRId32 " timed out, removing from queue\n", xid);
 
 #if 0
 	if (call==NULL)
@@ -364,6 +374,8 @@ send_rpc_call(fs_nspace *ns, const struct sockaddr_in *addr, int32 prog,
 bool
 is_successful_reply(struct XDRInPacket *reply)
 {
+	CALLED();
+
 	bool success = false;
 
 	int32 xid = XDRInPacketGetInt32(reply);
@@ -379,12 +391,11 @@ is_successful_reply(struct XDRInPacket *reply)
 			int32 low = XDRInPacketGetInt32(reply);
 			int32 high = XDRInPacketGetInt32(reply);
 
-			dprintf("nfs: RPC_MISMATCH (%" B_PRId32 ",%" B_PRId32 ")", low,
-				high);
+			ERROR("RPC_MISMATCH (%" B_PRId32 ",%" B_PRId32 ")\n", low, high);
 		} else {
 			rpc_auth_stat authStat = (rpc_auth_stat)XDRInPacketGetInt32(reply);
 
-			dprintf("nfs: RPC_AUTH_ERROR (%d)", authStat);
+			ERROR("nfs: RPC_AUTH_ERROR (%d)\n", authStat);
 		}
 	} else {
 		rpc_auth_flavor flavor = (rpc_auth_flavor)XDRInPacketGetInt32(reply);
@@ -400,10 +411,9 @@ is_successful_reply(struct XDRInPacket *reply)
 			int32 low = XDRInPacketGetInt32(reply);
 			int32 high = XDRInPacketGetInt32(reply);
 
-			dprintf("nfs: RPC_PROG_MISMATCH (%" B_PRId32 ",%" B_PRId32 ")",
-				low, high);
+			ERROR("RPC_PROG_MISMATCH (%" B_PRId32 ",%" B_PRId32 ")\n", low, high);
 		} else if (acceptStat != RPC_SUCCESS)
-			dprintf("nfs: Accepted but failed (%d)", acceptStat);
+			ERROR("Accepted but failed (%d)\n", acceptStat);
 		else
 			success = true;
 	}
@@ -416,6 +426,8 @@ status_t
 get_remote_address(fs_nspace *ns, int32 prog, int32 vers, int32 prot,
 	struct sockaddr_in *addr)
 {
+	CALLED();
+
 	struct XDROutPacket call;
 	uint8 *replyBuf;
 
@@ -456,6 +468,8 @@ get_remote_address(fs_nspace *ns, int32 prog, int32 vers, int32 prot,
 status_t
 nfs_mount(fs_nspace *ns, const char *path, nfs_fhandle *fhandle)
 {
+	CALLED();
+
 	struct XDROutPacket call;
 	struct XDRInPacket reply;
 	uint8 *replyBuf;
@@ -480,6 +494,7 @@ nfs_mount(fs_nspace *ns, const char *path, nfs_fhandle *fhandle)
 	if (!is_successful_reply(&reply)) {
 		XDRInPacketDestroy(&reply);
 		XDROutPacketDestroy(&call);
+		TRACE("%s: unsuccessful XDR InPacketSet reply\n", __func__);
 		return B_ERROR;
 	}
 
@@ -488,6 +503,7 @@ nfs_mount(fs_nspace *ns, const char *path, nfs_fhandle *fhandle)
 	if (fhstatus != NFS_OK) {
 		XDRInPacketDestroy(&reply);
 		XDROutPacketDestroy(&call);
+		TRACE("%s: unsuccessful XDR InPacketGet\n", __func__);
 		return map_nfs_to_system_error(fhstatus);
 	}
 
@@ -501,9 +517,11 @@ nfs_mount(fs_nspace *ns, const char *path, nfs_fhandle *fhandle)
 
 
 status_t
-nfs_lookup (fs_nspace *ns, const nfs_fhandle *dir, const char *filename,
+nfs_lookup(fs_nspace *ns, const nfs_fhandle *dir, const char *filename,
 	nfs_fhandle *fhandle, struct stat *st)
 {
+	CALLED();
+
 	struct XDROutPacket call;
 	struct XDRInPacket reply;
 	int32 status;
@@ -529,6 +547,7 @@ nfs_lookup (fs_nspace *ns, const nfs_fhandle *dir, const char *filename,
 	if (!is_successful_reply(&reply)) {
 		XDRInPacketDestroy(&reply);
 		XDROutPacketDestroy(&call);
+		TRACE("%s: unsuccessful XDR InPacketSet reply\n", __func__);
 		return B_ERROR;
 	}
 
@@ -537,6 +556,7 @@ nfs_lookup (fs_nspace *ns, const nfs_fhandle *dir, const char *filename,
 	if (status != NFS_OK) {
 		XDRInPacketDestroy(&reply);
 		XDROutPacketDestroy(&call);
+		TRACE("%s: unsuccessful XDR InPacketGet\n", __func__);
 		return map_nfs_to_system_error(status);
 	}
 
@@ -545,6 +565,7 @@ nfs_lookup (fs_nspace *ns, const nfs_fhandle *dir, const char *filename,
 	if (status != NFS_OK) {
 		XDRInPacketDestroy(&reply);
 		XDROutPacketDestroy(&call);
+		TRACE("%s: unsuccessful XDR InPacketGetFixed\n", __func__);
 		return map_nfs_to_system_error(status);
 	}
 
@@ -560,6 +581,8 @@ nfs_lookup (fs_nspace *ns, const nfs_fhandle *dir, const char *filename,
 status_t
 nfs_getattr(fs_nspace *ns, const nfs_fhandle *fhandle, struct stat *st)
 {
+	CALLED();
+
 	struct XDROutPacket call;
 	struct XDRInPacket reply;
 	uint8 *replyBuf;
@@ -575,6 +598,7 @@ nfs_getattr(fs_nspace *ns, const nfs_fhandle *fhandle, struct stat *st)
 	if (replyBuf == NULL) {
 		XDRInPacketDestroy(&reply);
 		XDROutPacketDestroy(&call);
+		TRACE("%s: unsuccessful RPC call\n", __func__);
 		return EHOSTUNREACH;
 	}
 
@@ -583,6 +607,7 @@ nfs_getattr(fs_nspace *ns, const nfs_fhandle *fhandle, struct stat *st)
 	if (!is_successful_reply(&reply)) {
 		XDRInPacketDestroy(&reply);
 		XDROutPacketDestroy(&call);
+		TRACE("%s: unsuccessful RPC call reply\n", __func__);
 		return B_ERROR;
 	}
 
@@ -590,6 +615,7 @@ nfs_getattr(fs_nspace *ns, const nfs_fhandle *fhandle, struct stat *st)
 	if (status != NFS_OK) {
 		XDRInPacketDestroy(&reply);
 		XDROutPacketDestroy(&call);
+		TRACE("%s: unsuccessful RPC call inspection\n", __func__);
 		return map_nfs_to_system_error(status);
 	}
 
@@ -604,6 +630,8 @@ nfs_getattr(fs_nspace *ns, const nfs_fhandle *fhandle, struct stat *st)
 status_t
 nfs_truncate_file(fs_nspace *ns, const nfs_fhandle *fhandle, struct stat *st)
 {
+	CALLED();
+
 	struct XDROutPacket call;
 	struct XDRInPacket reply;
 	uint8 *replyBuf;
@@ -628,6 +656,7 @@ nfs_truncate_file(fs_nspace *ns, const nfs_fhandle *fhandle, struct stat *st)
 	if (replyBuf == NULL) {
 		XDRInPacketDestroy(&reply);
 		XDROutPacketDestroy(&call);
+		TRACE("%s: unsuccessful RPC call\n", __func__);
 		return EHOSTUNREACH;
 	}
 
@@ -636,6 +665,7 @@ nfs_truncate_file(fs_nspace *ns, const nfs_fhandle *fhandle, struct stat *st)
 	if (!is_successful_reply(&reply)) {
 		XDRInPacketDestroy(&reply);
 		XDROutPacketDestroy(&call);
+		TRACE("%s: unsuccessful RPC call reply\n", __func__);
 		return B_ERROR;
 	}
 
@@ -643,6 +673,7 @@ nfs_truncate_file(fs_nspace *ns, const nfs_fhandle *fhandle, struct stat *st)
 	if (status != NFS_OK) {
 		XDRInPacketDestroy(&reply);
 		XDROutPacketDestroy(&call);
+		TRACE("%s: unsuccessful RPC call inspection\n", __func__);
 		return map_nfs_to_system_error(status);
 	}
 
@@ -658,6 +689,8 @@ nfs_truncate_file(fs_nspace *ns, const nfs_fhandle *fhandle, struct stat *st)
 void
 get_nfs_attr(struct XDRInPacket *reply, struct stat *st)
 {
+	CALLED();
+
 	nfs_ftype ftype=(nfs_ftype)XDRInPacketGetInt32(reply);
 	(void) ftype;
 	st->st_mode=XDRInPacketGetInt32(reply);
@@ -742,6 +775,8 @@ map_nfs_to_system_error(status_t nfsstatus)
 nfs_fhandle
 handle_from_vnid(fs_nspace *ns, ino_t vnid)
 {
+	CALLED();
+
 	fs_node *current;
 
 	while (acquire_sem(ns->sem) == B_INTERRUPTED);
@@ -760,6 +795,8 @@ handle_from_vnid(fs_nspace *ns, ino_t vnid)
 void
 insert_node(fs_nspace *ns, fs_node *node)
 {
+	CALLED();
+
 	fs_node *current;
 
 	while (acquire_sem(ns->sem) == B_INTERRUPTED);
@@ -785,6 +822,8 @@ insert_node(fs_nspace *ns, fs_node *node)
 void
 remove_node(fs_nspace *ns, ino_t vnid)
 {
+	CALLED();
+
 	fs_node *current;
 	fs_node *previous;
 
@@ -818,6 +857,8 @@ static status_t
 fs_read_vnode(fs_volume *_volume, ino_t vnid, fs_vnode *_node, int *_type,
 	uint32 *_flags, bool r)
 {
+	CALLED();
+
 	fs_nspace *ns;
 	fs_node *current;
 
@@ -852,6 +893,8 @@ fs_read_vnode(fs_volume *_volume, ino_t vnid, fs_vnode *_node, int *_type,
 static status_t
 fs_release_vnode(fs_volume *_volume, fs_vnode *node, bool r)
 {
+	CALLED();
+
 	(void) _volume;
 	(void) node;
 	(void) r;
@@ -862,11 +905,12 @@ fs_release_vnode(fs_volume *_volume, fs_vnode *node, bool r)
 static status_t
 fs_walk(fs_volume *_volume, fs_vnode *_base, const char *file, ino_t *vnid)
 {
+	CALLED();
+
 	fs_node *dummy;
 	status_t result;
 	fs_nspace *ns;
 	fs_node *base;
-	//dprintf("nfs: walk(%s)\n", file);//XXX:mmu_man:debug
 
 	ns = _volume->private_volume;
 	base = _base->private_node;
@@ -900,6 +944,8 @@ fs_walk(fs_volume *_volume, fs_vnode *_base, const char *file, ino_t *vnid)
 static status_t
 fs_opendir(fs_volume *_volume, fs_vnode *_node, void **_cookie)
 {
+	CALLED();
+
 	fs_nspace *ns;
 	fs_node *node;
 	nfs_cookie **cookie;
@@ -927,6 +973,8 @@ fs_opendir(fs_volume *_volume, fs_vnode *_node, void **_cookie)
 static status_t
 fs_closedir(fs_volume *_volume, fs_vnode *_node, void *cookie)
 {
+	CALLED();
+
 	(void) _volume;
 	(void) _node;
 	(void) cookie;
@@ -937,6 +985,8 @@ fs_closedir(fs_volume *_volume, fs_vnode *_node, void *cookie)
 static status_t
 fs_rewinddir(fs_volume *_volume, fs_vnode *_node, void *_cookie)
 {
+	CALLED();
+
 	nfs_cookie *cookie = (nfs_cookie *)_cookie;
 	(void) _volume;
 	(void) _node;
@@ -950,6 +1000,8 @@ static status_t
 fs_readdir(fs_volume *_volume, fs_vnode *_node, void *_cookie,
 		struct dirent *buf, size_t bufsize, uint32 *num)
 {
+	CALLED();
+
 	nfs_cookie *cookie = (nfs_cookie *)_cookie;
 	uint32 max = *num;
 	int32 eof;
@@ -1087,6 +1139,8 @@ fs_readdir(fs_volume *_volume, fs_vnode *_node, void *_cookie,
 static status_t
 fs_free_dircookie(fs_volume *_volume, fs_vnode *_node, void *cookie)
 {
+	CALLED();
+
 	(void) _volume;
 	(void) _node;
 	free(cookie);
@@ -1097,6 +1151,8 @@ fs_free_dircookie(fs_volume *_volume, fs_vnode *_node, void *cookie)
 static status_t
 fs_rstat(fs_volume *_volume, fs_vnode *_node, struct stat *st)
 {
+	CALLED();
+
 	fs_nspace *ns;
 	fs_node *node;
 	status_t result;
@@ -1104,7 +1160,6 @@ fs_rstat(fs_volume *_volume, fs_vnode *_node, struct stat *st)
 	ns = _volume->private_volume;
 	node = _node->private_node;
 
-	//dprintf("nfs: rstat()\n");//XXX:mmu_man:debug
 	if ((result = nfs_getattr(ns, &node->fhandle, st)) < B_OK)
 		return result;
 
@@ -1117,6 +1172,8 @@ fs_rstat(fs_volume *_volume, fs_vnode *_node, struct stat *st)
 void
 fs_nspaceInit(struct fs_nspace *nspace)
 {
+	CALLED();
+
 	RPCPendingCallsInit(&nspace->pendingCalls);
 }
 
@@ -1124,6 +1181,8 @@ fs_nspaceInit(struct fs_nspace *nspace)
 void
 fs_nspaceDestroy(struct fs_nspace *nspace)
 {
+	CALLED();
+
 	RPCPendingCallsDestroy(&nspace->pendingCalls);
 }
 
@@ -1131,6 +1190,8 @@ fs_nspaceDestroy(struct fs_nspace *nspace)
 static status_t
 parse_nfs_params(const char *str, struct mount_nfs_params *params)
 {
+	CALLED();
+
 	const char *p, *e;
 	long v;
 	int i;
@@ -1218,6 +1279,8 @@ dprintf("nfs:gid!\n");
 static status_t
 fs_mount(fs_volume *_vol, const char *devname, uint32 flags, const char *_parms, ino_t *vnid)
 {
+	CALLED();
+
 	status_t result;
 	fs_nspace *ns;
 	fs_node *rootNode;
@@ -1348,6 +1411,8 @@ err_nspace:
 static status_t
 fs_unmount(fs_volume *_volume)
 {
+	CALLED();
+
 	fs_nspace *ns = (fs_nspace *)_volume->private_volume;
 	free(ns->params.hostname);
 	free(ns->params._export);
@@ -1373,6 +1438,8 @@ fs_unmount(fs_volume *_volume)
 static status_t
 fs_rfsstat(fs_volume *_volume, struct fs_info *info)
 {
+	CALLED();
+
 	fs_nspace *ns;
 	struct XDROutPacket call;
 	struct XDRInPacket reply;
@@ -1440,6 +1507,8 @@ fs_rfsstat(fs_volume *_volume, struct fs_info *info)
 static status_t
 fs_open(fs_volume *_volume, fs_vnode *_node, int omode, void **_cookie)
 {
+	CALLED();
+
 	fs_nspace *ns;
 	fs_node *node;
 	struct stat st;
@@ -1474,6 +1543,8 @@ fs_open(fs_volume *_volume, fs_vnode *_node, int omode, void **_cookie)
 static status_t
 fs_close(fs_volume *_volume, fs_vnode *_node, void *cookie)
 {
+	CALLED();
+
 	(void) _volume;
 	(void) _node;
 	(void) cookie;
@@ -1488,6 +1559,8 @@ fs_close(fs_volume *_volume, fs_vnode *_node, void *cookie)
 static status_t
 fs_free_cookie(fs_volume *_volume, fs_vnode *_node, void *cookie)
 {
+	CALLED();
+
 	(void) _volume;
 	(void) _node;
 	free(cookie);
@@ -1499,6 +1572,8 @@ static status_t
 fs_read(fs_volume *_volume, fs_vnode *_node, void *_cookie, off_t pos,
 	void *buf, size_t *len)
 {
+	CALLED();
+
 	fs_nspace *ns;
 	fs_node *node;
 	fs_file_cookie *cookie;
@@ -1578,6 +1653,8 @@ static status_t
 fs_write(fs_volume *_volume, fs_vnode *_node, void *_cookie, off_t pos,
 	const void *buf, size_t *len)
 {
+	CALLED();
+
 	fs_nspace *ns;
 	fs_node *node;
 	fs_file_cookie *cookie;
@@ -1654,6 +1731,8 @@ fs_write(fs_volume *_volume, fs_vnode *_node, void *_cookie, off_t pos,
 static status_t
 fs_wstat(fs_volume *_volume, fs_vnode *_node, const struct stat *st, uint32 mask)
 {
+	CALLED();
+
 	fs_nspace *ns;
 	fs_node *node;
 	struct XDROutPacket call;
@@ -1710,6 +1789,8 @@ fs_wstat(fs_volume *_volume, fs_vnode *_node, const struct stat *st, uint32 mask
 static status_t
 fs_wfsstat(fs_volume *_volume, const struct fs_info *info, uint32 mask)
 {
+	CALLED();
+
 	(void) _volume;
 	(void) info;
 	(void) mask;
@@ -1720,6 +1801,8 @@ static status_t
 fs_create(fs_volume *_volume, fs_vnode *_dir, const char *name, int omode,
 	int perms, void **_cookie, ino_t *vnid)
 {
+	CALLED();
+
 	nfs_fhandle fhandle;
 	struct stat st;
 	fs_file_cookie **cookie;
@@ -1876,6 +1959,8 @@ fs_create(fs_volume *_volume, fs_vnode *_dir, const char *name, int omode,
 static status_t
 fs_unlink(fs_volume *_volume, fs_vnode *_dir, const char *name)
 {
+	CALLED();
+
 	status_t result;
 	fs_nspace *ns;
 	fs_node *dir;
@@ -1976,6 +2061,8 @@ fs_unlink(fs_volume *_volume, fs_vnode *_dir, const char *name)
 static status_t
 fs_remove_vnode(fs_volume *_volume, fs_vnode *_node, bool r)
 {
+	CALLED();
+
 	fs_nspace *ns = _volume->private_volume;
 	fs_node *node = _node->private_node;
 
@@ -1990,6 +2077,8 @@ fs_remove_vnode(fs_volume *_volume, fs_vnode *_node, bool r)
 static status_t
 fs_mkdir(fs_volume *_volume, fs_vnode *_dir, const char *name, int perms)
 {
+	CALLED();
+
 	fs_nspace *ns;
 	fs_node *dir;
 
@@ -2173,6 +2262,8 @@ fs_rename(fs_volume *_volume, fs_vnode *_olddir, const char *oldname,
 static status_t
 fs_rmdir(fs_volume *_volume, fs_vnode *_dir, const char *name)
 {
+	CALLED();
+
 	fs_nspace *ns;
 	fs_node *dir;
 
@@ -2272,6 +2363,8 @@ fs_rmdir(fs_volume *_volume, fs_vnode *_dir, const char *name)
 static status_t
 fs_readlink(fs_volume *_volume, fs_vnode *_node, char *buf, size_t *bufsize)
 {
+	CALLED();
+
 	struct XDROutPacket call;
 	uint8 *replyBuf;
 	int32 status;
@@ -2328,6 +2421,8 @@ static status_t
 fs_symlink(fs_volume *_volume, fs_vnode *_dir, const char *name,
 	const char *path, int mode)
 {
+	CALLED();
+
 	fs_nspace *ns;
 	fs_node *dir;
 	nfs_fhandle fhandle;
@@ -2428,6 +2523,8 @@ fs_symlink(fs_volume *_volume, fs_vnode *_dir, const char *name,
 static status_t
 fs_access(fs_volume *_volume, fs_vnode *node, int mode)
 {
+	CALLED();
+
 	(void) _volume;
 	(void) node;
 	(void) mode;

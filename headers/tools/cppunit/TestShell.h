@@ -4,6 +4,7 @@
 #include <LockerSyncObject.h>
 #include <cppunit/Exception.h>
 #include <cppunit/Test.h>
+#include <cppunit/TestSuite.h>
 #include <cppunit/TestListener.h>
 #include <cppunit/TestResult.h>
 #include <cppunit/TestResultCollector.h>
@@ -61,6 +62,8 @@ public:
 	// the list of tests via a call to AddTest(string
 	status_t AddSuite(BTestSuite *kit);
 
+	status_t AddSuite(CppUnit::TestSuite *suite);
+
 	// This function is used to add test suites to the list of available
 	// tests. The test pointer may not be NULL. The name given is the name that
 	// will be presented when the program is run with "--list" as an argument.
@@ -107,7 +110,7 @@ public:
 
 protected:
 	typedef std::map<std::string, CppUnit::Test*> TestMap;
-	typedef std::map<std::string, BTestSuite*> SuiteMap;
+	typedef std::map<std::string, CppUnit::TestSuite*> SuiteMap;
 
 	VerbosityLevel fVerbosityLevel;
 	std::set<std::string> fTestsToRun;

@@ -91,9 +91,9 @@ StyledEditWindow::StyledEditWindow(BRect frame, int32 id, uint32 encoding)
 	fReplaceWindow(NULL)
 {
 	_InitWindow(encoding);
-	BString unTitled(B_TRANSLATE("Untitled "));
-	unTitled << id;
-	SetTitle(unTitled.String());
+	BString untitled;
+	untitled.SetToFormat(B_TRANSLATE_CONTEXT("Untitled %d", "Window title"), (int)id);
+	SetTitle(untitled.String());
 	fSaveItem->SetEnabled(true);
 		// allow saving empty files
 	Show();

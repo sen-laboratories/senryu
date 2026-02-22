@@ -1,11 +1,10 @@
-1	croatian	x-vnd.Haiku-StyledEdit	1012139350
+1	croatian	x-vnd.Haiku-StyledEdit	4139431887
 Document statistics	Statistics		Statistike dokumenta
 Cannot revert, file not found: \"%s\".	RevertToSavedAlert		Nemoguće obrnuti, datoteka nije pronađena: \"%s\".
 Cut	Menus		Isjeci
 Center	Menus		Centar
 Increase size	Menus		Povećaj veličinu
 Page setup…	Menus		Postavke stranice...
-Untitled 	StyledEditWindow		Neimenovano 
 OK	Statistics		U redu
 Find	FindandReplaceWindow		Pronađi
 New	Menus		Novo

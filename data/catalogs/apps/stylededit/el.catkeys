@@ -1,4 +1,4 @@
-1	greek, modern (1453-)	x-vnd.Haiku-StyledEdit	3760185556
+1	greek, modern (1453-)	x-vnd.Haiku-StyledEdit	2592510797
 Document statistics	Statistics		Στατιστικά εγγράφου
 Cannot revert, file not found: \"%s\".	RevertToSavedAlert		Δεν μπορεί να γίνει επαναφορά, το αρχείο δεν βρέθηκε: \"%s\".
 Cut	Menus		Αποκοπή
@@ -6,7 +6,6 @@ Center	Menus		Κέντρο
 Increase size	Menus		Αύξηση μεγέθους
 Page setup…	Menus		Διαμόρφωση σελίδας…
 Wrap-around search	FindandReplaceWindow		Κυκλική αναζήτηση
-Untitled 	StyledEditWindow		Χωρίς τίτλο 
 OK	Statistics		Εντάξει
 Find	FindandReplaceWindow		Εύρεση
 New	Menus		Νέο

@@ -608,7 +608,7 @@ Inode::ReadAt(off_t pos, uint8* buffer, size_t* length)
 		return B_BAD_VALUE;
 	}
 
-	if (pos >= Size() || length == 0) {
+	if (pos >= Size() || *length == 0) {
 		TRACE("inode %" B_PRIdINO ": ReadAt 0 (pos %" B_PRIdOFF
 			", length %" B_PRIuSIZE ")\n", ID(), pos, *length);
 		*length = 0;
@@ -671,9 +671,9 @@ Inode::ReadAt(off_t pos, uint8* buffer, size_t* length)
 			return B_IO_ERROR;
 		}
 
-
-		memcpy((void*) (buffer + lengthRead),
-			(void*)(block + offsetIntoBlock), lengthToRead);
+		if (user_memcpy((void*)(buffer + lengthRead),
+				(void*)(block + offsetIntoBlock), lengthToRead) < B_OK)
+			return B_BAD_ADDRESS;
 
 		pos += lengthToRead;
 		*length -= lengthToRead;

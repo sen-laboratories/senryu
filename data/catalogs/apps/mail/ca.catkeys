@@ -1,4 +1,4 @@
-1	catalan; valencian	x-vnd.Be-MAIL	218437132
+1	catalan; valencian	x-vnd.Be-MAIL	3439134129
 Set to Saved	Mail		Estableix com a desat
 Your main text contains %ld unencodable characters. Perhaps a different character set would work better? Hit Send to send it anyway (a substitute character will be used in place of the unencodable ones), or choose Cancel to go back and try fixing it up.	Mail		El vostre text principal conté %ld caràcters no codificables. Potser amb un conjunt de caràcters diferent funcionaria millor? Premeu Envia per enviar-ho tanmateix (se substituiran per altres els caràcters que no es puguin codificar), o bé trieu Cancel·la per tornar enrere i intentar esmenar-ho.
 Text wrapping:	Mail		Ajustament de línia:
@@ -48,6 +48,7 @@ Show icons only	Mail		Mostra només les icones
 Subject:	Mail		Assumpte:
 OK	Mail		D'acord
 UTF-8	Mail	This string is used as a key to set default message compose encoding. It must be correct IANA name from http://cgit.haiku-os.org/haiku/tree/src/kits/textencoding/character_sets.cpp Translate it only if you want to change default message compose encoding for your locale. If you don't know what is it and why it may needs changing, just leave \"UTF-8\".	UTF-8
+All people	AddressTextControl		Tothom
 Quit	Mail		Surt
 Title:	Mail		Títol:
 Account from mail	Mail		Compte de correu
@@ -73,6 +74,7 @@ Off	Mail		Atura
 Set to %s	Mail		Estableix com a %s
 Signature:	Mail		Signatura:
 Forward without attachments	Mail		Reenvia sense els fitxers adjunts
+None	Settings		Cap
 queries	B_USER_DIRECTORY/mail/queries		consultes
 View	Mail		Visualització
 Signatures	Mail		Signatures

@@ -1,4 +1,4 @@
-1	spanish; castilian	x-vnd.Haiku-StyledEdit	3760185556
+1	spanish; castilian	x-vnd.Haiku-StyledEdit	2592510797
 Document statistics	Statistics		Estadísticas del documento
 Cannot revert, file not found: \"%s\".	RevertToSavedAlert		No se puede revertir, archivo no encontrado: \"%s\".
 Cut	Menus		Cortar
@@ -6,7 +6,6 @@ Center	Menus		Centro
 Increase size	Menus		Aumentar tamaño
 Page setup…	Menus		Configuración de pagina…
 Wrap-around search	FindandReplaceWindow		Buscar desde el principio
-Untitled 	StyledEditWindow		Sin nombre
 OK	Statistics		OK
 Find	FindandReplaceWindow		Buscar
 New	Menus		Nuevo

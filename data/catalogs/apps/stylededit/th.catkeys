@@ -1,4 +1,4 @@
-1	thai	x-vnd.Haiku-StyledEdit	2796309255
+1	thai	x-vnd.Haiku-StyledEdit	1628634496
 Document statistics	Statistics		สถิติเอกสาร
 Cannot revert, file not found: \"%s\".	RevertToSavedAlert		ไม่สามารถเปลี่ยนกลับ ไม่พบไฟล์: \"%s\".
 Cut	Menus		ตัด
@@ -6,7 +6,6 @@ Center	Menus		ศุนย์กลาง
 Increase size	Menus		เพิ่มขนาด
 Page setup…	Menus		ตั้งค่าหน้า
 Wrap-around search	FindandReplaceWindow		ค้นหาแบบครอบคลุม
-Untitled 	StyledEditWindow		ไม่ได้ตั้งชื่อ
 OK	Statistics		ตกลง
 Find	FindandReplaceWindow		ค้นหา
 New	Menus		ใหม่

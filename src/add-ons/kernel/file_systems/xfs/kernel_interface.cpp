@@ -18,10 +18,7 @@
 #define XFS_IO_SIZE	65536
 
 struct identify_cookie {
-	/*	super_block_struct super_block;
-	*	No structure yet implemented.
-	*/
-	int cookie;
+	XfsSuperBlock super_block;
 };
 
 //	#pragma mark - Scanning
@@ -30,22 +27,40 @@ struct identify_cookie {
 static float
 xfs_identify_partition(int fd, partition_data *partition, void **_cookie)
 {
-	return B_NOT_SUPPORTED;
+	XfsSuperBlock superBlock;
+	status_t status = Volume::Identify(fd, &superBlock);
+	if (status != B_OK)
+		return -1;
+
+	identify_cookie* cookie = new identify_cookie;
+	memcpy(&cookie->super_block, &superBlock, sizeof(XfsSuperBlock));
+	*_cookie = cookie;
+
+	return 0.8f;
 }
 
 
 static status_t
 xfs_scan_partition(int fd, partition_data *partition, void *_cookie)
 {
-	return B_NOT_SUPPORTED;
+	identify_cookie* cookie = (identify_cookie*)_cookie;
+
+	partition->status = B_PARTITION_VALID;
+	partition->flags |= B_PARTITION_FILE_SYSTEM;
+	partition->content_size = cookie->super_block.TotalBlocks() * cookie->super_block.BlockSize();
+	partition->block_size = cookie->super_block.BlockSize();
+	partition->content_name = strdup(cookie->super_block.Name());
+	if (partition->content_name == NULL)
+		return B_NO_MEMORY;
+
+	return B_OK;
 }
 
 
 static void
 xfs_free_identify_partition_cookie(partition_data *partition, void *_cookie)
 {
-	dprintf("Unsupported in XFS currently.\n");
-	return;
+	delete (identify_cookie*)_cookie;
 }
 
 
@@ -450,7 +465,8 @@ xfs_read_dir(fs_volume *_volume, fs_vnode *_node, void *_cookie,
 static status_t
 xfs_rewind_dir(fs_volume * /*_volume*/, fs_vnode * /*node*/, void *_cookie)
 {
-	return B_NOT_SUPPORTED;
+	DirectoryIterator* iterator = (DirectoryIterator*)_cookie;
+	return iterator->Rewind();
 }
 
 

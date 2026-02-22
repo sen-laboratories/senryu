@@ -10,9 +10,11 @@
 #include "bstring/StringTest.h"
 #include "bblockcache/BlockCacheTest.h"
 #include "bstopwatch/BStopWatchTest.h"
-#include "ByteOrderTest.h"
-#include "DateTimeTest.h"
 
+
+const char* getTestSuiteName() {
+	return "SupportKit";
+}
 
 BTestSuite *
 getTestSuite()
@@ -22,14 +24,12 @@ getTestSuite()
 	// ##### Add test suites here #####
 	suite->addTest("BArchivable", ArchivableTestSuite());
 	suite->addTest("BAutolock", AutolockTestSuite());
-	suite->addTest("BDateTime", DateTimeTestSuite());
 	suite->addTest("BLocker", LockerTestSuite());
 	suite->addTest("BMemoryIO", MemoryIOTestSuite());
 	suite->addTest("BMallocIO", MallocIOTestSuite());
 	suite->addTest("BString", StringTestSuite());
 	suite->addTest("BBlockCache", BlockCacheTestSuite());
 	suite->addTest("BStopWatch", BStopWatchTestSuite());
-	suite->addTest("ByteOrder", ByteOrderTestSuite());
 
 	return suite;
 }

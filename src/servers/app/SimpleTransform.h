@@ -166,6 +166,10 @@ public:
 			}
 		}
 
+		int32 colorStopsCount = gradient->CountColorStops();
+		if (colorStopsCount == 0)
+			return;
+
 		// Make sure the gradient is fully padded so that out of bounds access
 		// get the correct colors
 		gradient->SortColorStopsByOffset();

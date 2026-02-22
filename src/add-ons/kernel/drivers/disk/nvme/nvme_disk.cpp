@@ -294,7 +294,7 @@ nvme_disk_init_device(void* _info, void** _cookie)
 	if (info->ctrlr->feature_supported[NVME_FEAT_INTERRUPT_COALESCING]) {
 		uint32 microseconds = 16, threshold = 32;
 		nvme_ctrlr_set_feature(info->ctrlr, false, NVME_FEAT_INTERRUPT_COALESCING,
-			((microseconds / 100) << 8) | threshold, 0, NULL, 0, NULL);
+			((microseconds / 100) << 8) | threshold, 0, 0, 0, 0, NULL, 0, NULL);
 	}
 
 	if (info->ctrlr->feature_supported[NVME_FEAT_AUTONOMOUS_POWER_STATE_TRANSITION]) {
@@ -356,7 +356,7 @@ nvme_disk_init_device(void* _info, void** _cookie)
 			}
 			int err = nvme_ctrlr_set_feature(info->ctrlr, false,
 				NVME_FEAT_AUTONOMOUS_POWER_STATE_TRANSITION,
-				(firstStateSet || secondStateSet) ? 1 : 0, 0, table, tableSize, NULL);
+				(firstStateSet || secondStateSet) ? 1 : 0, 0, 0, 0, 0, table, tableSize, NULL);
 			if (err != 0)
 				TRACE_ERROR("failed to set apst table!\n");
 			else

@@ -1,4 +1,4 @@
-1	danish	x-vnd.Haiku-StyledEdit	3760185556
+1	danish	x-vnd.Haiku-StyledEdit	2592510797
 Document statistics	Statistics		Dokumentstatistik
 Cannot revert, file not found: \"%s\".	RevertToSavedAlert		Kan ikke tilbageføre, fil ikke fundet: \"%s\".
 Cut	Menus		Klip
@@ -6,7 +6,6 @@ Center	Menus		Anbring i midten
 Increase size	Menus		Forøg størrelse
 Page setup…	Menus		Sideopsætning…
 Wrap-around search	FindandReplaceWindow		Søg forfra ved enden
-Untitled 	StyledEditWindow		Unavngivet 
 OK	Statistics		O.k.
 Find	FindandReplaceWindow		Søg
 New	Menus		Ny

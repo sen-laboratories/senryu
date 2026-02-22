@@ -1,4 +1,4 @@
-1	bokmål, norwegian; norwegian bokmål	x-vnd.Haiku-StyledEdit	1077895429
+1	bokmål, norwegian; norwegian bokmål	x-vnd.Haiku-StyledEdit	4205187966
 Document statistics	Statistics		Dokumentstatistikk
 Cannot revert, file not found: \"%s\".	RevertToSavedAlert		Kan ikke tilbakestille, filen \"%s\" ble ikke funnet.
 Cut	Menus		Klipp ut
@@ -6,7 +6,6 @@ Center	Menus		Sentrer
 Increase size	Menus		Øk størrelsen
 Page setup…	Menus		Sideoppsett…
 Wrap-around search	FindandReplaceWindow		Wrap-around søk
-Untitled 	StyledEditWindow		Uten navn
 OK	Statistics		OK
 Find	FindandReplaceWindow		Finn
 New	Menus		Ny

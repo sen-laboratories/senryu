@@ -1,4 +1,4 @@
-1	korean	x-vnd.Haiku-StyledEdit	3760185556
+1	korean	x-vnd.Haiku-StyledEdit	2592510797
 Document statistics	Statistics		문서 통계
 Cannot revert, file not found: \"%s\".	RevertToSavedAlert		파일을 찾을 수 없어 되돌릴 수 없습니다: \"%s\".
 Cut	Menus		자르기
@@ -6,7 +6,6 @@ Center	Menus		가운데
 Increase size	Menus		크기 키우기
 Page setup…	Menus		페이지 설정...
 Wrap-around search	FindandReplaceWindow		끝에서 되돌아와 찾기
-Untitled 	StyledEditWindow		제목없음 
 OK	Statistics		확인
 Find	FindandReplaceWindow		찾기
 New	Menus		새 파일

@@ -1,4 +1,4 @@
-1	czech	x-vnd.Haiku-StyledEdit	1077895429
+1	czech	x-vnd.Haiku-StyledEdit	4205187966
 Document statistics	Statistics		Statistika dokumentu
 Cannot revert, file not found: \"%s\".	RevertToSavedAlert		Nemohu se vrátit, soubor nenalezen: \"%s\".
 Cut	Menus		Vystřihnout
@@ -6,7 +6,6 @@ Center	Menus		Na střed
 Increase size	Menus		Zvětšit velikost
 Page setup…	Menus		Nastavení stránky…
 Wrap-around search	FindandReplaceWindow		Vyhledávání zalomení
-Untitled 	StyledEditWindow		Neoznačeno 
 OK	Statistics		OK
 Find	FindandReplaceWindow		Najít
 New	Menus		Nový
