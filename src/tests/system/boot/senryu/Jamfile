@@ -35,6 +35,9 @@ rule GenerateNeonHeaders
         # 3. Add the static headers ONLY for the first stage (index 0)
         # These are cut from the first splash image.
         if $(s) = 0 {
+            # initial fullscreen splash image
+            current_headers += stage_0.h ;
+
             for state in $(states) {
                 current_headers += sen_$(state).h ryu_$(state).h ;
             }
@@ -80,11 +83,11 @@ actions RunNeonCutter
         base="${h_file%.h}"
 
         # If the file exists as a .png, convert it
-        if [ -f "${base}.png" ]; then
-            (tinyxxd -i -n "${base}" "${base}.png" > "$h_file")
+        if [ -f "${base}.raw" ]; then
+            (tinyxxd -i -n "${base}" "${base}.raw" > "$h_file")
         else
             # DEBUG: This will show up in your Jam output if a file is missing
-            printf "Warning: Expected ${base}.png but it was not created by the script.\n"
+            printf "Warning: Expected ${base}.raw but it was not created by the script.\n"
         fi
     done
 }

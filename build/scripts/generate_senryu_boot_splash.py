@@ -41,8 +41,11 @@ def generate_neon_logo(input_path, out_dir):
         crop = base_img.crop(bbox)
         for state, level in [("cold", 0.3), ("warm", 1.0), ("vibrant", 1.5), ("overdrive", 3.5)]:
             enhancer = ImageEnhance.Brightness(crop)
-            final = enhancer.enhance(level).quantize(palette=p_img)
+            final = enhancer.enhance(level).quantize(palette=p_img, dither=Image.Dither.NONE)
             final.save(os.path.join(out_dir, f"{part_name}_{state}.png"))
+            # 2. Save RAW bytes for the C++ header
+            with open(os.path.join(out_dir, f"{part_name}_{state}.raw"), "wb") as f:
+                f.write(final.tobytes())
 
 def generate_neon_states(input_path, out_dir):
     idx_match = re.search(r'_(\d+)\.png$', input_path)
@@ -54,32 +57,45 @@ def generate_neon_states(input_path, out_dir):
 
     # If it's the background, just save one version and generate the logo states once
     if index == 0:
-        final = base_img.quantize(palette=p_img, dither=Image.Dither.FLOYDSTEINBERG)
+        final = base_img.quantize(palette=p_img, dither=Image.Dither.NONE)
         final.save(os.path.join(out_dir, "stage_0.png"))
+        # 2. Save RAW bytes for the C++ header
+        with open(os.path.join(out_dir, "stage_0.raw"), "wb") as f:
+            f.write(final.tobytes())
+
         generate_neon_logo(input_path, out_dir)
 
     # For stages, create 4 luminosity levels
     crop = base_img.crop(STAGE_BBOX)
 
     # 1. Warm (Standard)
-    warm = crop.quantize(palette=p_img, dither=Image.Dither.FLOYDSTEINBERG)
+    warm = crop.quantize(palette=p_img, dither=Image.Dither.NONE)
     warm.save(os.path.join(out_dir, f"stage_{index}_warm.png"))
+    with open(os.path.join(out_dir, f"stage_{index}_warm.raw"), "wb") as f:
+        f.write(warm.tobytes())
 
     # 2. Cold (Dimmed)
     cold_enhancer = ImageEnhance.Brightness(crop)
-    cold = cold_enhancer.enhance(0.4).quantize(palette=p_img, dither=Image.Dither.FLOYDSTEINBERG)
+    cold = cold_enhancer.enhance(0.4).quantize(palette=p_img, dither=Image.Dither.NONE)
     cold.save(os.path.join(out_dir, f"stage_{index}_cold.png"))
+    with open(os.path.join(out_dir, f"stage_{index}_cold.raw"), "wb") as f:
+        f.write(cold.tobytes())
 
     # 3. Vibrant (Slightly Over-bright)
     vib_enhancer = ImageEnhance.Brightness(crop)
-    vibrant = vib_enhancer.enhance(1.4).quantize(palette=p_img, dither=Image.Dither.FLOYDSTEINBERG)
+    vibrant = vib_enhancer.enhance(1.4).quantize(palette=p_img, dither=Image.Dither.NONE)
     vibrant.save(os.path.join(out_dir, f"stage_{index}_vibrant.png"))
+    with open(os.path.join(out_dir, f"stage_{index}_vibrant.raw"), "wb") as f:
+        f.write(vibrant.tobytes())
 
     # 4. Overdrive (The Fade-to-White transition)
     ovr_enhancer = ImageEnhance.Brightness(crop)
+
     # Push brightness to 3.0+ to wash out the neon into white
     overdrive = ovr_enhancer.enhance(3.5).quantize(palette=p_img)
     overdrive.save(os.path.join(out_dir, f"stage_{index}_overdrive.png"))
+    with open(os.path.join(out_dir, f"stage_{index}_overdrive.raw"), "wb") as f:
+        f.write(overdrive.tobytes())
 
 if __name__ == "__main__":
     os.makedirs(sys.argv[2], exist_ok=True)

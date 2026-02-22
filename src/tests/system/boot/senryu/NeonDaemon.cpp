@@ -34,6 +34,27 @@ BBitmap* fStageBitmaps[kTotalStages][STATE_COUNT];
 // circuits only change state, independent of stage (stage is indicated by flicker frequency)
 BBitmap* fCircuitBitmaps[CIRCUIT_COUNT][STATE_COUNT];
 
+BBitmap* fullSplash;
+
+static const uint32 kSenPalette32[] = {
+    0x00000000, // 0: Pure Black (Transparent)
+    0xFF2F2F2F, // 1: Dark Grey
+    0xFF505050, // 2: Mid Grey
+    0xFF78B4FF, // 3: Primary Blue (Neon)
+    0xFF3C5AB4, // 4: Deep Blue (Gradient)
+    0xFF2EBFD4, // 5: Scooter (Teal)
+    0xFF14646E, // 6: Deep Teal
+    0xFFF4F4F4, // 7: Wild Sand (White-ish)
+    0xFFF7F2E1, // 8: Cream
+    0xFFFF33CC, // 9: Razzle Rose (Magenta)
+    0xFF960064, // 10: Deep Rose
+    0xFF64FF64, // 11: Accent Green
+    0xFFFFA500, // 12: Accent Orange
+    0xFFC8C8C8, // 13: Light Grey
+    0xFF1E1E3C, // 14: Midnight Blue (Shadows)
+    0xFFFFFFFF  // 15: Pure White
+};
+
 // Bounding Box Dimensions (Width/Height)
 #define sen_rect   BRect(0, 0, 226 - 1, 112 - 1)
 #define ryu_rect   BRect(0, 0, 176 - 1, 182 - 1)
@@ -57,31 +78,44 @@ public:
 	NeonView(BRect frame) : BView(frame, "NeonView", B_FOLLOW_ALL, B_WILL_DRAW),
 		fStage(0), fAutoMode(false), fFlickerFrame(0), fFadeAlpha(0.0) {
 		SetViewColor(51, 102, 152); // Haiku Blue background
-
 		srand(time(nullptr));
+
 		InitAssets();
 	}
 
-	/**
-	 * Helper to create a BBitmap from tinyxxd raw data.
-	 * Assumes the cutter outputs B_RGBA32 or similar raw format.
-	 * Adjust the width/height to match your splash-image-cutter.py output.
-	 */
 	BBitmap* CreateBitmapFromRaw(const unsigned char* data, size_t length, BRect bbox)
 	{
- 		BBitmap* bitmap = new BBitmap(bbox, B_RGBA32);
+		BBitmap* bitmap = new BBitmap(bbox, B_RGBA32);
+		if (!bitmap || bitmap->InitCheck() != B_OK) return NULL;
 
-		// Copy the raw pixel data into the bitmap
-		status_t status = bitmap->ImportBits(data, length, B_ANY_BYTES_PER_ROW, 0, B_RGB32);
-		if (status != B_OK) {
-			printf("ImportBits failed: %s\n", strerror(status));
+		uint8* destBase = (uint8*)bitmap->Bits();
+		int32 bpr = bitmap->BytesPerRow(); // The OS-defined stride
+		int32 width = (int32)bbox.Width() + 1;
+		int32 height = (int32)bbox.Height() + 1;
+
+		for (int32 y = 0; y < height; y++) {
+			// Find the start of the current row in the destination
+			uint32* rowPtr = (uint32*)(destBase + (y * bpr));
+
+			for (int32 x = 0; x < width; x++) {
+				// Your source .raw data is perfectly packed
+				int32 srcIdx = (y * width) + x;
+
+				if (srcIdx < (int32)length) {
+					uint8 paletteIndex = data[srcIdx];
+					// Map to our 32-bit palette
+					rowPtr[x] = kSenPalette32[paletteIndex & 0x0F];
+				}
+			}
 		}
-
 		return bitmap;
 	}
 
 	void InitAssets()
 	{
+		// initialize fullscreen background
+		fullSplash = CreateBitmapFromRaw(stage_0, stage_0_len, BRect(0.0, 0.0, 1023.0, 767.0));
+
 		// Macro to fill the arrays directly via pointer assignment
 		#define FILL_STATIC(circuit, part) \
 		fCircuitBitmaps[part][COLD]      = CreateBitmapFromRaw(circuit##_cold, circuit##_cold_len, circuit##_rect); \
@@ -152,6 +186,9 @@ public:
 
 private:
 	void _DrawStage() {
+		// draw initial full screen splash
+		DrawBitmap(fullSplash, BPoint(0.0, 0.0));
+
 		// 1. Draw Background for the current stage
 		_BlitStage(fStage, WARM, kStageOrigin);
 
