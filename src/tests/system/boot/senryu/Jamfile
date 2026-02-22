@@ -52,7 +52,7 @@ rule GenerateNeonHeaders
 
         # Dependencies
         Depends $(target_headers) : $(raw) $(SANITIZE_PY) ;
-        
+
         # Execute the cutter for THIS specific PNG
         RunNeonCutter $(target_headers) : $(raw) ;
 
@@ -63,7 +63,7 @@ rule GenerateNeonHeaders
     GENERATED_HEADER_NAMES on $(MASTER_HEADER) = $(GENERATED_HEADERS:BS) ;
     MASTER_HEADER_PATH on $(MASTER_HEADER) = $(MASTER_HEADER:G=) ;
     GEN_DIR on $(MASTER_HEADER) = $(GEN_DIR) ;
-    
+
     Depends $(MASTER_HEADER) : $(GENERATED_HEADERS) ;
     MergeNeonHeaders $(MASTER_HEADER) ;
 
@@ -73,30 +73,30 @@ rule GenerateNeonHeaders
 actions RunNeonCutter
 {
     python3 "$(SANITIZE_PY)" "$(>)" "$(GEN_DIR)"
-    
+
     cd "$(GEN_DIR)"
     for h_file in $(HEADER_NAMES) ; do
         # Strip .h to get the base name
         base="${h_file%.h}"
-        
+
         # If the file exists as a .png, convert it
         if [ -f "${base}.png" ]; then
-            (tinyxxd -i "${base}.png" > "$h_file" 2>/dev/null || xxd -i "${base}.png" > "$h_file")
+            (tinyxxd -i -n "${base}" "${base}.png" > "$h_file")
         else
             # DEBUG: This will show up in your Jam output if a file is missing
-            echo "Warning: Expected ${base}.png but it was not created by the script."
+            printf "Warning: Expected ${base}.png but it was not created by the script.\n"
         fi
     done
 }
 
 # executed by sh
 actions MergeNeonHeaders
-{	  
+{
     printf "// Auto-generated SENryu Neon Assets\n" > "$(MASTER_HEADER_PATH)"
     printf "#pragma once" >> "$(MASTER_HEADER_PATH)"
- 
- 	  cd "$(GEN_DIR)"
-   
+
+ 	cd "$(GEN_DIR)"
+
     for header in $(GENERATED_HEADER_NAMES:BS) ; do
         printf "> merging header ${header}...\n"
         cat "${header}" >> "$(MASTER_HEADER_PATH)"
@@ -111,5 +111,5 @@ GenerateNeonHeaders $(raw_files) ;
 # 2. Define the Test Application
 SimpleTest NeonDaemon :
     NeonDaemon.cpp
-    : be
+    : be stdc++
 ;
