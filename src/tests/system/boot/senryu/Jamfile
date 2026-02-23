@@ -4,6 +4,7 @@ SubDir HAIKU_TOP src tests system boot senryu ;
 UsePrivateHeaders [ FDirName system boot ] ;
 UsePrivateKernelHeaders ;
 
+local jam_file = [ FDirName $(TOP) Jamfile ] ;
 local SCRIPTS_DIR = [ FDirName $(HAIKU_TOP) build scripts ] ;
 local SANITIZE_PY = [ FDirName $(SCRIPTS_DIR) generate_senryu_boot_splash.py ] ;
 local GEN_DIR		  = [ FDirName $(HAIKU_TOP) generated build boot_splash ] ;
@@ -52,9 +53,10 @@ rule GenerateNeonHeaders
         GEN_DIR on $(target_headers) = $(GEN_DIR) ;
         # Use :BS to give the shell clean names (e.g. stage_0_cold.h)
         HEADER_NAMES on $(target_headers) = $(target_headers:BS) ;
+        STAGE_INDEX on $(target_headers) = $(s) ;
 
         # Dependencies
-        Depends $(target_headers) : $(raw) $(SANITIZE_PY) ;
+        Depends $(target_headers) : $(raw) $(SANITIZE_PY) $(jam_file) ;
 
         # Execute the cutter for THIS specific PNG
         RunNeonCutter $(target_headers) : $(raw) ;
@@ -75,7 +77,7 @@ rule GenerateNeonHeaders
 
 actions RunNeonCutter
 {
-    python3 "$(SANITIZE_PY)" "$(>)" "$(GEN_DIR)"
+    python3 "$(SANITIZE_PY)" "$(>)" "$(STAGE_INDEX)" "$(GEN_DIR)"
 
     cd "$(GEN_DIR)"
     for h_file in $(HEADER_NAMES) ; do
@@ -99,6 +101,8 @@ actions MergeNeonHeaders
     printf "#pragma once" >> "$(MASTER_HEADER_PATH)"
 
  	cd "$(GEN_DIR)"
+    # remove stale output if exists
+    rm -f "$(MASTER_HEADER_PATH)"
 
     for header in $(GENERATED_HEADER_NAMES:BS) ; do
         printf "> merging header ${header}...\n"

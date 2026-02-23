@@ -36,7 +36,7 @@ BBitmap* fCircuitBitmaps[CIRCUIT_COUNT][STATE_COUNT];
 
 BBitmap* fullSplash;
 
-static const uint32 kSenPalette32[] = {
+static const uint32 kSenBase16[] = {
     0x00000000, // 0: Pure Black (Transparent)
     0xFF2F2F2F, // 1: Dark Grey
     0xFF505050, // 2: Mid Grey
@@ -54,6 +54,8 @@ static const uint32 kSenPalette32[] = {
     0xFF1E1E3C, // 14: Midnight Blue (Shadows)
     0xFFFFFFFF  // 15: Pure White
 };
+
+uint32 kSenPalette256[256];
 
 // Bounding Box Dimensions (Width/Height)
 #define sen_rect   BRect(0, 0, 226 - 1, 112 - 1)
@@ -77,34 +79,59 @@ class NeonView : public BView {
 public:
 	NeonView(BRect frame) : BView(frame, "NeonView", B_FOLLOW_ALL, B_WILL_DRAW),
 		fStage(0), fAutoMode(false), fFlickerFrame(0), fFadeAlpha(0.0) {
+
 		SetViewColor(51, 102, 152); // Haiku Blue background
 		srand(time(nullptr));
 
+		InitializeSenPalette();
 		InitAssets();
+	}
+
+	void InitializeSenPalette() {
+		// 1. Copy the first 16 base colors
+		for (int i = 0; i < 16; i++) kSenPalette256[i] = kSenBase16[i];
+
+		// 2. Helper to generate ramps (Linear Interpolation)
+		auto lerp = [](uint32 c1, uint32 c2, int steps, int startSlot) {
+			uint8 r1 = (c1 >> 16) & 0xFF, g1 = (c1 >> 8) & 0xFF, b1 = c1 & 0xFF;
+			uint8 r2 = (c2 >> 16) & 0xFF, g2 = (c2 >> 8) & 0xFF, b2 = c2 & 0xFF;
+
+			for (int i = 0; i < steps; i++) {
+				float r = i / (float)steps;
+				uint8 nr = r1 + (r2 - r1) * r;
+				uint8 ng = g1 + (g2 - g1) * r;
+				uint8 nb = b1 + (b2 - b1) * r;
+				kSenPalette256[startSlot + i] = 0xFF000000 | (nr << 16) | (ng << 8) | nb;
+			}
+		};
+
+		// 3. Fill the "Stepping Stone" slots for gradients
+		lerp(kSenBase16[3], kSenBase16[4], 32, 16);  // Blue Neon Ramps
+		lerp(kSenBase16[9], kSenBase16[10], 32, 48); // Rose Neon Ramps
+		lerp(kSenBase16[5], kSenBase16[6], 32, 80);  // Teal Neon Ramps
+		lerp(kSenBase16[7], kSenBase16[15], 32, 112); // White Ramps (Slots 112-143)
+
+		// Pad remainder with black
+		for (int i = 144; i < 256; i++) {
+		    kSenPalette256[i] = 0xFF000000;
+		}
 	}
 
 	BBitmap* CreateBitmapFromRaw(const unsigned char* data, size_t length, BRect bbox)
 	{
-		BBitmap* bitmap = new BBitmap(bbox, B_RGBA32);
-		if (!bitmap || bitmap->InitCheck() != B_OK) return NULL;
+		BBitmap* bitmap = new BBitmap(bbox, B_RGBA32); //
+		uint8* destBase = (uint8*)bitmap->Bits(); //
+		int32 bpr = bitmap->BytesPerRow(); //
+		int32 width = (int32)bbox.Width() + 1; //
+		int32 height = (int32)bbox.Height() + 1; //
 
-		uint8* destBase = (uint8*)bitmap->Bits();
-		int32 bpr = bitmap->BytesPerRow(); // The OS-defined stride
-		int32 width = (int32)bbox.Width() + 1;
-		int32 height = (int32)bbox.Height() + 1;
-
-		for (int32 y = 0; y < height; y++) {
-			// Find the start of the current row in the destination
-			uint32* rowPtr = (uint32*)(destBase + (y * bpr));
-
-			for (int32 x = 0; x < width; x++) {
-				// Your source .raw data is perfectly packed
-				int32 srcIdx = (y * width) + x;
-
+		for (int y = 0; y < height; y++) {
+			uint32* row = (uint32*)(destBase + (y * bpr)); //
+			for (int x = 0; x < width; x++) {
+				int srcIdx = (y * width) + x; //
 				if (srcIdx < (int32)length) {
-					uint8 paletteIndex = data[srcIdx];
-					// Map to our 32-bit palette
-					rowPtr[x] = kSenPalette32[paletteIndex & 0x0F];
+					// Direct 8-bit to 32-bit mapping
+					row[x] = kSenPalette256[data[srcIdx]];
 				}
 			}
 		}
