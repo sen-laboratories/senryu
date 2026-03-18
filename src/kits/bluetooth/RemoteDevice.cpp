@@ -50,9 +50,8 @@ RemoteDevice::GetFriendlyName(bool alwaysAsk)
 {
 	CALLED();
 	if (!alwaysAsk) {
-		// Check if the name is already retrieved
-		// TODO: Check if It is known from a KnownDevicesList
-		return BString(B_TRANSLATE("Not implemented"));
+		if (!fFriendlyName.IsEmpty() && fFriendlyNameIsComplete)
+			return fFriendlyName;
 	}
 
 	if (fDiscovererLocalDevice == NULL)
@@ -90,6 +89,8 @@ RemoteDevice::GetFriendlyName(bool alwaysAsk)
 		if ((reply.FindInt8("status", &status) == B_OK) && (status == BT_OK)) {
 
 			if ((reply.FindString("friendlyname", &name) == B_OK )) {
+				fFriendlyName = name;
+				fFriendlyNameIsComplete = true;
 				return name;
 			} else {
 				return BString(""); // should not happen
@@ -97,6 +98,9 @@ RemoteDevice::GetFriendlyName(bool alwaysAsk)
 
 		} else {
 			// seems we got a negative event
+			if (!fFriendlyName.IsEmpty())
+				return fFriendlyName;
+
 			return BString(B_TRANSLATE("#CommandFailed#Not Valid name"));
 		}
 	}
@@ -109,7 +113,15 @@ BString
 RemoteDevice::GetFriendlyName()
 {
 	CALLED();
-	return GetFriendlyName(true);
+	return GetFriendlyName(false);
+}
+
+
+BString
+RemoteDevice::GetCachedFriendlyName()
+{
+	CALLED();
+	return fFriendlyName;
 }
 
 
@@ -169,41 +181,41 @@ RemoteDevice::Authenticate()
 	request.AddInt16("opcodeExpected", PACK_OPCODE(OGF_LINK_CONTROL,
 		OCF_CREATE_CONN));
 
-	// if authentication needed, we will send any of these commands
-	// to accept or deny the LINK KEY [a]
-	request.AddInt16("eventExpected",  HCI_EVENT_CMD_COMPLETE);
-	request.AddInt16("opcodeExpected", PACK_OPCODE(OGF_LINK_CONTROL,
-		OCF_LINK_KEY_REPLY));
-
-	request.AddInt16("eventExpected",  HCI_EVENT_CMD_COMPLETE);
-	request.AddInt16("opcodeExpected", PACK_OPCODE(OGF_LINK_CONTROL,
-		OCF_LINK_KEY_NEG_REPLY));
-
-	// in negative case, a pincode will be replied [b]
-	// this request will be handled by sepatated by the pincode window
-	// request.AddInt16("eventExpected",  HCI_EVENT_CMD_COMPLETE);
-	// request.AddInt16("opcodeExpected", PACK_OPCODE(OGF_LINK_CONTROL,
-	//	OCF_PIN_CODE_REPLY));
-
-	// [a] this is expected of authentication required
 	request.AddInt16("eventExpected", HCI_EVENT_LINK_KEY_REQ);
-	// [b] If we deny the key an authentication will be requested
-	// but this request will be handled by sepatated by the pincode
-	// window
-	// request.AddInt16("eventExpected", HCI_EVENT_PIN_CODE_REQ);
-
-	// this almost involves already the happy end
-	request.AddInt16("eventExpected",  HCI_EVENT_LINK_KEY_NOTIFY);
-
+	request.AddInt16("eventExpected", HCI_EVENT_ROLE_CHANGE);
 	request.AddInt16("eventExpected", HCI_EVENT_CONN_COMPLETE);
 
 	if (fMessenger->SendMessage(&request, &reply) == B_OK)
 		reply.FindInt8("status", &btStatus);
 
-	if (btStatus == BT_OK) {
-		reply.FindInt16("handle", (int16*)&fHandle);
+	if (btStatus != BT_OK)
+		return false;
+
+	reply.FindInt16("handle", (int16*)&fHandle);
+
+	BluetoothCommand<typed_command(hci_cp_auth_requested)> authRequest(OGF_LINK_CONTROL,
+		OCF_AUTH_REQUESTED);
+
+	authRequest->handle = fHandle;
+
+	BMessage authRequestMsg(BT_MSG_HANDLE_SIMPLE_REQUEST);
+	BMessage authReply;
+
+	authRequestMsg.AddInt32("hci_id", fDiscovererLocalDevice->ID());
+	authRequestMsg.AddData("raw command", B_ANY_TYPE, authRequest.Data(), authRequest.Size());
+
+	authRequestMsg.AddInt16("eventExpected", HCI_EVENT_CMD_STATUS);
+	authRequestMsg.AddInt16("opcodeExpected", PACK_OPCODE(OGF_LINK_CONTROL, OCF_AUTH_REQUESTED));
+
+	authRequestMsg.AddInt16("eventExpected", HCI_EVENT_AUTH_COMPLETE);
+
+	int8 authStatus = BT_ERROR;
+	if (fMessenger->SendMessage(&authRequestMsg, &authReply) == B_OK)
+		authReply.FindInt8("status", &authStatus);
+
+	if (authStatus == BT_OK)
 		return true;
-	} else
+	else
 		return false;
 }
 

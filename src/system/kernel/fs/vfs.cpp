@@ -2060,13 +2060,10 @@ get_dir_path_and_leaf(char* path, char* filename)
 			while (*--last == '/' && last != path);
 			last[1] = '\0';
 
-			if (last == path && last[0] == '/') {
-				// This path points to the root of the file system
-				strcpy(filename, ".");
-				return B_OK;
-			}
-			for (; last != path && *(last - 1) != '/'; last--);
-				// rewind to the start of the leaf before the '/'
+			// pathnames that end with one or more trailing slash characters
+			// must refer to directory paths
+			strcpy(filename, ".");
+			return B_OK;
 		}
 
 		// normal leaf: replace the leaf portion of the path with a '.'
@@ -5453,7 +5450,7 @@ open_vnode(struct vnode* vnode, int openMode, bool kernel)
 	then that entry will be opened and returned instead.
 */
 static int
-create_vnode(struct vnode* directory, const char* name, int openMode,
+file_create_vnode(struct vnode* directory, const char* name, int openMode,
 	int perms, bool kernel)
 {
 	bool traverse = ((openMode & (O_NOTRAVERSE | O_NOFOLLOW)) == 0);
@@ -5462,6 +5459,9 @@ create_vnode(struct vnode* directory, const char* name, int openMode,
 	void* cookie;
 	ino_t newID;
 	char clonedName[B_FILE_NAME_LENGTH + 1];
+
+	if (strcmp(name, ".") == 0)
+		return B_IS_A_DIRECTORY;
 
 	// This is somewhat tricky: If the entry already exists, the FS responsible
 	// for the directory might not necessarily also be the one responsible for
@@ -5638,7 +5638,7 @@ file_create_entry_ref(dev_t mountID, ino_t directoryID, const char* name,
 	if (status != B_OK)
 		return status;
 
-	status = create_vnode(directory, name, openMode, perms, kernel);
+	status = file_create_vnode(directory, name, openMode, perms, kernel);
 	put_vnode(directory);
 
 	return status;
@@ -5659,7 +5659,7 @@ file_create(int fd, char* path, int openMode, int perms, bool kernel)
 	if (status < 0)
 		return status;
 
-	return create_vnode(directory.Get(), name, openMode, perms, kernel);
+	return file_create_vnode(directory.Get(), name, openMode, perms, kernel);
 }
 
 
@@ -6051,6 +6051,17 @@ dir_create(int fd, char* path, int perms, bool kernel)
 
 	FUNCTION(("dir_create: path '%s', perms %d, kernel %d\n", path, perms,
 		kernel));
+
+	char* p = strrchr(path, '/');
+	if (p != NULL) {
+		p++;
+		if (p[0] == '\0') {
+			// special case: the path ends in one or more '/' - remove them
+			while (*--p == '/' && p != path)
+				;
+			p[1] = '\0';
+		}
+	}
 
 	VnodePutter vnode;
 	status = fd_and_path_to_dir_vnode(fd, path, vnode, filename, kernel);

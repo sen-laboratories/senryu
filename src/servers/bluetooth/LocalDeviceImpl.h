@@ -48,6 +48,9 @@ private:
 
 	// Inquiry
 	void InquiryResult(uint8* numberOfResponses, BMessage* request);
+	void InquiryResultWithRSSI(uint8* numberOfResponses, BMessage* request);
+	void ExtendedInquiryResult(uint8* numberOfResponses, BMessage* request);
+	void ParseEIR(const uint8* eir, BMessage& reply);
 	void InquiryComplete(uint8* status, BMessage* request);
 	void RemoteNameRequestComplete(struct hci_ev_remote_name_request_complete_reply*
 		remotename, BMessage* request);
@@ -73,6 +76,15 @@ private:
 
 	void HardwareError(struct hci_ev_hardware_error* event);
 
+	// Simple Secure Pairing
+	void IOCapabilityRequest(struct hci_ev_io_capability_request* event,
+		BMessage* request);
+	void IOCapabilityResponse(struct hci_ev_io_capability_response* event,
+		BMessage* request);
+	void UserConfirmationRequest(struct hci_ev_user_confirmation_request* event, BMessage* request);
+	void SimplePairingComplete(struct hci_ev_simple_pairing_complete* event,
+		BMessage* request);
+	void AuthComplete(struct hci_ev_auth_complete* eventData, BMessage* request);
 };
 
 #endif

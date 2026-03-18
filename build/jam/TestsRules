@@ -43,14 +43,16 @@ rule UnitTestLib
 
 rule UnitTestResource
 {
-	# UnitTestResource <target> : <source> : <flags> ;
+	# UnitTestResource <target> : <source> : <destDir> : <flags> ;
 	#
 	# <flags> supported values: isExec
-	local target = $(1:G=tests!unittests!resources) ;
+	local grist = [ FGrist tests unittests resources $(3) ] ;
+	local target = $(1:G=$(grist)) ;
 	local source = $(2) ;
-	local flags = $(3) ;
+	local destDir = $(3) ;
+	local flags = $(4) ;
 
-	MakeLocate $(target) : [ FDirName $(TARGET_UNIT_TEST_DIR) resources ] ;
+	MakeLocate $(target) : [ FDirName $(TARGET_UNIT_TEST_DIR) resources $(destDir) ] ;
 	File $(target) : $(source) ;
 	if isExec in $(flags) {
 		MODE on $(target) = $(EXEMODE) ;
@@ -58,20 +60,21 @@ rule UnitTestResource
 	MimeSet $(target) ;
 	UnitTestDependency $(target) ;
 	UNIT_TEST_RESOURCES on unittests += $(target) ;
+	DEST_DIR on $(target) = $(destDir) ;
 }
 
 
 rule UnitTestResources
 {
-	# UnitTestResources <files> : <sourceDir> : <flags> ;
+	# UnitTestResources <files> : <destDir> : <flags> ;
 	#
 	# <flags> supports same values as UnitTestResource
 	local files = $(1) ;
-	local sourceDir = $(2) ;
+	local destDir = $(2) ;
 	local flags = $(3) ;
 	for file in $(files) {
-		LOCATE on $(file) = $(sourceDir) ;
-		UnitTestResource $(file:G=tests!unittests!resources) : $(file) : $(flags) ;
+		local fileName = $(file:BS) ;
+		UnitTestResource $(fileName) : $(file) : $(destDir) : $(flags) ;
 	}
 }
 

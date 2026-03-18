@@ -32,10 +32,10 @@
 
 #include <ApplicationPrivate.h>
 #include <AppServerLink.h>
-#include <Autolock.h>
 #include <ObjectList.h>
 #include <ServerMemoryAllocator.h>
 #include <ServerProtocol.h>
+#include <locks.h>
 
 #include "ColorConversion.h"
 #include "BitmapPrivate.h"
@@ -45,13 +45,13 @@ using namespace BPrivate;
 
 
 static BObjectList<BBitmap> sBitmapList;
-static BLocker sBitmapListLock;
+static mutex sBitmapListLock = MUTEX_INITIALIZER("BBitmap list");
 
 
 void
 reconnect_bitmaps_to_app_server()
 {
-	BAutolock _(sBitmapListLock);
+	MutexLocker _(sBitmapListLock);
 	for (int32 i = 0; i < sBitmapList.CountItems(); i++) {
 		BBitmap::Private bitmap(sBitmapList.ItemAt(i));
 		bitmap.ReconnectToAppServer();
@@ -1198,7 +1198,7 @@ BBitmap::_InitObject(BRect bounds, color_space colorSpace, uint32 flags,
 				// NOTE: why not "0" in case of error?
 				fFlags = flags;
 			} else {
-				BAutolock _(sBitmapListLock);
+				MutexLocker _(sBitmapListLock);
 				sBitmapList.AddItem(this);
 			}
 		}
@@ -1276,7 +1276,7 @@ BBitmap::_CleanUp()
 		fServerToken = -1;
 		fAreaOffset = -1;
 
-		BAutolock _(sBitmapListLock);
+		MutexLocker _(sBitmapListLock);
 		sBitmapList.RemoveItem(this);
 	}
 	fBasePointer = NULL;

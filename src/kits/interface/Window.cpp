@@ -3758,8 +3758,13 @@ BWindow::_HandleKeyDown(BMessage* event)
 			//	example)
 			if (shortcut->MenuItem() != NULL) {
 				BMenu* menu = shortcut->MenuItem()->Menu();
-				if (menu != NULL)
+				if (menu != NULL && shortcut->MenuItem()->IsEnabled()) {
 					MenuPrivate(menu).InvokeItem(shortcut->MenuItem(), true);
+				} else {
+					// Process disabled shortcuts as if they did not exist.
+					// (This lets B_NO_COMMAND_KEY shortcuts fall back to regular key events.)
+					shortcut = NULL;
+				}
 			} else {
 				BHandler* target = shortcut->Target();
 				if (target == NULL)

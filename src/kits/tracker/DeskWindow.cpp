@@ -487,7 +487,7 @@ BDeskWindow::CreatePoseView(Model* model)
 void
 BDeskWindow::WorkspaceActivated(int32 workspace, bool state)
 {
-	if (fBackgroundImage)
+	if (fBackgroundImage != NULL)
 		fBackgroundImage->WorkspaceActivated(PoseView(), workspace, state);
 }
 
@@ -508,7 +508,7 @@ BDeskWindow::ScreenChanged(BRect frame, color_space space)
 	fOldFrame = frame;
 	ResizeTo(frame.Width(), frame.Height());
 
-	if (fBackgroundImage)
+	if (fBackgroundImage != NULL)
 		fBackgroundImage->ScreenChanged(frame, space);
 
 	PoseView()->CheckPoseVisibility(frameChanged ? &frame : 0);
@@ -518,18 +518,9 @@ BDeskWindow::ScreenChanged(BRect frame, color_space space)
 
 
 void
-BDeskWindow::UpdateDesktopBackgroundImages()
-{
-	WindowStateNodeOpener opener(this, false);
-	fBackgroundImage = BackgroundImage::Refresh(fBackgroundImage,
-		opener.Node(), true, PoseView());
-}
-
-
-void
 BDeskWindow::Show()
 {
-	if (fBackgroundImage)
+	if (fBackgroundImage != NULL)
 		fBackgroundImage->Show(PoseView(), current_workspace());
 
 	PoseView()->CheckPoseVisibility();

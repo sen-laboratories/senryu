@@ -31,6 +31,7 @@ public:
 	bool IsTrustedDevice();
 	BString GetFriendlyName(bool alwaysAsk); /* Throwing */
 	BString GetFriendlyName(void); /* Throwing */
+	BString GetCachedFriendlyName();
 	bdaddr_t GetBluetoothAddress();
 	DeviceClass GetDeviceClass();
 
@@ -68,7 +69,9 @@ private:
 	uint8		fScanPeriodMode;
 	uint8		fScanMode;
 	uint16		fClockOffset;
-
+	int8        fRSSI;
+	BString     fFriendlyName;
+	bool        fFriendlyNameIsComplete;
 };
 
 }

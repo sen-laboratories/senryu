@@ -144,6 +144,7 @@ AddNewDriversToPackage network :
 	virtio_net
 	;
 AddNewDriversToPackage input :
+	hyperv_hid@x86,x86_64
 	i2c_elan
 	virtio_input
 	;
@@ -152,6 +153,9 @@ AddNewDriversToPackage display :
 	;
 AddNewDriversToPackage audio hmulti :
 #	virtio_sound
+	;
+AddNewDriversToPackage hyperv :
+	hyperv_ic@x86,x86_64
 	;
 
 # legacy drivers
@@ -261,6 +265,9 @@ AddFilesToPackage data user_launch : $(userLaunchScripts) ;
 
 # first login scripts
 local firstLoginFiles = default_deskbar_items.sh ;
+if $(HAIKU_BUILD_TYPE) = test {
+	firstLoginFiles += test_image.sh ;
+}
 firstLoginFiles = $(firstLoginFiles:G=first-login) ;
 SEARCH on $(firstLoginFiles)
 	= [ FDirName $(HAIKU_TOP) data system boot first_login ] ;
@@ -318,6 +325,7 @@ AddBootModuleSymlinksToPackage
 	dpc
 	efi_gpt
 	generic_ide_pci
+	hyperv@x86,x86_64
 	ide_isa@x86
 	isa@x86,x86_64
 	intel

@@ -1,4 +1,4 @@
-1	friulian	x-vnd.Haiku-ActivityMonitor	923507156
+1	friulian	x-vnd.Haiku-ActivityMonitor	1159274874
 Temp	DataSource		Temp
 Temperature	DataSource		Temperadure
 Teams	DataSource		Teams
@@ -24,6 +24,7 @@ RX	DataSource	Shorter version for Receiving.	RX
 Settings…	ActivityWindow		Impostazions…
 Block cache	DataSource		Bloche cache
 Memory	DataSource		Memorie
+No thermal sensor	SystemInfoHandler		Nissun sensôr di temperadure
 CPU usage	DataSource		CPU doprade
 CPU speed	DataSource		Velocitât de CPU
 Quit	ActivityWindow		Jes

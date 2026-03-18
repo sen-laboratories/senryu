@@ -7,9 +7,10 @@
 
 #include "BluetoothServer.h"
 
-#include "LocalDeviceImpl.h"
 #include "CommandManager.h"
 #include "Debug.h"
+#include "LocalDeviceImpl.h"
+#include "bluetooth/HCI/btHCI_command.h"
 
 #include <bluetooth/bdaddrUtils.h>
 #include <bluetooth/bluetooth_error.h>
@@ -131,11 +132,7 @@ LocalDeviceImpl::HandleUnexpectedEvent(struct hci_event_header* event)
 					<struct hci_ev_disconnection_complete_reply>(event),
 				NULL);
 			break;
-		case HCI_EVENT_PIN_CODE_REQ:
-			PinCodeRequest(
-				JumpEventHeader<struct hci_ev_pin_code_req>(event), NULL);
-			break;
-		default:
+
 			// TODO: feedback unexpected not handled
 			break;
 	}
@@ -169,7 +166,7 @@ LocalDeviceImpl::HandleExpectedRequest(struct hci_event_header* event,
 			break;
 
 		case HCI_EVENT_AUTH_COMPLETE:
-
+			AuthComplete(JumpEventHeader<struct hci_ev_auth_complete>(event), request);
 			break;
 
 		case HCI_EVENT_REMOTE_NAME_REQUEST_COMPLETE:
@@ -253,6 +250,10 @@ LocalDeviceImpl::HandleExpectedRequest(struct hci_event_header* event,
 			break;
 
 		case HCI_EVENT_INQUIRY_RESULT_WITH_RSSI:
+			InquiryResultWithRSSI(JumpEventHeader<uint8>(event), request);
+			break;
+		case HCI_EVENT_EXTENDED_INQUIRY_RESULT:
+			ExtendedInquiryResult(JumpEventHeader<uint8>(event), request);
 			break;
 
 		case HCI_EVENT_REMOTE_EXTENDED_FEATURES:
@@ -262,6 +263,30 @@ LocalDeviceImpl::HandleExpectedRequest(struct hci_event_header* event,
 			break;
 
 		case HCI_EVENT_SYNCHRONOUS_CONNECTION_CHANGED:
+			break;
+
+		case HCI_EVENT_IO_CAPABILITY_REQUEST:
+			IOCapabilityRequest(JumpEventHeader<struct hci_ev_io_capability_request>(event),
+				request);
+			break;
+
+		case HCI_EVENT_IO_CAPABILITY_RESPONSE:
+			IOCapabilityResponse(JumpEventHeader<struct hci_ev_io_capability_response>(event),
+				request);
+			break;
+
+		case HCI_EVENT_USER_CONFIRMATION_REQUEST:
+			UserConfirmationRequest(JumpEventHeader<struct hci_ev_user_confirmation_request>(event),
+				request);
+			break;
+
+		case HCI_EVENT_SIMPLE_PAIRING_COMPLETE:
+			SimplePairingComplete(JumpEventHeader<struct hci_ev_simple_pairing_complete>(event),
+				request);
+			break;
+
+		case HCI_EVENT_PIN_CODE_REQ:
+			PinCodeRequest(JumpEventHeader<struct hci_ev_pin_code_req>(event), NULL);
 			break;
 	}
 }
@@ -506,8 +531,9 @@ LocalDeviceImpl::CommandComplete(struct hci_ev_cmd_complete* event,
 
 			// This request is not gonna be used anymore
 			ClearWantedEvent(request);
+			break;
 		}
-		break;
+
 
 		case PACK_OPCODE(OGF_INFORMATIONAL_PARAM, OCF_READ_BD_ADDR):
 		{
@@ -529,9 +555,8 @@ LocalDeviceImpl::CommandComplete(struct hci_ev_cmd_complete* event,
 
 			// This request is not gonna be used anymore
 			ClearWantedEvent(request);
+			break;
 		}
-		break;
-
 
 		case PACK_OPCODE(OGF_CONTROL_BASEBAND, OCF_READ_CLASS_OF_DEV):
 		{
@@ -676,6 +701,17 @@ LocalDeviceImpl::CommandComplete(struct hci_ev_cmd_complete* event,
 			break;
 		}
 
+		// without clearing all events, no reply
+		case PACK_OPCODE(OGF_LINK_CONTROL, OCF_IO_CAPABILITY_REQUEST_REPLY):
+		case PACK_OPCODE(OGF_LINK_CONTROL, OCF_USER_CONFIRM_REPLY):
+		case PACK_OPCODE(OGF_LINK_CONTROL, OCF_USER_CONFIRM_NEG_REPLY):
+		{
+			TRACE_BT("LocalDeviceImpl: %s for %s status %x\n", __FUNCTION__,
+				BluetoothCommandOpcode(opcodeExpected), *(uint8*)(event + 1));
+			ClearWantedEvent(request, HCI_EVENT_CMD_COMPLETE, opcodeExpected);
+			break;
+		}
+
 		// place here all CC that just replies a uint8 status
 		case PACK_OPCODE(OGF_CONTROL_BASEBAND, OCF_RESET):
 		case PACK_OPCODE(OGF_CONTROL_BASEBAND, OCF_WRITE_SCAN_ENABLE):
@@ -740,37 +776,56 @@ LocalDeviceImpl::CommandStatus(struct hci_ev_cmd_status* event,
 		break;
 
 		case PACK_OPCODE(OGF_LINK_CONTROL, OCF_REMOTE_NAME_REQUEST):
+		{
+			TRACE_BT("LocalDeviceImpl: Command Status for remote friendly name %x\n",
+				event->status);
+
+			reply.AddInt8("status", event->status);
+			request->SendReply(&reply);
+			// printf("Sending reply... %ld\n", status);
+			//  debug reply.PrintToStream();
+
+			ClearWantedEvent(request, HCI_EVENT_CMD_STATUS, opcodeExpected);
+
+		}
+		break;
 		case PACK_OPCODE(OGF_LINK_CONTROL, OCF_CREATE_CONN):
 		{
-			if (event->status == BT_OK) {
-				ClearWantedEvent(request, HCI_EVENT_CMD_STATUS, opcodeExpected);
-			} else {
-				TRACE_BT("LocalDeviceImpl: Command Status for remote friendly name %x\n",
-					event->status);
+			TRACE_BT("LocalDeviceImpl: Command Status for create connection %x\n", event->status);
+
+			ClearWantedEvent(request, HCI_EVENT_CMD_STATUS, opcodeExpected);
+			if (event->status != BT_OK) {
+
 
 				reply.AddInt8("status", event->status);
 				request->SendReply(&reply);
-				//printf("Sending reply... %ld\n", status);
-				// debug reply.PrintToStream();
-
-				ClearWantedEvent(request, HCI_EVENT_CMD_STATUS, opcodeExpected);
+				// printf("Sending reply... %ld\n", status);
+				//  debug reply.PrintToStream();
 			}
 		}
 		break;
-		/*
+
 		case PACK_OPCODE(OGF_LINK_CONTROL, OCF_ACCEPT_CONN_REQ):
+
 		{
-			ClearWantedEvent(request, HCI_EVENT_CMD_STATUS,
-				PACK_OPCODE(OGF_LINK_CONTROL, OCF_ACCEPT_CONN_REQ));
+			TRACE_BT("LocalDeviceImpl: Command Status for accept connection request %x\n",
+				event->status);
+			ClearWantedEvent(request, HCI_EVENT_CMD_STATUS, opcodeExpected);
 		}
 		break;
 
 		case PACK_OPCODE(OGF_LINK_CONTROL, OCF_REJECT_CONN_REQ):
 		{
-			ClearWantedEvent(request, HCI_EVENT_CMD_STATUS,
-				PACK_OPCODE(OGF_LINK_CONTROL, OCF_REJECT_CONN_REQ));
-		}
-		break;*/
+			TRACE_BT("LocalDeviceImpl: Command Status for reject connection request %x\n",
+				event->status);
+			ClearWantedEvent(request, HCI_EVENT_CMD_STATUS, opcodeExpected);
+		} break;
+
+		case PACK_OPCODE(OGF_LINK_CONTROL, OCF_AUTH_REQUESTED):
+		{
+			TRACE_BT("LocalDeviceImpl: Command Status for auth requested %x\n", event->status);
+			ClearWantedEvent(request, HCI_EVENT_CMD_STATUS, opcodeExpected);
+		} break;
 
 		default:
 			TRACE_BT("LocalDeviceImpl: Command Status not handled\n");
@@ -782,34 +837,170 @@ LocalDeviceImpl::CommandStatus(struct hci_ev_cmd_status* event,
 void
 LocalDeviceImpl::InquiryResult(uint8* numberOfResponses, BMessage* request)
 {
+	uint8 count = *numberOfResponses;
+	TRACE_BT("LocalDeviceImpl: %s #responses=%d\n", __FUNCTION__, count);
+	if (count == 0 || request == NULL)
+		return;
+
+	uint8* base_ptr = numberOfResponses + 1;
+
+	// get pointers ready for the arrays
+	bdaddr_t* bdaddr_array = (bdaddr_t*)base_ptr;
+	uint8* page_repetition_mode_array = (uint8*)(bdaddr_array + count);
+	uint8* scan_period_mode_array = page_repetition_mode_array + count;
+	uint8* scan_mode_array = scan_period_mode_array + count;
+	uint8* dev_class_array = scan_mode_array + count;
+	uint16* clock_offset_array = (uint16*)(dev_class_array + (count * 3));
+
 	BMessage reply(BT_MSG_INQUIRY_DEVICE);
+	reply.AddUInt8("count", count);
 
-	uint8 responses = *numberOfResponses;
-
-	// skipping here the number of responses
-	reply.AddData("info", B_ANY_TYPE, numberOfResponses + 1,
-		(*numberOfResponses) * sizeof(struct inquiry_info) );
-
-	reply.AddInt8("count", *numberOfResponses);
-
-	TRACE_BT("LocalDeviceImpl: %s #responses=%d\n",
-		__FUNCTION__, *numberOfResponses);
-
-	struct inquiry_info* info = JumpEventHeader<struct inquiry_info, uint8>
-		(numberOfResponses);
-
-	while (responses > 0) {
+	for (uint8 i = 0; i < count; i++) {
 		TRACE_BT("LocalDeviceImpl: page_rep=%d scan_period=%d, scan=%d clock=%d\n",
-			info->pscan_rep_mode, info->pscan_period_mode, info->pscan_mode,
-			info->clock_offset);
-		responses--;
-		info++;
+			page_repetition_mode_array[i], scan_period_mode_array[i], scan_mode_array[i],
+			clock_offset_array[i]);
+
+		reply.AddData("bdaddr", B_ANY_TYPE, &bdaddr_array[i], sizeof(bdaddr_t));
+		reply.AddData("dev_class", B_ANY_TYPE, &dev_class_array[i * 3], 3);
+		reply.AddUInt8("page_repetition_mode", page_repetition_mode_array[i]);
+		reply.AddUInt8("scan_period_mode", scan_period_mode_array[i]);
+		reply.AddUInt8("scan_mode", scan_mode_array[i]);
+		reply.AddUInt16("clock_offset", clock_offset_array[i]);
 	}
 
 	printf("%s: Sending reply...\n", __func__);
 	status_t status = request->SendReply(&reply);
 	if (status < B_OK)
 		printf("%s: Error sending reply!\n", __func__);
+}
+
+
+void
+LocalDeviceImpl::InquiryResultWithRSSI(uint8* numberOfResponses, BMessage* request)
+{
+	uint8 count = *numberOfResponses;
+	TRACE_BT("LocalDeviceImpl: %s #responses=%d\n", __FUNCTION__, count);
+	if (count == 0 || request == NULL)
+		return;
+
+	uint8* base_ptr = numberOfResponses + 1;
+
+	// get pointers ready for the parallel arrays
+	bdaddr_t* bdaddr_array = (bdaddr_t*)base_ptr;
+	uint8* page_repetition_mode_array = (uint8*)(bdaddr_array + count);
+	uint8* scan_period_mode_array = page_repetition_mode_array + count;
+	uint8* dev_class_array = scan_period_mode_array + count;
+	uint16* clock_offset_array = (uint16*)(dev_class_array + (count * 3));
+	int8* rssi_array = (int8*)(clock_offset_array + count);
+
+	BMessage reply(BT_MSG_INQUIRY_DEVICE);
+	reply.AddUInt8("count", count);
+
+	for (uint8 i = 0; i < count; i++) {
+		TRACE_BT("LocalDeviceImpl: page_rep=%d scan_period=%d clock=%d rssi=%d\n",
+			page_repetition_mode_array[i], scan_period_mode_array[i], clock_offset_array[i],
+			rssi_array[i]);
+
+		reply.AddData("bdaddr", B_ANY_TYPE, &bdaddr_array[i], sizeof(bdaddr_t));
+		reply.AddData("dev_class", B_ANY_TYPE, &dev_class_array[i * 3], 3);
+		reply.AddUInt8("page_repetition_mode", page_repetition_mode_array[i]);
+		reply.AddUInt8("scan_period_mode", scan_period_mode_array[i]);
+		reply.AddUInt16("clock_offset", clock_offset_array[i]);
+		reply.AddInt8("rssi", rssi_array[i]);
+	}
+
+	printf("%s: Sending reply...\n", __func__);
+	status_t status = request->SendReply(&reply);
+	if (status < B_OK)
+		printf("%s: Error sending reply!\n", __func__);
+}
+
+
+void
+LocalDeviceImpl::ExtendedInquiryResult(uint8* numberOfResponses, BMessage* request)
+{
+	uint8 count = *numberOfResponses;
+	TRACE_BT("LocalDeviceImpl: %s #responses=%d\n", __FUNCTION__, count);
+
+	// the spec says count always equals 1
+	if (count != 1 || request == NULL)
+		return;
+
+	hci_ev_extended_inquiry_info* info = (hci_ev_extended_inquiry_info*)(numberOfResponses + 1);
+
+	BMessage reply(BT_MSG_INQUIRY_DEVICE);
+	reply.AddUInt8("count", count);
+
+	TRACE_BT("LocalDeviceImpl: page_rep=%d scan_period=%d clock=%d rssi=%d\n",
+		info->page_repetition_mode, info->scan_period_mode, info->clock_offset, info->rssi);
+
+	reply.AddData("bdaddr", B_ANY_TYPE, &info->bdaddr, sizeof(bdaddr_t));
+	reply.AddData("dev_class", B_ANY_TYPE, info->dev_class, 3);
+	reply.AddUInt8("page_repetition_mode", info->page_repetition_mode);
+	reply.AddUInt8("scan_period_mode", info->scan_period_mode);
+	reply.AddUInt16("clock_offset", info->clock_offset);
+	reply.AddInt8("rssi", info->rssi);
+
+	ParseEIR(info->eir, reply);
+
+	printf("%s: Sending reply...\n", __func__);
+	status_t status = request->SendReply(&reply);
+	if (status < B_OK)
+		printf("%s: Error sending reply!\n", __func__);
+}
+
+
+void
+LocalDeviceImpl::ParseEIR(const uint8* eir, BMessage& reply)
+{
+	if (eir == NULL)
+		return;
+
+	int offset = 0;
+	BString completeName;
+	BString shortName;
+
+	while (offset < HCI_MAX_EIR_LENGTH) {
+		uint8 length = eir[offset];
+
+		// break either when finished reading buffer or when next data value is zero
+		if (length == 0 || offset + length >= HCI_MAX_EIR_LENGTH)
+			break;
+
+		uint8 type = eir[offset + 1];
+		const uint8* data = &eir[offset + 2];
+		uint8 dataLen = length - 1;
+
+		// TODO:Implement other EIR datatypes
+		switch (type) {
+			case EIR_NAME_SHORT:
+				if (shortName.Length() == 0) {
+					shortName.SetTo((const char*)data, dataLen);
+					TRACE_BT("LocalDeviceImpl: Parsed EIR Short Name: '%s'\n", shortName.String());
+				}
+				break;
+			case EIR_NAME_COMPLETE:
+				if (completeName.Length() == 0) {
+					completeName.SetTo((const char*)data, dataLen);
+					TRACE_BT("LocalDeviceImpl: Parsed EIR Complete Name: '%s'\n",
+						completeName.String());
+				}
+				break;
+			default:
+				TRACE_BT("LocalDeviceImpl: Ignored EIR Type: 0x%02X (Length: %d)\n", type, dataLen);
+				break;
+		}
+
+		offset += length + 1;
+	}
+
+	if (completeName.Length() > 0) {
+		reply.AddString("friendly_name", completeName.String());
+		reply.AddBool("friendly_name_is_complete", true);
+	} else if (shortName.Length() > 0) {
+		reply.AddString("friendly_name", shortName.String());
+		reply.AddBool("friendly_name_is_complete", false);
+	}
 }
 
 
@@ -878,17 +1069,16 @@ LocalDeviceImpl::ConnectionRequest(struct hci_ev_conn_request* event,
 		newrequest->AddInt16("opcodeExpected", PACK_OPCODE(OGF_LINK_CONTROL,
 			OCF_ACCEPT_CONN_REQ));
 
-		newrequest->AddInt16("eventExpected", HCI_EVENT_CONN_COMPLETE);
-		newrequest->AddInt16("eventExpected", HCI_EVENT_PIN_CODE_REQ);
-		newrequest->AddInt16("eventExpected", HCI_EVENT_ROLE_CHANGE);
-		newrequest->AddInt16("eventExpected", HCI_EVENT_LINK_KEY_NOTIFY);
-		newrequest->AddInt16("eventExpected",
-			HCI_EVENT_PAGE_SCAN_REP_MODE_CHANGE);
+		newrequest->AddInt16("eventExpected", HCI_EVENT_PAGE_SCAN_REP_MODE_CHANGE);
 
-		#if 0
+		newrequest->AddInt16("eventExpected", HCI_EVENT_LINK_KEY_REQ);
+		newrequest->AddInt16("eventExpected", HCI_EVENT_ROLE_CHANGE);
+		newrequest->AddInt16("eventExpected", HCI_EVENT_CONN_COMPLETE);
+
+#if 0
 		newrequest->AddInt16("eventExpected", HCI_EVENT_MAX_SLOT_CHANGE);
 		newrequest->AddInt16("eventExpected", HCI_EVENT_DISCONNECTION_COMPLETE);
-		#endif
+#endif
 
 		AddWantedEvent(newrequest);
 
@@ -924,6 +1114,15 @@ LocalDeviceImpl::ConnectionComplete(struct hci_ev_conn_complete* event,
 			BluetoothError(event->status));
 	}
 
+	BMessage* newrequest = new BMessage;
+
+
+	newrequest->AddInt16("eventExpected", HCI_EVENT_IO_CAPABILITY_REQUEST);
+	newrequest->AddInt16("eventExpected", HCI_EVENT_IO_CAPABILITY_RESPONSE);
+
+	// this implies PAIRING complete
+	newrequest->AddInt16("eventExpected", HCI_EVENT_LINK_KEY_NOTIFY);
+	AddWantedEvent(newrequest);
 	// it was expected
 	if (request != NULL) {
 		BMessage reply;
@@ -938,8 +1137,7 @@ LocalDeviceImpl::ConnectionComplete(struct hci_ev_conn_complete* event,
 			printf("%s: Error sending reply!\n", __func__);
 		// debug reply.PrintToStream();
 
-		// This request is not gonna be used anymore
-		ClearWantedEvent(request);
+		ClearWantedEvent(request, HCI_EVENT_CONN_COMPLETE);
 	}
 
 }
@@ -971,6 +1169,7 @@ void
 LocalDeviceImpl::PinCodeRequest(struct hci_ev_pin_code_req* event,
 	BMessage* request)
 {
+	TRACE_BT("LocalDeviceImpl: Opening PincodeWindow...");
 	PincodeWindow* iPincode = new PincodeWindow(event->bdaddr, GetID());
 	iPincode->Show();
 }
@@ -1000,6 +1199,8 @@ LocalDeviceImpl::LinkKeyNotify(hci_ev_link_key_notify* event,
 	TRACE_BT("LocalDeviceImpl: %s: Address %s, key=%s, type=%d\n", __FUNCTION__,
 		bdaddrUtils::ToString(event->bdaddr).String(),
 		LinkKeyUtils::ToString(event->link_key).String(), event->key_type);
+	if (request != NULL)
+		ClearWantedEvent(request);
 }
 
 
@@ -1020,6 +1221,12 @@ LocalDeviceImpl::LinkKeyRequested(struct hci_ev_link_key_req* keyRequested,
 	BluetoothCommand<typed_command(hci_cp_link_key_neg_reply)>
 		linkKeyNegativeReply(OGF_LINK_CONTROL, OCF_LINK_KEY_NEG_REPLY);
 
+	BMessage* newrequest = new BMessage;
+	newrequest->AddInt16("eventExpected", HCI_EVENT_CMD_COMPLETE);
+	newrequest->AddInt16("opcodeExpected", PACK_OPCODE(OGF_LINK_CONTROL, OCF_LINK_KEY_NEG_REPLY));
+	// on neg reply we expect this
+	newrequest->AddInt16("eventExpected", HCI_EVENT_PIN_CODE_REQ);
+	AddWantedEvent(newrequest);
 	bdaddrUtils::Copy(linkKeyNegativeReply->bdaddr, keyRequested->bdaddr);
 
 	if ((fHCIDelegate)->IssueCommand(linkKeyNegativeReply.Data(),
@@ -1086,6 +1293,119 @@ LocalDeviceImpl::NumberOfCompletedPackets(struct hci_ev_num_comp_pkts* event)
 			numberPackets->num_completed);
 
 			numberPackets++;
+	}
+}
+
+
+void
+LocalDeviceImpl::IOCapabilityRequest(struct hci_ev_io_capability_request* event, BMessage* request)
+{
+	size_t size;
+	void* command;
+
+	TRACE_BT("LocalDeviceImpl: IO Capability Request from %s...\n",
+		bdaddrUtils::ToString(event->bdaddr).String());
+
+	// this should be temporary, need to change this to HCI_IO_CAP_DISPLAY_YES_NO
+	command = buildIOCapabilityRequestReply(event->bdaddr, HCI_IO_CAP_NO_INPUT_NO_OUTPUT,
+		HCI_OOB_DATA_NOT_PRESENT, HCI_AUTH_REQ_NO_MITM_NO_BOND, &size);
+
+	BMessage* newrequest = new BMessage;
+
+	newrequest->AddInt16("eventExpected", HCI_EVENT_CMD_COMPLETE);
+	newrequest->AddInt16("opcodeExpected",
+		PACK_OPCODE(OGF_LINK_CONTROL, OCF_IO_CAPABILITY_REQUEST_REPLY));
+
+	// TODO:Check if there are more events we need to look for
+	newrequest->AddInt16("eventExpected", HCI_EVENT_USER_CONFIRMATION_REQUEST);
+	newrequest->AddInt16("eventExpected", HCI_EVENT_USER_PASSKEY_REQUEST);
+	newrequest->AddInt16("eventExpected", HCI_EVENT_SIMPLE_PAIRING_COMPLETE);
+
+	AddWantedEvent(newrequest);
+
+	if ((fHCIDelegate)->IssueCommand(command, size) == B_ERROR)
+		TRACE_BT("LocalDeviceImpl: Command issued error for reply %s\n", __FUNCTION__);
+	else
+		TRACE_BT("LocalDeviceImpl: Command issued in reply of  %s\n", __FUNCTION__);
+}
+
+
+void
+LocalDeviceImpl::IOCapabilityResponse(struct hci_ev_io_capability_response* event,
+	BMessage* request)
+{
+	TRACE_BT("LocalDeviceImpl: %s for %s - Capability: 0x%02x, OOB: 0x%02x, Auth: 0x%02x\n",
+		__FUNCTION__, bdaddrUtils::ToString(event->bdaddr).String(), event->capability,
+		event->oob_data, event->authentication);
+}
+
+
+void
+LocalDeviceImpl::UserConfirmationRequest(struct hci_ev_user_confirmation_request* event,
+	BMessage* request)
+{
+	size_t size;
+	void* command;
+
+	TRACE_BT("LocalDeviceImpl: User Confirmation Request for %s (Passkey: %06" B_PRIu32 ")\n",
+		bdaddrUtils::ToString(event->bdaddr).String(), event->passkey);
+
+	command = buildUserConfirmReply(event->bdaddr, &size);
+
+
+	BMessage* newrequest = new BMessage;
+	newrequest->AddInt16("eventExpected", HCI_EVENT_CMD_COMPLETE);
+	newrequest->AddInt16("opcodeExpected", PACK_OPCODE(OGF_LINK_CONTROL, OCF_USER_CONFIRM_REPLY));
+
+	AddWantedEvent(newrequest);
+
+	if ((fHCIDelegate)->IssueCommand(command, size) == B_ERROR)
+		TRACE_BT("LocalDeviceImpl: Command issued error for reply %s\n", __FUNCTION__);
+	else
+		TRACE_BT("LocalDeviceImpl: Command issued in reply of  %s\n", __FUNCTION__);
+}
+
+
+void
+LocalDeviceImpl::SimplePairingComplete(struct hci_ev_simple_pairing_complete* event,
+	BMessage* request)
+{
+	if (event->status == BT_OK) {
+		TRACE_BT("LocalDeviceImpl: %s successfull for %s!\n", __FUNCTION__,
+			bdaddrUtils::ToString(event->bdaddr).String());
+
+	} else {
+		TRACE_BT("LocalDeviceImpl: %s failed for %s with error %s\n", __FUNCTION__,
+			bdaddrUtils::ToString(event->bdaddr).String(), BluetoothError(event->status));
+	}
+	if (request != NULL)
+		ClearWantedEvent(request);
+}
+
+
+void
+LocalDeviceImpl::AuthComplete(struct hci_ev_auth_complete* eventData, BMessage* request)
+{
+	int16 handle = B_LENDIAN_TO_HOST_INT16(eventData->handle);
+	int8 status = eventData->status;
+
+	if (status == BT_OK) {
+		TRACE_BT("LocalDeviceImpl: Authentication Successful for handle %d\n", handle);
+	} else {
+		TRACE_BT("LocalDeviceImpl: Authentication Failed for handle %d with status 0x%02x\n",
+			handle, status);
+	}
+
+	if (request != NULL) {
+		BMessage reply;
+		reply.AddInt8("status", status);
+		reply.AddInt16("handle", handle);
+
+		request->SendReply(&reply);
+
+		ClearWantedEvent(request);
+	} else {
+		TRACE_BT("LocalDeviceImpl: Auth Complete received but no local request was waiting.\n");
 	}
 }
 

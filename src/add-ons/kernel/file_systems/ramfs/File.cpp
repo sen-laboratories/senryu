@@ -76,6 +76,6 @@ File::GetSize() const
 void
 File::GetAllocationInfo(AllocationInfo &info)
 {
-	info.AddFileAllocation(GetSize());
+	info.AddFileAllocation(DataContainer::GetCommittedSize());
 }
 

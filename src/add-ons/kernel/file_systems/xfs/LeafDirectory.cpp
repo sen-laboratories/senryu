@@ -7,6 +7,7 @@
 
 #include "LeafDirectory.h"
 
+#include "Utility.h"
 #include "VerifyHeader.h"
 
 
@@ -381,8 +382,7 @@ LeafDirectory::Lookup(const char* name, size_t length, xfs_ino_t* ino)
 		TRACE("offset:(%" B_PRIu32 ")\n", offset);
 		ExtentDataEntry* entry = (ExtentDataEntry*)(fDataBuffer + offset);
 
-		int retVal = strncmp(name, (char*)entry->name, entry->namelen);
-		if (retVal == 0) {
+		if (xfs_name_comp(name, length, entry->name, entry->namelen)) {
 			*ino = B_BENDIAN_TO_HOST_INT64(entry->inumber);
 			TRACE("ino:(%" B_PRIu64 ")\n", *ino);
 			return B_OK;

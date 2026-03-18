@@ -24,22 +24,22 @@
 #include <Message.h>
 
 #include <AppServerLink.h>
-#include <Autolock.h>
 #include <ObjectList.h>
 #include <PicturePlayer.h>
 #include <ServerProtocol.h>
+#include <locks.h>
 
 #include "PicturePrivate.h"
 
 
 static BObjectList<BPicture> sPictureList;
-static BLocker sPictureListLock;
+static mutex sPictureListLock = MUTEX_INITIALIZER("BPicture list");
 
 
 void
 reconnect_pictures_to_app_server()
 {
-	BAutolock _(sPictureListLock);
+	MutexLocker _(sPictureListLock);
 	for (int32 i = 0; i < sPictureList.CountItems(); i++) {
 		BPicture::Private picture(sPictureList.ItemAt(i));
 		picture.ReconnectToAppServer();
@@ -215,14 +215,14 @@ BPicture::_InitData()
 
 	fExtent = new (std::nothrow) _BPictureExtent_;
 
-	BAutolock _(sPictureListLock);
+	MutexLocker _(sPictureListLock);
 	sPictureList.AddItem(this);
 }
 
 
 BPicture::~BPicture()
 {
-	BAutolock _(sPictureListLock);
+	MutexLocker _(sPictureListLock);
 	sPictureList.RemoveItem(this, false);
 	_DisposeData();
 }

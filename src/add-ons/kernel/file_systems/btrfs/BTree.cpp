@@ -360,7 +360,7 @@ BTree::Path::Move(int level, int step)
 	fSlots[level] += step;
 	if (fSlots[level] < 0)
 		return -1;
-	if (fSlots[level] >= fNodes[level]->ItemCount())
+	if (static_cast<uint32>(fSlots[level]) >= fNodes[level]->ItemCount())
 		return 1;
 	return 0;
 }
@@ -371,7 +371,7 @@ BTree::Path::GetEntry(int slot, btrfs_key* _key, void** _value, uint32* _size,
 	uint32* _offset)
 {
 	BTree::Node* leaf = fNodes[0];
-	if (slot < 0 || slot >= leaf->ItemCount())
+	if (slot < 0 || static_cast<uint32>(slot) >= leaf->ItemCount())
 		return B_ENTRY_NOT_FOUND;
 
 	if (_key != NULL)
@@ -806,7 +806,7 @@ BTree::NextLeaf(Path* path) const
 	// iterate to the root until satisfy the condition
 	while (true) {
 		node = path->GetNode(level, &slot);
-		if (node == NULL || slot < node->ItemCount() - 1)
+		if (node == NULL || static_cast<uint32>(slot + 1) < node->ItemCount())
 			break;
 		level++;
 	}

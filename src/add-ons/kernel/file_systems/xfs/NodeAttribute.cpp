@@ -6,6 +6,7 @@
 
 #include "NodeAttribute.h"
 
+#include "Utility.h"
 #include "VerifyHeader.h"
 
 

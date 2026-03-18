@@ -276,8 +276,8 @@ MapDevice(DeviceInfo& di)
 			&(si.videoMemAddr));
 	}
 
-	TRACE("Video memory, area: %ld,  addr: 0x%" B_PRIXADDR "\n",
-		si.videoMemArea, (addr_t)(si.videoMemAddr));
+	TRACE("Video memory, area: %" B_PRId32 ",  addr: 0x%" B_PRIXADDR "\n", si.videoMemArea,
+		(addr_t)(si.videoMemAddr));
 
 	// If there was an error, delete other areas.
 	if (si.videoMemArea < 0) {
@@ -285,7 +285,7 @@ MapDevice(DeviceInfo& di)
 		si.regsArea = -1;
 	}
 
-	TRACE("leave MapDevice(); result: %ld\n", si.videoMemArea);
+	TRACE("leave MapDevice(); result: %" B_PRId32 "\n", si.videoMemArea);
 	return si.videoMemArea;
 }
 
@@ -653,7 +653,7 @@ status_t  init_driver(void)
 
 	gDeviceNames[count] = NULL;	// terminate list with null pointer
 
-	TRACE("init_driver() %ld supported devices\n", count);
+	TRACE("init_driver() %" B_PRIu32 " supported devices\n", count);
 
 	return B_OK;
 }
@@ -725,7 +725,8 @@ device_open(const char* name, uint32 /*flags*/, void** cookie)
 		*cookie = &di;		// send cookie to opener
 	}
 
-	TRACE("device_open() returning 0x%lx,  open count: %ld\n", status, di.openCount);
+	TRACE("device_open() returning 0x%" B_PRIx32 ",  open count: %" B_PRIu32 "\n", status,
+		di.openCount);
 	return status;
 }
 
@@ -803,7 +804,7 @@ device_free(void* dev)
 
 	gLock.Release();	// unlock driver
 
-	TRACE("exit device_free() openCount: %ld\n", di.openCount);
+	TRACE("exit device_free() openCount: %" B_PRIu32 "\n", di.openCount);
 	return B_OK;
 }
 
@@ -869,7 +870,7 @@ device_ioctl(void* dev, uint32 msg, void* buf, size_t len)
 						gsp->value = gPCI->read_io_32(gsp->offset);
 						break;
 					default:
-						TRACE("device_ioctl() S3_GET_PIO invalid size: %ld\n", gsp->size);
+						TRACE("device_ioctl() S3_GET_PIO invalid size: %" B_PRIu32 "\n", gsp->size);
 						return B_ERROR;
 				}
 				return B_OK;
@@ -892,7 +893,7 @@ device_ioctl(void* dev, uint32 msg, void* buf, size_t len)
 						gPCI->write_io_32(gsp->offset, gsp->value);
 						break;
 					default:
-						TRACE("device_ioctl() S3_SET_PIO invalid size: %ld\n", gsp->size);
+						TRACE("device_ioctl() S3_SET_PIO invalid size: %" B_PRIu32 "\n", gsp->size);
 						return B_ERROR;
 				}
 				return B_OK;
