@@ -441,11 +441,11 @@ status_t TTracker::PrepareLaunchTarget(
 {
 	// get relation target by ID from SEN server
 	BMessenger senMessenger(SEN_SERVER_SIGNATURE);
-	BMessage queryTargetIdMsg(SEN_QUERY_ID);
-	queryTargetIdMsg.AddString(SEN_ID_ATTR, targetId);
+	BMessage queryTargetRefMsg(SEN_QUERY_REF_FOR_ID);
+	queryTargetRefMsg.AddString(SEN_ID_ATTR, targetId);
 
 	BMessage reply;
-	senMessenger.SendMessage(&queryTargetIdMsg, &reply);
+	senMessenger.SendMessage(&queryTargetRefMsg, &reply);
 
 	status_t result = reply.FindRef("ref", targetRef);
 	if (result == B_OK) {
@@ -658,7 +658,7 @@ status_t TTracker::WriteTargetRelations(
 	entry_ref *workingDirRef,
 	entry_ref *openDirRef)
 {
-	if (relations->IsEmpty() != B_OK) {
+	if (relations->IsEmpty()) {
 		PRINT(("no relations found, skipping.\n"));
 		return B_OK;
 	}
@@ -736,6 +736,9 @@ status_t TTracker::WriteTargetRelations(
 			continue;
 		}
 
+		PRINT(("got relation properties:\n"));
+		properties.PrintToStream();
+		
 		targetId = properties.GetString(SEN_TO_ATTR);
 
 		// used for self (and later also n-ary) relations
@@ -851,8 +854,12 @@ status_t TTracker::WriteTargetRelations(
 		result = relationNodeInfo.SetType(relationType);
 
 		// write relation src/target IDs
-		if (result == B_OK) result = relationNode.WriteAttrString(SEN_RELATION_SOURCE_ATTR, new BString(srcId));
-		if (result == B_OK) result = relationNode.WriteAttrString(SEN_RELATION_TARGET_ATTR, new BString(targetId));
+		BString srcIdStr(srcId);
+		BString targetIdStr(targetId);
+		if (result == B_OK) 
+			result = relationNode.WriteAttrString(SEN_RELATION_SOURCE_ATTR, &srcIdStr);
+		if (result == B_OK) 
+			result = relationNode.WriteAttrString(SEN_RELATION_TARGET_ATTR, &targetIdStr);
 
 		// write refs if any
 		ssize_t sizeRead, sizeWritten;
@@ -869,6 +876,8 @@ status_t TTracker::WriteTargetRelations(
 					ERROR("  x failed to write relation source ref: %s\n", strerror(result));
 					return result;
 				}
+			} else if (result == B_NAME_NOT_FOUND) {
+				result = B_OK;
 			}
 			// same for target ref
 			result = relationConf->FindData(SEN_RELATION_TARGET_REF, B_REF_TYPE, &buffer, &sizeRead);
@@ -879,6 +888,8 @@ status_t TTracker::WriteTargetRelations(
 					ERROR("  x failed to write relation target ref: %s\n", strerror(result));
 					return result;
 				}
+			} else if (result == B_NAME_NOT_FOUND) {
+				result = B_OK;
 			}
 		}
 
