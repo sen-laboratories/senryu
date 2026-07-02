@@ -47,6 +47,7 @@ All rights reserved.
 #include <string.h>
 
 #include "PoseView.h"
+#include "TrackerSenRelations.h"
 #include <sen/Sensei.h>
 
 
@@ -79,7 +80,7 @@ BPoseView::HandleSenMessage(BMessage* message)
 			message->PrintToStream();
 
 			BMessage relationRefs(kOpenRelations);
-			result = ExtractSenParams(message, &relationRefs);
+			result = TrackerSenRelations::ExtractSenParams(message, &relationRefs);
 
 			if (result == B_OK) {
 				// forward to TrackerSen for central relation folder handling
@@ -98,7 +99,7 @@ BPoseView::HandleSenMessage(BMessage* message)
 			message->PrintToStream();
 
 			BMessage relationRefs(kOpenRelations);
-			result = ExtractSenParams(message, &relationRefs);
+			result = TrackerSenRelations::ExtractSenParams(message, &relationRefs);
 
 			if (result == B_OK) {
 				// forward to TrackerSen for central relation folder handling
@@ -186,62 +187,6 @@ BPoseView::EnrichRefsFromSelection(bool wipe) {
 		}
 	}
 	return B_OK;	// in any case, concerning the caller, we've done our best.
-}
-
-
-// just handle refs and what code extra, rest has always SEN: prefix
-status_t
-BPoseView::ExtractSenParams(const BMessage* message, BMessage* enrichedMessage)
-{
-	entry_ref srcRef;
-	status_t result = message->FindRef(SEN_RELATION_SOURCE_REF, &srcRef);
-	if (result == B_OK) {
-		enrichedMessage->AddRef(SEN_RELATION_SOURCE_REF, &srcRef);
-	}
-
-	// add all properties from this item at this index (e.g. page, position,...)
-	char* name;
-	int32 count;
-	int32 index = 0;
-	type_code typeCode;
-	result = B_OK;	// could be B_NAME_NOT_FOUND from above!
-
-	while (result == B_OK) {
-		result = message->GetInfo(B_ANY_TYPE, index, &name,	&typeCode, &count);
-		if (result != B_OK) {
-			if (result == B_BAD_INDEX) {
-				break;	// end of line, done
-			}
-			PRINT(("failed to get message info at index #%d: %s\n", index, strerror(result)));
-			return result;
-		}
-
-		// add message property only if it comes from SEN
-		if (BString(name).IStartsWith(SEN_ATTR_PREFIX) || BString(name).IStartsWith(SENSEI_ATTR_PREFIX)) {
-			PRINT(("adding SEN properties at index %d with name %s and count %d:\n", index, name, count));
-		}
-		const void* data;
-		ssize_t size;
-
-		result = message->FindData(name, typeCode, index, &data, &size);
-		if (result != B_OK) {
-			PRINT(("failed to get message data for property %s[%d]: %s\n",
-					name, index, strerror(result)));
-			return result;
-		}
-
-		// finally copy over data to keep
-		result = enrichedMessage->AddData(name, typeCode, data, size);
-		if (result != B_OK) {
-			PRINT(("failed to add message data '%s' at index %d: %s\n",
-					name, index, strerror(result)));
-			return result;
-		}
-
-		index++;
-	}
-
-	return B_OK;	// all params are optional for now
 }
 
 

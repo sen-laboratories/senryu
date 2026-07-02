@@ -96,6 +96,7 @@ for architectureObject in [ MultiArchSubDirSetup ] {
 			TrackerInitialState.cpp
 			TrackerScripting.cpp
 			TrackerSen.cpp
+			TrackerSenRelations.cpp
 			TrackerSettings.cpp
 			TrackerSettingsWindow.cpp
 			TrackerString.cpp

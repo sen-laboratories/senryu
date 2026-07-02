@@ -32,6 +32,11 @@ private:
 	uint32 AddRelationItems(const entry_ref* sourceRef);
 	uint32 AddSelfRelationItems(const entry_ref* sourceRef);
 
+	// looks up SEN_RELATION_NAME for typeName in relationConfigs, falling
+	// back to typeName itself if there's no config or name entry.
+	static BString ResolveRelationLabel(const BMessage& relationConfigs,
+		const BString& typeName);
+
 	BMessage    fEntriesToOpen;
 	BMessenger  fTrackerMessenger;
 	BWindow*    fParentWindow;

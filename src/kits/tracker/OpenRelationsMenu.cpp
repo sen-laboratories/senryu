@@ -176,6 +176,23 @@ OpenRelationsMenu::DoneBuildingItemList()
 	}
 }
 
+BString
+OpenRelationsMenu::ResolveRelationLabel(const BMessage& relationConfigs, const BString& typeName)
+{
+	BString label;
+	BMessage relationConf;
+
+	if (relationConfigs.FindMessage(typeName.String(), &relationConf) == B_OK) {
+		label = relationConf.GetString(SEN_RELATION_NAME);
+	}
+	if (label.IsEmpty()) {
+		PRINT(("could not get relation config for type %s, falling back to type name.\n",
+			typeName.String() ));
+		label = typeName;
+	}
+	return label;
+}
+
 uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 	BString srcId;
 	if (fRelationsReply.FindString(SEN_RELATION_SOURCE_ID, &srcId) != B_OK) {
@@ -262,18 +279,7 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 		}
 
 		// get label from relation config
-		BString  label;
-		BMessage relationConf;
-		result = relationConfigs.FindMessage(typeName.String(), &relationConf);
-
-		if (result == B_OK) {
-			label = relationConf.GetString(SEN_RELATION_NAME);
-		}
-		if (label.IsEmpty()) {
-			PRINT(("could not get relation config for type %s, falling back to FQN: %s.\n",
-				typeName.String(), strerror(result) ));
-			label = typeName;
-		}
+		BString label = ResolveRelationLabel(relationConfigs, typeName);
 
         BMenuItem* item = new IconMenuItem(
             new OpenRelationTargetsMenu(label.String(), message, fParentWindow, fTrackerMessenger),
@@ -400,18 +406,7 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const entry_ref* sourceRef) {
 		openRelationTargetsMsg.AddMessage(SENSEI_PLUGIN_CONFIG_KEY, &pluginConfig);
 
 		// get label from relation config
-		BString  label;
-		BMessage relationConf;
-		result = relationConfigs.FindMessage(defaultType.String(), &relationConf);
-
-		if (result == B_OK) {
-			label = relationConf.GetString(SEN_RELATION_NAME);
-		}
-		if (label.IsEmpty()) {
-			PRINT(("could not get relation config for type %s, falling back to type name: %s.\n",
-				defaultType.String(), strerror(result) ));
-			label = defaultType;
-		}
+		BString label = ResolveRelationLabel(relationConfigs, defaultType);
 
         BMenuItem* item = new IconMenuItem(
             new OpenRelationTargetsMenu(label.String(), new BMessage(message), fParentWindow, be_app_messenger),
