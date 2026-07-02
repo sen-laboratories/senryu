@@ -38,7 +38,7 @@ All rights reserved.
 #include <SupportDefs.h>
 
 #include <tracker_private.h>
-#include "Sensei.h"
+#include <sen/Sensei.h>
 
 // public commands moved here so they may be included by other apps
 

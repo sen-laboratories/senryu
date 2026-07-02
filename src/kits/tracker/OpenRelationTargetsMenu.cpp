@@ -13,8 +13,8 @@
 #include "FSUtils.h"
 #include "IconMenuItem.h"
 #include "OpenRelationTargetsMenu.h"
-#include "Sen.h"
-#include "Sensei.h"
+#include <sen/Sen.h>
+#include <sen/Sensei.h>
 #include "MimeTypes.h"
 #include "StopWatch.h"
 #include "Tracker.h"

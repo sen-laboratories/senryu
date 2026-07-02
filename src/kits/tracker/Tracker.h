@@ -40,7 +40,7 @@ All rights reserved.
 #include <Entry.h>
 
 #include "LockingList.h"
-#include "Sen.h"
+#include <sen/Sen.h>
 #include "SettingsHandler.h"
 #include "Utilities.h"
 

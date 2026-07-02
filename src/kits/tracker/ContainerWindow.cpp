@@ -89,7 +89,7 @@ All rights reserved.
 #include "PoseView.h"
 #include "QueryContainerWindow.h"
 #include "SelectionWindow.h"
-#include "Sen.h"
+#include <sen/Sen.h>
 #include "Shortcuts.h"
 #include "TemplatesMenu.h"
 #include "Thread.h"

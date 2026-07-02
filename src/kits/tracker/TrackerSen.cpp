@@ -22,8 +22,8 @@
 #include "Commands.h"
 #include "FSUtils.h"
 
-#include "Sen.h"
-#include "Sensei.h"
+#include <sen/Sen.h>
+#include <sen/Sensei.h>
 #include "Tracker.h"
 
 bool

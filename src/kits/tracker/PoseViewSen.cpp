@@ -47,7 +47,7 @@ All rights reserved.
 #include <string.h>
 
 #include "PoseView.h"
-#include "Sensei.h"
+#include <sen/Sensei.h>
 
 
 bool

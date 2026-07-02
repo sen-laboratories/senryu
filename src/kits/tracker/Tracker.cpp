@@ -81,8 +81,8 @@ All rights reserved.
 #include "OpenWithWindow.h"
 #include "PoseView.h"
 #include "QueryContainerWindow.h"
-#include "Sen.h"
-#include "Sensei.h"
+#include <sen/Sen.h>
+#include <sen/Sensei.h>
 #include "StatusWindow.h"
 #include "TaskLoop.h"
 #include "Thread.h"

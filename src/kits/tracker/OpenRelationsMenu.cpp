@@ -13,8 +13,8 @@
 #include "OpenRelationsMenu.h"
 #include "OpenRelationTargetsMenu.h"
 #include "MimeTypes.h"
-#include "Sen.h"
-#include "Sensei.h"
+#include <sen/Sen.h>
+#include <sen/Sensei.h>
 #include "StopWatch.h"
 #include "Tracker.h"
 
