@@ -539,12 +539,14 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 			// will open the target item as SEN enriched ref in Tracker
 			openRelationItemMsg.what = SEN_OPEN_RELATION_TARGET;
 
-			// here we know which config we need, so pass only selected type inside properties
+			// here we know which config we need, so pass only the selected type's
+			// config - TrackerSen::HandleSenMessage's SEN_OPEN_RELATION_TARGET case
+			// looks this up at the top level of the message, not inside properties.
 			BMessage selectedConfig;
 			result = relationConfigs.FindMessage(type, &selectedConfig);
 
 			if (result == B_OK) {
-				relationProperties.AddMessage(SEN_RELATION_CONFIG, &selectedConfig);
+				openRelationItemMsg.AddMessage(SEN_RELATION_CONFIG, &selectedConfig);
 			} else {
 				if (result != B_NAME_NOT_FOUND) {
 					PRINT(("    x failed to inspect relation configs: %s\n", strerror(result) ));
