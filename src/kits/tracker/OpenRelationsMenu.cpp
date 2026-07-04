@@ -400,8 +400,10 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const entry_ref* sourceRef) {
 
 		// add only needed parts of SEN relation config as compact individual fields
         openRelationTargetsMsg.AddRef(SEN_RELATION_SOURCE_REF, sourceRef);
-		// add relation config
-		openRelationTargetsMsg.AddMessage(SEN_RELATION_CONFIG, &relationConfigs);
+		openRelationTargetsMsg.AddString(SEN_RELATION_TYPE, defaultType);
+		// add relation config - PrepareRelationTargetFolder() looks this up by
+		// SEN_RELATION_CONFIG_MAP, same as the non-self relation path above.
+		openRelationTargetsMsg.AddMessage(SEN_RELATION_CONFIG_MAP, &relationConfigs);
 		openRelationTargetsMsg.AddString(SENSEI_PLUGIN_KEY, pluginName);
 		openRelationTargetsMsg.AddMessage(SENSEI_PLUGIN_CONFIG_KEY, &pluginConfig);
 
