@@ -47,7 +47,7 @@ All rights reserved.
 #include "Model.h"
 #include "PendingNodeMonitorCache.h"
 #include "PoseList.h"
-#include "Sen.h"
+#include <sen/Sen.h>
 #include "TitleView.h"
 #include "Utilities.h"
 #include "ViewState.h"
@@ -465,7 +465,6 @@ protected:
 	status_t ExtractRefsFromSelection(BMessage* refs);
 	status_t EnrichRefsFromSelection(bool wipe = true);
 	status_t EnrichRefWithPlugin(const entry_ref* ref, bool wipe = true);
-	status_t ExtractSenParams(const BMessage* message, BMessage* enrichedMessage);
 
 	bool SetProperty(BMessage* message, BMessage* specifier, int32 form,
 		const char* property, BMessage* reply);

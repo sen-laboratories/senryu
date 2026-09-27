@@ -15,5 +15,6 @@ SubInclude HAIKU_TOP src tests kits package ;
 SubInclude HAIKU_TOP src tests kits shared ;
 SubInclude HAIKU_TOP src tests kits storage ;
 SubInclude HAIKU_TOP src tests kits support ;
+SubInclude HAIKU_TOP src tests kits tracker ;
 SubInclude HAIKU_TOP src tests kits translation ;
 

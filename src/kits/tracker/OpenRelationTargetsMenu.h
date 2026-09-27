@@ -9,7 +9,7 @@
 
 #include <String.h>
 
-#include "Sen.h"
+#include <sen/Sen.h>
 #include "SlowMenu.h"
 
 class OpenRelationTargetsMenu : public BSlowMenu {

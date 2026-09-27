@@ -6,6 +6,10 @@ UseHeaders [ FDirName $(HAIKU_TOP) src add-ons input_server filters shortcut_cat
 UsePrivateHeaders interface mount shared storage support tracker ;
 UsePrivateSystemHeaders ;
 
+# SEN (Semantic Extensions Native) headers, installed as a non-packaged
+# Haiku developer package rather than vendored into this source tree.
+UseHeaders [ FDirName "" boot home config non-packaged develop headers ] ;
+
 SubDirC++Flags
 	-D_BUILDING_tracker=1
 #	-D_INCLUDES_CLASS_DEVICE_MAP=1
@@ -92,6 +96,7 @@ for architectureObject in [ MultiArchSubDirSetup ] {
 			TrackerInitialState.cpp
 			TrackerScripting.cpp
 			TrackerSen.cpp
+			TrackerSenRelations.cpp
 			TrackerSettings.cpp
 			TrackerSettingsWindow.cpp
 			TrackerString.cpp

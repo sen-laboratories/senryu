@@ -11,7 +11,7 @@
 #include <Debug.h>
 #include <FindDirectory.h>
 
-#include "Sen.h"
+#include <sen/Sen.h>
 #include "TemplateUtils.h"
 // NOTE: if used from TemplatesMenu later, remove this and move kTemplatesDirectory to this header!
 #include "TemplatesMenu.h"

@@ -40,7 +40,7 @@ All rights reserved.
 #include <Entry.h>
 
 #include "LockingList.h"
-#include "Sen.h"
+#include <sen/Sen.h>
 #include "SettingsHandler.h"
 #include "Utilities.h"
 
@@ -164,10 +164,13 @@ protected:
 	bool SetProperty(BMessage*, BMessage*, int32, const char*, BMessage*);
 
 	// SEN integration
+	// Attribute/filesystem I/O for SEN relations lives in TrackerSenRelations
+	// (stateless, see TrackerSenRelations.h) - these are the methods that
+	// stay on TTracker because they orchestrate message dispatch and Tracker
+	// app state.
 	bool HandleSenMessage(BMessage*);
-	bool ResolveRelation(const entry_ref*, BString*, BString*);
-	status_t GetSenIcon(const char* mimeType, const char* iconType, void** icon, size_t* iconSize);
-	status_t GetInodeForRef(const entry_ref* srcRef, BString* inode);
+	// FIXME: declared but never implemented - verify still needed before
+	// wiring it up, or drop the declaration.
 	status_t ConvertSelfRelationsToCommon(const char* targetId, const BMessage* relationsFlat,
 	                                      const BMessage* typeMapping, const BMessage* attrMapping,
 										  BMessage* relationsNested);
@@ -177,14 +180,6 @@ protected:
 	status_t PrepareLaunchTarget(const entry_ref* srcRef, const char* targetId, entry_ref* targetRef, BMessage* params);
 	status_t PrepareRelationFolder(BMessage *message, entry_ref *relationDIr);
 	status_t PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDir);
-	status_t WriteTargetRelations(BMessage *message, BMessage* relationConf,
-	                              entry_ref *relationDirRef, entry_ref *openDirRef);
-	status_t CreateRelationDirectory(const char* folderId,
-	                                 const char* relationType,
-	                                 const BMessage* relationConfig,
-									 entry_ref *ref);
-	status_t ConvertAttributesToMessage(const entry_ref* ref, BMessage* params);
-	status_t GetRelationAttributeInfo(const char* relationType, BMessage* attrInfo);
 
 private:
 	class WatchingInterface;
