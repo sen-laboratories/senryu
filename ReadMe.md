@@ -1,7 +1,5 @@
 ![senryu-black.png](data/artwork/senryu-logo/senryu-black.png)
 
-SEN Labs has moved to [Codeberg](https://codeberg.org/senlabs/) - see you there!
-
 # SENryu
 
 ## Project Overview
