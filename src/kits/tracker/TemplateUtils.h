@@ -10,6 +10,11 @@
 #include <StringList.h>
 #include <SupportDefs.h>
 
+namespace BPrivate {
+extern const char* kTemplatesDirectory;
+}
+using namespace BPrivate;
+
 class TemplateUtils {
 public:
     static int32    GetInstalledTemplates(const char* path = NULL,

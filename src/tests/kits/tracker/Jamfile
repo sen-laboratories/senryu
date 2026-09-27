@@ -5,7 +5,7 @@ AddSubDirSupportedPlatforms libbe_test ;
 UsePrivateHeaders storage tracker ;
 
 # SEN headers, see src/kits/tracker/Jamfile for the same setup.
-UseHeaders [ FDirName "" boot home config non-packaged develop headers ] ;
+SubDirC++Flags -I/boot/home/config/non-packaged/develop/headers ;
 
 # Pull in the stateless SEN utility sources directly rather than linking
 # libtracker.so - these tests exercise pure attribute/filesystem logic and

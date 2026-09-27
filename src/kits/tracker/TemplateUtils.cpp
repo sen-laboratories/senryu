@@ -13,8 +13,10 @@
 
 #include <sen/Sen.h>
 #include "TemplateUtils.h"
-// NOTE: if used from TemplatesMenu later, remove this and move kTemplatesDirectory to this header!
-#include "TemplatesMenu.h"
+
+namespace BPrivate {
+const char* kTemplatesDirectory = "Tracker/Tracker New Templates";
+}
 
 // LATER: cache and watch templates dir for changes using WatchNode()
 int32 TemplateUtils::GetInstalledTemplates(

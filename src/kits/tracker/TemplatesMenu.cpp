@@ -60,13 +60,6 @@ All rights reserved.
 #define B_TRANSLATION_CONTEXT "TemplatesMenu"
 
 
-namespace BPrivate {
-
-const char* kTemplatesDirectory = "Tracker/Tracker New Templates";
-
-} // namespace BPrivate
-
-
 //	#pragma mark - TemplatesMenu
 
 
