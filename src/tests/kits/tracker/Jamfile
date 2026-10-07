@@ -17,6 +17,7 @@ UnitTestLib libtrackerkittest.so
 		TrackerSenRelationsTest.cpp
 		TemplateUtilsTest.cpp
 		TrackerSenRelations.cpp
+		RelationFolders.cpp
 		TemplateUtils.cpp
 	: be [ TargetLibstdc++ ]
 ;

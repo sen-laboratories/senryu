@@ -26,6 +26,7 @@
 #include <sen/Sensei.h>
 #include "Tracker.h"
 #include "TrackerSenLog.h"
+#include "RelationFolders.h"
 
 bool
 TTracker::HandleSenMessage(BMessage* message)
@@ -466,13 +467,20 @@ TTracker::PrepareRelationFolder(BMessage *message, entry_ref* relationDirRef)
 		return result;
 	}
 
-	// generate unique relation folder name
-	// we can safely take the inode as folderId here since it's volume-bound anyway (e.g. to /tmp)
+	// every view has its own folder (a TSID): the inode of the source is not unique across volumes, and two views
+	// of the same file must not overwrite each other
+	BString viewId;
+	TrackerSenRelations::NewViewId(&viewId);
+
+	// the source is known by its SEN:ID, files without one by their inode
 	BString srcId;
-	result = TrackerSenRelations::GetInodeForRef(&srcRef, &srcId);
-	if (result != B_OK) {
-		PRINT(("failed to create relation folder: %s\n", strerror(result) ));
-		return result;
+	BNode srcNode(&srcRef);
+	if (srcNode.ReadAttrString(sen::attr::kId, &srcId) != B_OK || srcId.IsEmpty()) {
+		result = TrackerSenRelations::GetInodeForRef(&srcRef, &srcId);
+		if (result != B_OK) {
+			PRINT(("failed to create relation folder: %s\n", strerror(result) ));
+			return result;
+		}
 	}
 
 	// create SEN relation folders of relation type, relations are expected to be unique here
@@ -487,7 +495,13 @@ TTracker::PrepareRelationFolder(BMessage *message, entry_ref* relationDirRef)
 			PRINT(("could not find relation config for type %s, skipping.\n", relationType));
 			continue;
 		}
-		result = TrackerSenRelations::CreateRelationDirectory(srcId.String(), relationType, &relationConf, relationDirRef);
+		// stored relations are shown as files, one per relation; relations of plugins are resolved at run time
+		// when their menu is used, their folder stays a placeholder here
+		result = TrackerSenRelations::MaterializeType(srcRef, viewId.String(), relationType, relationDirRef);
+		if (result == B_NOT_SUPPORTED) {
+			result = TrackerSenRelations::CreateRelationDirectory(viewId.String(), srcId.String(), relationType,
+				&relationConf, relationDirRef);
+		}
 		if ((result != B_OK)) {
 			PRINT(("could not create directory for relation %s: %s\n", relationType, strerror(result)));
 			return result;
@@ -501,6 +515,18 @@ TTracker::PrepareRelationFolder(BMessage *message, entry_ref* relationDirRef)
 	result = relationDirEntry.GetParent(&rootRelationDirEntry);
 	if (result == B_OK) {
 		result = rootRelationDirEntry.GetRef(relationDirRef);
+	}
+
+	// the folder of all types takes dropped files as generic relations to them
+	if (result == B_OK) {
+		RelationFolders::FolderInfo root;
+		if (rootRelationDirEntry.GetNodeRef(&root.node) == B_OK) {
+			root.ref = *relationDirRef;
+			root.sourceRef = srcRef;
+			root.sourceId = srcId;
+			root.viewId = viewId;
+			RelationFolders::Instance().RegisterFolder(root);
+		}
 	}
 
 	return result;
@@ -613,7 +639,9 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 
 	// create top-level relation dir for src relation
 	// TODO: pass in all configs and handle mixed types properly
-	result = TrackerSenRelations::CreateRelationDirectory(srcId.String(), relationType, &relationConf, relationDirRef);
+	BString viewId;
+	TrackerSenRelations::NewViewId(&viewId);
+	result = TrackerSenRelations::CreateRelationDirectory(viewId.String(), srcId.String(), relationType, &relationConf, relationDirRef);
 	if ((result != B_OK)) {
 		PRINT(("could not create relation target folder: %s\n", strerror(result)));
 		return result;

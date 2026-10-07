@@ -35,6 +35,7 @@ All rights reserved.
 #define DEBUG 1
 
 #include "PoseView.h"
+#include "RelationFolders.h"
 #include <algorithm>
 #include <functional>
 #include <map>
@@ -4577,6 +4578,17 @@ BPoseView::HandleDropCommon(BMessage* message, Model* targetModel, BPose* target
 	if (poseView != NULL)
 		window = poseView->ContainerWindow();
 
+	// files dropped on a relation folder are relations, not files to copy or move: create, or move a relation
+	{
+		Model* dropTarget = targetModel;
+		if (dropTarget == NULL && poseView != NULL)
+			dropTarget = poseView->TargetModel();
+		if (dropTarget != NULL && dropTarget->IsDirectory()
+				&& RelationFolders::Instance().HandleDrop(*message, *dropTarget->NodeRef())) {
+			return true;
+		}
+	}
+
 	// look for srcWindow to determine whether drag was initiated in tracker
 	BContainerWindow* srcWindow = NULL;
 	status_t result = message->FindPointer("src_window", (void**)&srcWindow);
@@ -5622,6 +5634,9 @@ BPoseView::FSNotification(const BMessage* message)
 					}
 				}
 
+				// a relation file that is deleted removes its relation
+				RelationFolders::Instance().EntryRemoved(itemNode);
+
 			 	DeletePose(&itemNode);
 				TryUpdatingBrokenLinks();
 			}
@@ -5836,6 +5851,7 @@ BPoseView::EntryMoved(const BMessage* message)
 			Model* poseModel = pose->TargetModel();
 			ASSERT(poseModel != NULL);
 			poseModel->UpdateEntryRef(&dirNode, name);
+			RelationFolders::Instance().EntryRenamed(itemNode, name);
 
 			BPoint loc(0, index * fListElemHeight);
 			// if we get a rename then we need to assume that we might
@@ -5869,6 +5885,8 @@ BPoseView::EntryMoved(const BMessage* message)
 		if (pose != NULL)
 			pendingNodeMonitorCache.PoseCreatedOrMoved(this, pose);
 	} else if (oldDir == thisDirNode.node) {
+		// a relation file moved out of its folder (to the Trash, or to the folder of another relation type)
+		RelationFolders::Instance().EntryMoved(itemNode, dirNode);
 		DeletePose(&itemNode);
 	} else if (dirNode.node == thisDirNode.node) {
 		BPose* pose = EntryCreated(&dirNode, &itemNode, name);
@@ -5972,6 +5990,9 @@ BPoseView::AttributeChanged(const BMessage* message)
 	const char* attrName;
 	if (message->FindString("attr", &attrName) != B_OK)
 		attrName = NULL;
+
+	// an attribute of a relation file changed: the properties of the relation change
+	RelationFolders::Instance().AttributesChanged(itemNode, attrName);
 
 	Model* targetModel = TargetModel();
 	if (ContainerWindow()->ShouldHaveDraggableFolderIcon() && targetModel != NULL

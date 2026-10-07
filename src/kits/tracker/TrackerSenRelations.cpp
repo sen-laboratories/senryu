@@ -12,6 +12,7 @@
 #include <File.h>
 #include <FindDirectory.h>
 #include <MimeType.h>
+#include <Messenger.h>
 #include <Node.h>
 #include <NodeInfo.h>
 #include <Path.h>
@@ -21,6 +22,7 @@
 #include <sen/Sensei.h>
 
 #include "TrackerSenRelations.h"
+#include "RelationFolders.h"
 #include "TrackerSenLog.h"
 
 bool
@@ -145,8 +147,12 @@ TrackerSenRelations::WriteTargetRelations(
 
 		// determine useful file name for relation
 		// best fit: label, fallback: relation's shortname
-		entryName = properties.GetString(sen::attr::kRelationLabel);
-		if (entryName == NULL) {
+		// a relation to a target is named after the target, else after the label of the relation
+		const char* targetName = properties.GetString(sensei::key::kName, "");
+		entryName = targetName;
+		if (entryName.IsEmpty())
+			entryName = properties.GetString(sen::attr::kRelationLabel, "");
+		if (entryName.IsEmpty()) {
 			PRINT(("  x WARN: expected label not found, falling back to short name.\n"));
 			entryName = shortName;
 		}
@@ -314,6 +320,10 @@ TrackerSenRelations::WriteTargetRelations(
 				continue;
 			}
 
+			// the target is in SEN:REL:TO; as SEN:TO the file would be taken for a file that links to the target
+			if (strcmp(propertyName, sen::attr::kTo) == 0)
+				continue;
+
 			// don't write attributes for internal properties (starting with "_"),
 			// they are only temporary or have already been translated to full names.
 			if (strncmp(propertyName, "_", 1) == 0) {
@@ -346,6 +356,23 @@ TrackerSenRelations::WriteTargetRelations(
 		}   // properties loop
 		// sync after finished writing attributes
 		relationNode.Sync();
+
+		// a stored relation can be edited by working with its file: delete, change attributes, move
+		entry_ref storedSourceRef;
+		if (!isDynamic && !hasRelations && relationConf->FindRef(sen::key::kSourceRef, &storedSourceRef) == B_OK) {
+			RelationFolders::FileInfo info;
+			BEntry fileEntry(&relationDir, entryName.String());
+			node_ref fileNode;
+			if (fileEntry.GetRef(&info.ref) == B_OK && fileEntry.GetNodeRef(&fileNode) == B_OK
+					&& relationDir.GetNodeRef(&info.folder) == B_OK) {
+				info.sourceRef = storedSourceRef;
+				info.sourceId = srcId;
+				info.targetId = targetId;
+				info.relationType = relationType;
+				info.relationId = properties.GetString(sen::key::kRelationId, "");
+				RelationFolders::Instance().RegisterFile(fileNode, info);
+			}
+		}
 
 	} // relations loop
 
@@ -387,7 +414,8 @@ TrackerSenRelations::GetRelationAttributeInfo(const char* relationType, BMessage
 
 status_t
 TrackerSenRelations::CreateRelationDirectory(
-	const char* folderId,
+	const char* viewId,
+	const char* sourceId,
 	const char* relationType,
 	const BMessage* relationConfig,
 	entry_ref* relationDirRef)
@@ -408,7 +436,7 @@ TrackerSenRelations::CreateRelationDirectory(
 	}
 
 	result = relationsDirPath.Append("sen");
-	relationsDirPath.Append(folderId);
+	relationsDirPath.Append(viewId);
 	// Note: since relations are required to be a subtype of relation,
 	//       this will automatically create a relation subdir, handy:)
 	relationsDirPath.Append(relationType);
@@ -463,7 +491,7 @@ TrackerSenRelations::CreateRelationDirectory(
 		if (result == B_OK) result = relationNode.WriteAttrString("META:TYPE", new BString(sen::mime::kRelationFolder));
 		// add relation properties so we can populate the folder later with proper relation targets
 		// todo: move to SEN:ID for easier uniform handling here?
-		if (result == B_OK) result = relationNode.WriteAttrString(sen::attr::kRelationSource, new  BString(folderId));
+		if (result == B_OK) result = relationNode.WriteAttrString(sen::attr::kRelationSource, new BString(sourceId));
 		// TODO: also attach relation message for self relations
 		if (result == B_OK) result = relationNode.WriteAttrString(sen::attr::kFolderName, &folderLabel);
 	}
@@ -686,4 +714,111 @@ TrackerSenRelations::ExtractSenParams(const BMessage* message, BMessage* enriche
 	}
 
 	return B_OK;	// all params are optional for now
+}
+
+
+void
+TrackerSenRelations::NewViewId(BString* viewId)
+{
+	viewId->SetTo(sen::id::New().c_str());
+}
+
+
+void
+TrackerSenRelations::RelationsToList(const BMessage& relations, const BMessage& idToRef, BMessage* list)
+{
+	char* targetId;
+	type_code type;
+	int32 count;
+	for (int32 i = 0; relations.GetInfo(B_MESSAGE_TYPE, i, &targetId, &type, &count) == B_OK; i++) {
+		for (int32 set = 0; set < count; set++) {
+			BMessage properties;
+			if (relations.FindMessage(targetId, set, &properties) != B_OK)
+				continue;
+
+			properties.RemoveName(sen::attr::kTo);
+			properties.AddString(sen::attr::kTo, targetId);
+
+			entry_ref target;
+			BString name;
+			if (idToRef.FindRef(targetId, &target) == B_OK) {
+				name = target.name;
+			} else {
+				// a relation to a file that does not exist (any more)
+				name = properties.GetString(sen::attr::kRelationLabel, targetId);
+				name << " (missing)";
+			}
+			properties.RemoveName(sensei::key::kName);
+			properties.AddString(sensei::key::kName, name);
+
+			list->AddMessage(sen::key::kRelations, &properties);
+		}
+	}
+}
+
+
+status_t
+TrackerSenRelations::MaterializeType(const entry_ref& sourceRef, const char* viewId, const char* relationType,
+	entry_ref* typeDirRef)
+{
+	BMessage ask(sen::cmd::kRelationsGet);
+	ask.AddRef(sen::key::kSourceRef, &sourceRef);
+	ask.AddString(sen::key::kRelationType, relationType);
+	ask.AddBool(sen::key::kIdToRefMap, true);
+
+	BMessenger server(sen::kServerSignature);
+	BMessage reply;
+	status_t result = server.IsValid() ? server.SendMessage(&ask, &reply, 5000000, 5000000) : B_ERROR;
+	if (result == B_OK)
+		result = reply.GetInt32(sen::key::kResult, B_ERROR);
+	if (result != B_OK) {
+		ERROR("could not get the relations of type %s from the SEN server: %s\n", relationType, strerror(result));
+		return result;
+	}
+
+	BMessage relations, idToRef, configs, relationConfig;
+	reply.FindMessage(sen::key::kRelations, &relations);
+	reply.FindMessage(sen::key::kIdToRefMap, &idToRef);
+	if (reply.FindMessage(sen::key::kRelationConfigMap, &configs) != B_OK
+			|| configs.FindMessage(relationType, &relationConfig) != B_OK) {
+		return B_NAME_NOT_FOUND;
+	}
+
+	// relations of plugins are resolved at run time, not stored: they cannot be edited and are shown by their menus
+	if (relationConfig.GetBool(sen::conf::kDynamic, false) || relationConfig.GetBool(sen::conf::kSelf, false))
+		return B_NOT_SUPPORTED;
+
+	BString sourceId(reply.GetString(sen::key::kSourceId, ""));
+	if (sourceId.IsEmpty())
+		GetInodeForRef(&sourceRef, &sourceId);
+
+	result = CreateRelationDirectory(viewId, sourceId.String(), relationType, &relationConfig, typeDirRef);
+	if (result != B_OK)
+		return result;
+
+	BMessage list;
+	RelationsToList(relations, idToRef, &list);
+
+	BMessage config(relationConfig);
+	config.AddString(sen::key::kSourceId, sourceId);
+	config.AddRef(sen::key::kSourceRef, &sourceRef);
+	config.AddString(sen::key::kRelationType, relationType);
+
+	entry_ref workingRef(*typeDirRef), openRef(*typeDirRef);
+	result = WriteTargetRelations(&list, &config, &workingRef, &openRef);
+	if (result != B_OK)
+		return result;
+
+	RelationFolders::FolderInfo folder;
+	BEntry folderEntry(typeDirRef);
+	if (folderEntry.GetNodeRef(&folder.node) == B_OK) {
+		folder.ref = *typeDirRef;
+		folder.sourceRef = sourceRef;
+		folder.sourceId = sourceId;
+		folder.relationType = relationType;
+		folder.viewId = viewId;
+		folder.relationConfig = relationConfig;
+		RelationFolders::Instance().RegisterFolder(folder);
+	}
+	return B_OK;
 }
