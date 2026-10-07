@@ -32,6 +32,8 @@ names are registered trademarks or trademarks of their respective holders.
 All rights reserved.
 */
 
+#define DEBUG 1
+
 #include "Tracker.h"
 
 #include <errno.h>
@@ -80,6 +82,8 @@ All rights reserved.
 #include "OpenWithWindow.h"
 #include "PoseView.h"
 #include "QueryContainerWindow.h"
+#include <sen/Sen.h>
+#include <sen/Sensei.h>
 #include "StatusWindow.h"
 #include "TaskLoop.h"
 #include "Thread.h"
@@ -458,6 +462,8 @@ TTracker::MessageReceived(BMessage* message)
 {
 	if (HandleScriptingMessage(message))
 		return;
+	if (HandleSenMessage(message))
+		return;
 
 	switch (message->what) {
 		case kGetInfo:
@@ -630,9 +636,13 @@ TTracker::MessageReceived(BMessage* message)
 			break;
 		}
 
-		default:
+		default: {
+			if (message->what == B_REFS_RECEIVED)
+				PRINT(("forwarding refs received to BApplication...\n"));
+
 			_inherited::MessageReceived(message);
 			break;
+		}
 	}
 }
 
@@ -824,17 +834,19 @@ TTracker::LaunchAndCloseParentIfOK(const entry_ref* launchThis,
 status_t
 TTracker::OpenRef(const entry_ref* ref, const node_ref* nodeToClose,
 	const node_ref* nodeToSelect, OpenSelector selector,
-	const BMessage* messageToBundle)
+	const BMessage* messageToBundle, const node_ref* nodeToEdit)
 {
 	Model* model = NULL;
 	BEntry entry(ref, true);
 	status_t result = entry.InitCheck();
 
 	if (result != B_OK) {
-		BAlert* alert = new BAlert("",
+		BAlert* alert = new BAlert(
 			B_TRANSLATE("There was an error resolving the link."),
+			strerror(result),
 			B_TRANSLATE_COMMENT("Get info", "Tracker's 'Get info' panel [ALT+I]"),
 			B_TRANSLATE("Cancel"), 0, B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+
 		alert->SetFlags(alert->Flags() | B_CLOSE_ON_ESCAPE);
 		int32 choice = alert->Go();
 
@@ -842,6 +854,7 @@ TTracker::OpenRef(const entry_ref* ref, const node_ref* nodeToClose,
 			BMessenger tracker(kTrackerSignature);
 			BMessage message(kGetInfo);
 			message.AddRef("refs", ref);
+
 			tracker.SendMessage(&message);
 		}
 		return result;
@@ -865,6 +878,7 @@ TTracker::OpenRef(const entry_ref* ref, const node_ref* nodeToClose,
 		model->OpenNode();
 		BNodeInfo nodeInfo(model->Node());
 		char preferredApp[B_MIME_TYPE_LENGTH];
+
 		if (nodeInfo.GetPreferredApp(preferredApp) == B_OK
 			&& strcasecmp(preferredApp, kTrackerSignature) != 0) {
 			openAsContainer = false;
@@ -889,6 +903,9 @@ TTracker::OpenRef(const entry_ref* ref, const node_ref* nodeToClose,
 		delete model;
 		// run Launch in a separate thread and close parent if successful
 		if (nodeToClose) {
+			if (DEBUG) {
+				PRINT(("refsReceived nodeToClose, bypassing normal handling:\n"));
+			}
 			Thread::Launch(new EntryAndNodeDoSoonWithMessageFunctor<TTracker,
 				bool (TTracker::*)(const entry_ref*, const node_ref*,
 				const BMessage*)>(&TTracker::LaunchAndCloseParentIfOK, this,
@@ -899,14 +916,24 @@ TTracker::OpenRef(const entry_ref* ref, const node_ref* nodeToClose,
 				refsReceived = *messageToBundle;
 				refsReceived.what = B_REFS_RECEIVED;
 			}
+			if (DEBUG) {
+				PRINT(("Tracker: refsReceived is:\n"));
+				refsReceived.PrintToStream();
+			}
+
+			PRINT(("resolving normal target for ref %s\n", ref->name));
 			refsReceived.AddRef("refs", ref);
+
 			TrackerLaunch(&refsReceived, true);
 		}
 	}
 
-	if (nodeToSelect)
-		SelectChildInParentSoon(ref, nodeToSelect);
+	if (nodeToSelect || nodeToEdit) {
+		PRINT(("nodeToSelect is %s, nodeToEdit is %s\n",
+			(nodeToSelect ? "set" : "unset"), (nodeToEdit ? "set" : "unset") ));
 
+		SelectChildInParentSoon(ref, nodeToSelect, nodeToEdit);
+	}
 	return B_OK;
 }
 
@@ -921,6 +948,11 @@ TTracker::RefsReceived(BMessage* message)
 	entry_ref handlingApp;
 	if (message->FindRef("handler", &handlingApp) == B_OK)
 		selector = kOpenWith;
+
+#if DEBUG
+	PRINT(("Tracker::RefsReceived:\n"));
+	message->PrintToStream();
+#endif
 
 	int32 count;
 	uint32 type;
@@ -965,6 +997,7 @@ TTracker::RefsReceived(BMessage* message)
 			BMessage* bundleThis = NULL;
 			BMessage stackBundleThis;
 			BMessenger messenger;
+
 			if (message->FindMessenger("TrackerViewToken", &messenger)
 					== B_OK) {
 				bundleThis = &stackBundleThis;
@@ -972,6 +1005,7 @@ TTracker::RefsReceived(BMessage* message)
 			} else {
 				// copy over any "be:*" fields -- e.g. /bin/open may include
 				// "be:line" and "be:column"
+				// same for "sen:" fields as they contain SEN relation type and properties
 				for (int32 i = 0;; i++) {
 					char* name;
 					type_code type;
@@ -981,7 +1015,9 @@ TTracker::RefsReceived(BMessage* message)
 					if (error != B_OK)
 						break;
 
-					if (strncmp(name, "be:", 3) != 0)
+					if (strncasecmp(name, "be:", 3) != 0
+						&& strncasecmp(name, "sen:", 4) != 0
+						&& strncasecmp(name, "sensei:", 7) != 0)
 						continue;
 
 					for (int32 k = 0; k < count; k++) {
@@ -1006,15 +1042,17 @@ TTracker::RefsReceived(BMessage* message)
 
 				const node_ref* nodeToClose = NULL;
 				const node_ref* nodeToSelect = NULL;
+				const node_ref* nodeToEdit = NULL;
 				ssize_t numBytes;
 
 				message->FindData("nodeRefsToClose", B_RAW_TYPE, index,
 					(const void**)&nodeToClose, &numBytes);
 				message->FindData("nodeRefToSelect", B_RAW_TYPE, index,
 					(const void**)&nodeToSelect, &numBytes);
+				message->FindData("nodeRefToEdit", B_RAW_TYPE, index,
+					(const void**)&nodeToEdit, &numBytes);
 
-				OpenRef(&ref, nodeToClose, nodeToSelect, selector,
-					bundleThis);
+				OpenRef(&ref, nodeToClose, nodeToSelect, selector, bundleThis, nodeToEdit);
 			}
 
 			break;
@@ -1583,10 +1621,10 @@ TTracker::MimeTypes() const
 
 void
 TTracker::SelectChildInParentSoon(const entry_ref* parent,
-	const node_ref* child)
+	const node_ref* child, const node_ref* edit)
 {
 	fTaskLoop->RunLater(NewMemberFunctionObjectWithResult
-		(&TTracker::SelectChildInParent, this, parent, child),
+		(&TTracker::SelectChildInParent, this, parent, child, edit),
 		100000, 200000, 5000000);
 }
 
@@ -1698,7 +1736,7 @@ TTracker::CloseParentWindowCommon(BContainerWindow* window)
 
 
 bool
-TTracker::SelectChildInParent(const entry_ref* parent, const node_ref* child)
+TTracker::SelectChildInParent(const entry_ref* parent, const node_ref* child, const node_ref* edit)
 {
 	AutoLock<WindowList> lock(&fWindowList);
 
@@ -1715,6 +1753,11 @@ TTracker::SelectChildInParent(const entry_ref* parent, const node_ref* child)
 		BPose* pose = view->FindPose(child, &index);
 		if (pose != NULL) {
 			view->SelectPose(pose, index);
+			if (edit != NULL && *child == *edit) {
+				PRINT(("Tracker::SelectChildInParent - got edit node...\n"));
+				// start renaming the entry
+				pose->EditFirstWidget(BPoint(0, index * ceilf(be_plain_font->Size() * 1.65f)), view);
+			}
 			return true;
 		}
 	}

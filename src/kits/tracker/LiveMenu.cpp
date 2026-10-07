@@ -78,6 +78,11 @@ TLiveMixin::UpdateFileMenu(BMenu* menu)
 				case kIdentifyEntry:
 					fWindow->Shortcuts()->UpdateIdentifyItem(item);
 					break;
+
+				// Enrich/Enrich (overwrite)
+				case kEnrichEntry:
+					fWindow->Shortcuts()->UpdateEnrichItem(item);
+					break;
 			}
 		}
 
@@ -111,6 +116,22 @@ TLiveMixin::UpdateWindowMenu(BMenu* menu)
 				// Open parent
 				case kOpenParentDir:
 					fWindow->Shortcuts()->UpdateOpenParentItem(item);
+					break;
+
+				case kEnrichEntry:
+					fWindow->Shortcuts()->UpdateEnrichItem(item);
+					break;
+
+				case kNewAssociation:
+					fWindow->Shortcuts()->UpdateNewAssociationItem(item);
+					break;
+
+				case kOpenRelations:
+					fWindow->Shortcuts()->UpdateOpenRelationsItem(item);
+					break;
+
+				case kOpenSelfRelations:
+					fWindow->Shortcuts()->UpdateOpenSelfRelationsItem(item);
 					break;
 
 				// Close/Close all

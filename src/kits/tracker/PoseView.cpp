@@ -32,9 +32,9 @@ names are registered trademarks or trademarks of their respective holders.
 All rights reserved.
 */
 
+#define DEBUG 1
 
 #include "PoseView.h"
-
 #include <algorithm>
 #include <functional>
 #include <map>
@@ -637,6 +637,8 @@ BPoseView::SetupDefaultColumnsIfNeeded()
 	// in case there were errors getting some columns
 	if (CountColumns() != 0)
 		return;
+
+	// TODO: SEN: setup relation columns if in RelationContext!
 
 	AddColumn(new BColumn(B_TRANSLATE("Name"), 145,
 		B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));
@@ -2247,6 +2249,9 @@ BPoseView::MessageReceived(BMessage* message)
 	if (HandleScriptingMessage(message))
 		return;
 
+	if (HandleSenMessage(message))
+		return;
+
 	switch (message->what) {
 		case kAddNewPoses:
 		{
@@ -2497,11 +2502,14 @@ BPoseView::MessageReceived(BMessage* message)
 			be_app->PostMessage(message);
 			break;
 
-		case kNewEntryFromTemplate:
-			if (message->HasRef("refs_template"))
+		case kNewEntryFromTemplate:{
+			if (message->HasRef("refs_template")) {
 				NewFileFromTemplate(message);
+			} else {
+				PRINT(("cannot create new template without ref in refs_template!\n"));
+			}
 			break;
-
+		}
 		case kNewFolder:
 			NewFolder(message);
 			break;
@@ -2650,7 +2658,7 @@ BPoseView::MessageReceived(BMessage* message)
 			SetDefaultPrinter();
 			break;
 
-#if DEBUG
+#if !DEBUG	//HACK to avoid errors with test deps
 		case kTestIconCache:
 			RunIconCacheTests();
 			break;
@@ -3440,8 +3448,12 @@ BPoseView::NewFileFromTemplate(const BMessage* message)
 		return;
 
 	// TODO: Localise this
-	char fileName[B_FILE_NAME_LENGTH] = "New ";
-	strlcat(fileName, message->FindString("name"), sizeof(fileName));
+	// the name of a template may have the "New " already (SEN templates), it is not added twice
+	char fileName[B_FILE_NAME_LENGTH] = "";
+	const char* templateName = message->FindString("name");
+	if (strncmp(templateName, "New ", 4) != 0)
+		strlcpy(fileName, "New ", sizeof(fileName));
+	strlcat(fileName, templateName, sizeof(fileName));
 	BString suffix(" ");
 	suffix << B_TRANSLATE_COMMENT("copy", "filename copy");
 	FSMakeOriginalName(fileName, &destDir, suffix);
@@ -3483,6 +3495,28 @@ BPoseView::NewFileFromTemplate(const BMessage* message)
 
 	// create the UndoItem
 	NewFileTemplateUndo undo(fileRef, templateRef);
+
+	// coming from "create new relation"?
+	if (message->HasString(SEN_RELATION_TARGET_TYPE)) {
+		// send as SEN scripting message to add relation of desired type
+		BMessage addRelationMsg(SEN_RELATION_ADD);
+		addRelationMsg.AddString(SEN_RELATION_TYPE, message->GetString(SEN_RELATION_TYPE, ""));
+		addRelationMsg.AddString(SEN_RELATION_TARGET_TYPE, message->GetString(SEN_RELATION_TARGET_TYPE, ""));
+		entry_ref relationSrcRef;
+		message->FindRef(SEN_RELATION_SOURCE_REF, &relationSrcRef);
+		addRelationMsg.AddRef(SEN_RELATION_SOURCE_REF, &relationSrcRef);
+		addRelationMsg.AddRef(SEN_RELATION_TARGET_REF, &fileRef);
+
+		PRINT(("adding new relation to new target from template with message:\n"));
+		addRelationMsg.PrintToStream();
+
+		BMessenger senMsgr(SEN_SERVER_SIGNATURE);
+		if (senMsgr.IsValid()) {
+			senMsgr.SendMessage(&addRelationMsg);
+		} else {
+			PRINT(("could not reach sen_server.\n"));
+		}
+	}
 
 	// try to place new item at click point or under mouse if possible
 	PlaceFolder(&fileRef, message);
@@ -4135,8 +4169,12 @@ BPoseView::AddPoseToSelection(BPose* pose, int32 index, bool scrollIntoView)
 		if (scrollIntoView)
 			ScrollIntoView(poseRect);
 
-		if (fSelectionChangedHook)
+		if (fSelectionChangedHook) {
+			PRINT(("calling fSelectionChangedHook...\n"));
 			ContainerWindow()->SelectionChanged();
+		} else {
+			PRINT(("no fSelectionChangedHook defined, skipping notification.\n"));
+		}
 	}
 }
 
@@ -5700,8 +5738,9 @@ BPoseView::EntryCreated(const node_ref* dirNode, const node_ref* itemNode,
 	if (model->InitCheck() != B_OK) {
 		// if we have trouble setting up model then we stuff it into
 		// a zombie list in a half-alive state until we can properly awaken it
-		PRINT(("2 adding model %s to zombie list, error %s\n", model->Name(),
+		PRINT(("adding model %s to zombie list, error %s\n", model->Name(),
 			strerror(model->InitCheck())));
+
 		fZombieList->AddItem(model);
 		return NULL;
 	}

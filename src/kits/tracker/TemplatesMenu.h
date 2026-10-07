@@ -37,10 +37,11 @@ All rights reserved.
 
 #include <Menu.h>
 
+#include "TemplateUtils.h"
+
 
 namespace BPrivate {
 
-extern const char* kTemplatesDirectory;
 extern const char* kTemplatesMenuName;
 
 class TemplatesMenu : public BMenu {

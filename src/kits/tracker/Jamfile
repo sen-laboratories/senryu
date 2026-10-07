@@ -6,6 +6,10 @@ UseHeaders [ FDirName $(HAIKU_TOP) src add-ons input_server filters shortcut_cat
 UsePrivateHeaders interface mount shared storage support tracker ;
 UsePrivateSystemHeaders ;
 
+# SEN (Semantic Extensions Native) headers, installed as a non-packaged
+# Haiku developer package rather than vendored into this source tree.
+SubDirC++Flags -I/boot/home/config/non-packaged/develop/headers ;
+
 SubDirC++Flags
 	-D_BUILDING_tracker=1
 #	-D_INCLUDES_CLASS_DEVICE_MAP=1
@@ -61,6 +65,8 @@ for architectureObject in [ MultiArchSubDirSetup ] {
 			NavMenu.cpp
 			NodePreloader.cpp
 			NodeWalker.cpp
+			OpenRelationsMenu.cpp
+			OpenRelationTargetsMenu.cpp
 			OpenWithWindow.cpp
 			OverrideAlert.cpp
 			PendingNodeMonitorCache.cpp
@@ -68,6 +74,7 @@ for architectureObject in [ MultiArchSubDirSetup ] {
 			PoseList.cpp
 			PoseView.cpp
 			PoseViewScripting.cpp
+            PoseViewSen.cpp
 			QueryContainerWindow.cpp
 			QueryPoseView.cpp
 			RecentItems.cpp
@@ -80,6 +87,7 @@ for architectureObject in [ MultiArchSubDirSetup ] {
 			StatusWindow.cpp
 			TaskLoop.cpp
 			TemplatesMenu.cpp
+            TemplateUtils.cpp
 			Tests.cpp
 			TextWidget.cpp
 			Thumbnails.cpp
@@ -87,6 +95,8 @@ for architectureObject in [ MultiArchSubDirSetup ] {
 			Tracker.cpp
 			TrackerInitialState.cpp
 			TrackerScripting.cpp
+			TrackerSen.cpp
+			TrackerSenRelations.cpp
 			TrackerSettings.cpp
 			TrackerSettingsWindow.cpp
 			TrackerString.cpp
@@ -135,6 +145,7 @@ DoCatalogs libtracker.so :
 	NavMenu.cpp
 	OpenWithWindow.cpp
 	PoseView.cpp
+    PoseViewSen.cpp
 	QueryContainerWindow.cpp
 	QueryPoseView.cpp
 	RegExp.cpp
@@ -143,8 +154,10 @@ DoCatalogs libtracker.so :
 	Shortcuts.cpp
 	StatusWindow.cpp
 	TemplatesMenu.cpp
+    TemplateUtils.cpp
 	TextWidget.cpp
 	Tracker.cpp
+    TrackerSen.cpp
 	TrackerInitialState.cpp
 	TrackerSettingsWindow.cpp
 	VirtualDirectoryWindow.cpp

@@ -1,61 +1,57 @@
-Haiku
-=======================
-**[Homepage](https://www.haiku-os.org/)
-| [Mailing Lists](https://www.haiku-os.org/community/ml)
-| [IRC Channels](https://www.haiku-os.org/community/irc)
-| [Issue Tracker](https://dev.haiku-os.org/)
-| [API docs](https://api.haiku-os.org)**
+![senryu-black.png](data/artwork/senryu-logo/senryu-black.png)
 
-Haiku is an open-source operating system that specifically targets personal
-computing. Inspired by the BeOS, Haiku is fast, simple to use, easy to learn
-and yet very powerful.
+# SENryu
 
-Goals
-------------
- * Sensible defaults with minimal configuration required.
- * Clean, clear, concise code.
- * Unified desktop environment.
+## Project Overview
 
-Trying Haiku
----------------
-Haiku provides pre-built [nightly images](http://download.haiku-os.org/) and
-[release images](https://www.haiku-os.org/get-haiku). Haiku is compatible
-with a large variety of hardware, but in case you don't want to "take the
-plunge" and install Haiku on bare metal, you can install it on a virtual
-machine (VM) instead. If you've never used a VM before, you can follow one of
-the ["Emulating Haiku"](https://www.haiku-os.org/guides/virtualizing/) guides.
+**SENryu** is a friendly fork of the [Haiku operating system](https://www.haiku-os.org). It serves as a specialized distribution designed to experiment with **Semantic Extensions Native (SEN)** for Personal Knowledge Management (PKM).
 
-Compiling Haiku
----------------
-See `ReadMe.Compiling`.
+The project aims to transform the traditional file-based desktop into a native semantic environment where information is interconnected through rich, typed relationships rather than isolated within a rigid directory hierarchy.
 
-Contributing
--------------------
-Haiku is a meritocratic open source project with a large variety of tasks. Even
-if you can't write code, *you can still help*! Haiku needs designers,
-(technical) writers, translators, testers... [Get involved](https://www.haiku-os.org/community/getting-involved/)
-and help out!
+See [SEN Labs@Github](https://github.com/sen-laboratories) and [SEN Core](https://github.com/sen-laboratories/sen-core) for more information on SEN itself.
 
-### Contributing code
-If you're submitting a patch to us, please make sure you're following the
-[patch submitting guidelines](https://dev.haiku-os.org/wiki/CodingGuidelines/SubmittingPatches).
+## Relationship to Haiku
 
-If you're having trouble finding something in the source tree, you can use
-one of our web-based source code browsers:
+SENryu is built upon the robust foundation of the Haiku project and maintains a close, collaborative relationship with the upstream community:
 
- * https://grok.nikisoft.one/opengrok/ (OpenGrok, provided by Niklas Poslovski)
- * https://git.haiku-os.org/ (git, provided by Haiku, Inc.)
+* **Foundation**: We track Haiku's core development to ensure the system remains modern and stable.
+* **Compatibility**: SENryu maintains binary compatibility with existing Haiku applications.
+* **Contributions**: We view SENryu as a laboratory for the broader ecosystem. Contributions and backports of relevant features or bug fixes to the main Haiku project are highly encouraged and a primary goal of our development.
 
-### Contributing documentation
-The main piece of documentation that still needs work are the API docs (found
-in the tree at `docs/user`). Just find an undocumented class, write
-documentation for it, and [submit a patch](https://dev.haiku-os.org/wiki/CodingGuidelines/SubmittingPatches).
+## Development Model
 
-### Contributing translations
-See [wiki:i18n](https://dev.haiku-os.org/wiki/i18n).
+In contrast to the upstream project infrastructure, **GitHub is the official source and center of development for SENryu.**
 
-### Contributing software ports
-See [HaikuPorts](https://github.com/haikuports/haikuports/).
+* **Collaboration**: All Pull Requests, Issue tracking, and technical discussions regarding SENryu development take place here.
+* **Distribution**: GitHub is the primary channel for the distribution of SENryu-specific code and ISO images.
+* **Open Invitations**: We welcome developers interested in the intersection of semantic technologies and operating system design to participate via our GitHub repository.
 
-### Contributing to our infrastructure
-See [Infrastructure](https://github.com/haiku/infrastructure/).
+## Semantic Roadmap
+
+### Phase 1: Filesystem Layer and Ontology
+
+* [X] Prototype stable semantic links within the filesystem layer using native extended attributes.
+* [X] Utilize the Haiku filetype system as an ontology layer, including native relations with properties.
+* [X] Implement relation properties to support deep-link targets.
+* [X] Integrate an external application (e.g., BePDF) as a Proof of Concept (PoC) for semantic navigation.
+
+### Phase 2: Tracker and Desktop Integration
+
+* [X] Extend the Tracker to visualize semantic relationships and metadata directly within the file browser.
+* [X] Implement "Semantic Folders"—dynamic views generated by relationship queries.
+* [X] Integrate deep-linking support into the UI, allowing users to navigate directly to sub-entities within files.
+
+### Phase 3: Application and Service Ecosystem
+
+* ⏳ Provide a native C++/Haiku API to allow third-party applications to interface with the semantic link layer.
+* ⏳ Develop a suite of "Semantic Native" productivity applications, focusing on knowledge management and cross-app data relationships.
+
+### Phase 4: SENryu Distribution
+
+* ⏳ Leverage the stable semantic foundation to build and distribute a self-contained semantic spin of Haiku.
+* ⏳ Optimize the distribution for developers and researchers to facilitate easier experimentation with the SEN architecture.
+
+## Resources
+
+* **Project Laboratory**: [sen-labs.org](https://sen-labs.org)
+* **Haiku Project**: [haiku-os.org](https://www.haiku-os.org)

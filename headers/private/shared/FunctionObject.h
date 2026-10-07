@@ -277,60 +277,6 @@ private:
 };
 
 
-template <class Param1, class Param2, class Param3, class Param4>
-class FourParamFunctionObject : public FunctionObject {
-public:
-	FourParamFunctionObject(void (*callThis)(Param1, Param2, Param3, Param4),
-		Param1 p1, Param2 p2, Param3 p3, Param4 p4)
-		:	function(callThis),
-			p1(p1),
-			p2(p2),
-			p3(p3),
-			p4(p4)
-		{
-		}
-
-	virtual void operator()()
-		{ (function)(p1.Pass(), p2.Pass(), p3.Pass(), p4.Pass()); }
-
-private:
-	void (*function)(Param1, Param2, Param3, Param4);
-	ParameterBinder<Param1> p1;
-	ParameterBinder<Param2> p2;
-	ParameterBinder<Param3> p3;
-	ParameterBinder<Param4> p4;
-};
-
-
-template <class Result, class Param1, class Param2, class Param3,
-	class Param4>
-class FourParamFunctionObjectWithResult : public
-	FunctionObjectWithResult<Result>  {
-public:
-	FourParamFunctionObjectWithResult(
-		Result (*callThis)(Param1, Param2, Param3, Param4),
-		Param1 p1, Param2 p2, Param3 p3, Param4 p4)
-		:	function(callThis),
-			p1(p1),
-			p2(p2),
-			p3(p3),
-			p4(p4)
-		{
-		}
-
-	virtual void operator()()
-		{ FunctionObjectWithResult<Result>::result
-			= (function)(p1.Pass(), p2.Pass(), p3.Pass(), p4.Pass()); }
-
-private:
-	Result (*function)(Param1, Param2, Param3, Param4);
-	ParameterBinder<Param1> p1;
-	ParameterBinder<Param2> p2;
-	ParameterBinder<Param3> p3;
-	ParameterBinder<Param4> p4;
-};
-
-
 template<class T>
 class PlainMemberFunctionObject : public FunctionObject {
 public:
@@ -438,6 +384,32 @@ protected:
 };
 
 
+template<class T, class Param1, class Param2, class Param3>
+class ThreeParamMemberFunctionObject : public FunctionObject {
+public:
+	ThreeParamMemberFunctionObject(void (T::*function)(Param1, Param2, Param3),
+		T* onThis, Param1 p1, Param2 p2, Param3 p3)
+		:	function(function),
+			target(onThis),
+			p1(p1),
+			p2(p2),
+			p3(p3)
+		{
+		}
+
+	virtual void operator()()
+		{ (target->*function)(p1.Pass(), p2.Pass(), p3.Pass()); }
+
+
+protected:
+	void (T::*function)(Param1, Param2, Param3);
+	T* target;
+	ParameterBinder<Param1> p1;
+	ParameterBinder<Param2> p2;
+	ParameterBinder<Param3> p3;
+};
+
+
 template<class T, class R, class Param1>
 class SingleParamMemberFunctionObjectWithResult : public
 	FunctionObjectWithResult<R> {
@@ -483,6 +455,33 @@ protected:
 	T* target;
 	ParameterBinder<Param1> p1;
 	ParameterBinder<Param2> p2;
+};
+
+
+template<class T, class R, class Param1, class Param2, class Param3>
+class ThreeParamMemberFunctionObjectWithResult : public
+	FunctionObjectWithResult<R> {
+public:
+	ThreeParamMemberFunctionObjectWithResult(R (T::*function)(Param1, Param2, Param3),
+		T* onThis, Param1 p1, Param2 p2, Param3 p3)
+		:	function(function),
+			target(onThis),
+			p1(p1),
+			p2(p2),
+			p3(p3)
+		{
+		}
+
+	virtual void operator()()
+		{ FunctionObjectWithResult<R>::result
+			= (target->*function)(p1.Pass(), p2.Pass(), p3.Pass()); }
+
+protected:
+	R (T::*function)(Param1, Param2, Param3);
+	T* target;
+	ParameterBinder<Param1> p1;
+	ParameterBinder<Param2> p2;
+	ParameterBinder<Param3> p3;
 };
 
 
@@ -554,6 +553,26 @@ NewMemberFunctionObjectWithResult(R (T::*function)(Param1, Param2),
 {
 	return new TwoParamMemberFunctionObjectWithResult<T, R, Param1, Param2>
 		(function, onThis, p1, p2);
+}
+
+
+template<class T, class Param1, class Param2, class Param3>
+ThreeParamMemberFunctionObject<T, Param1, Param2, Param3>*
+NewMemberFunctionObject(void (T::*function)(Param1, Param2, Param3), T* onThis,
+		Param1 p1, Param2 p2, Param3 p3)
+{
+	return new ThreeParamMemberFunctionObject<T, Param1, Param2, Param3>
+		(function, onThis, p1, p2, p3);
+}
+
+
+template<class T, class R, class Param1, class Param2, class Param3>
+ThreeParamMemberFunctionObjectWithResult<T, R, Param1, Param2, Param3>*
+NewMemberFunctionObjectWithResult(R (T::*function)(Param1, Param2, Param3),
+	T* onThis, Param1 p1, Param2 p2, Param3 p3)
+{
+	return new ThreeParamMemberFunctionObjectWithResult<T, R, Param1, Param2, Param3>
+		(function, onThis, p1, p2, p3);
 }
 
 

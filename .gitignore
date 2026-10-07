@@ -2,6 +2,8 @@
 generated*
 build/jam/UserBuildConfig
 build/user_config_headers
+src/**/build/*
+**/objects/*
 
 # KDE backup files ending with a ~ (created by KDE and Qt text editors)
 *~

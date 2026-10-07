@@ -47,6 +47,7 @@ All rights reserved.
 #include "Model.h"
 #include "PendingNodeMonitorCache.h"
 #include "PoseList.h"
+#include <sen/Sen.h>
 #include "TitleView.h"
 #include "Utilities.h"
 #include "ViewState.h"
@@ -459,6 +460,13 @@ protected:
 
 	// scripting handlers
 	virtual bool HandleScriptingMessage(BMessage* message);
+
+	// SEN integration
+	virtual bool HandleSenMessage(BMessage* message);
+	status_t ExtractRefsFromSelection(BMessage* refs);
+	status_t EnrichRefsFromSelection(bool wipe = true);
+	status_t EnrichRefWithPlugin(const entry_ref* ref, bool wipe = true);
+
 	bool SetProperty(BMessage* message, BMessage* specifier, int32 form,
 		const char* property, BMessage* reply);
 	bool GetProperty(BMessage*, int32, const char*, BMessage*);

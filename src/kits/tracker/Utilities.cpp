@@ -32,6 +32,7 @@ names are registered trademarks or trademarks of their respective holders.
 All rights reserved.
 */
 
+#define DEBUG 1
 
 #include "Utilities.h"
 

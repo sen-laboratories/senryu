@@ -95,6 +95,9 @@ public:
 			BMenuItem*			IdentifyItem();
 			const char*			IdentifyLabel();
 
+			BMenuItem*			EnrichItem();
+			const char*			EnrichLabel();
+
 			BMenuItem*			InvertSelectionItem();
 			const char*			InvertSelectionLabel();
 
@@ -116,6 +119,14 @@ public:
 			BMenuItem*			NewFolderItem();
 			const char*			NewFolderLabel();
 
+			BMenuItem*			NewAssociationItem();
+			BMenuItem*			NewAssociationItem(BMenu*);
+			const char*			NewAssociationLabel();
+
+			BMenuItem*			NewRelationItem();
+			BMenuItem*			NewRelationItem(BMenu*);
+			const char*			NewRelationLabel();
+
 			BMenuItem*			NewTemplatesItem();
 			BMenuItem*			NewTemplatesItem(BMenu*);
 			const char*			NewTemplatesLabel();
@@ -125,6 +136,14 @@ public:
 
 			BMenuItem*			OpenParentItem();
 			const char*			OpenParentLabel();
+
+			BMenuItem*			OpenRelationsItem();
+			BMenuItem*			OpenRelationsItem(BMenu*);
+			const char*			OpenRelationsLabel();
+
+			BMenuItem*			OpenSelfRelationsItem();
+			BMenuItem*			OpenSelfRelationsItem(BMenu*);
+			const char*			OpenSelfRelationsLabel();
 
 			BMenuItem*			OpenWithItem();
 			BMenuItem*			OpenWithItem(BMenu*);
@@ -175,6 +194,7 @@ public:
 			void				UpdateFindItem(BMenuItem*);
 			void				UpdateGetInfoItem(BMenuItem*);
 			void				UpdateIdentifyItem(BMenuItem*);
+			void				UpdateEnrichItem(BMenuItem*);
 			void				UpdateInvertSelectionItem(BMenuItem*);
 			void				UpdateMakeActivePrinterItem(BMenuItem*);
 			void				UpdateMoveToItem(BMenuItem*);
@@ -182,7 +202,11 @@ public:
 			void				UpdateNewFolderItem(BMenuItem*);
 			void				UpdateNewTemplatesItem(BMenuItem*);
 			void				UpdateOpenItem(BMenuItem*);
+			void				UpdateNewAssociationItem(BMenuItem*);
+			void				UpdateNewRelationItem(BMenuItem*);
+			void				UpdateOpenRelationsItem(BMenuItem*);
 			void				UpdateOpenParentItem(BMenuItem*);
+			void				UpdateOpenSelfRelationsItem(BMenuItem*);
 			void				UpdateOpenWithItem(BMenuItem*);
 			void				UpdatePasteItem(BMenuItem*);
 			void				UpdateResizeToFitItem(BMenuItem*);

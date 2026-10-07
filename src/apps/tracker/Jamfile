@@ -4,6 +4,7 @@ AddSubDirSupportedPlatforms libbe_test ;
 
 UsePrivateHeaders shared ;
 UsePrivateHeaders tracker ;
+SubDirC++Flags -I/boot/home/config/non-packaged/develop/headers ;
 SubDirHdrs $(HAIKU_TOP) src kits tracker ;
 
 Application Tracker :

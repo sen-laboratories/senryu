@@ -424,6 +424,30 @@ TShortcuts::IdentifyLabel()
 
 
 BMenuItem*
+TShortcuts::EnrichItem()
+{
+	BMessage* message = new BMessage(kEnrichEntry);
+	BMenuItem* item = new BMenuItem(EnrichLabel(), message);
+	message->AddBool("wipe", (modifiers() & B_SHIFT_KEY) != 0);
+
+	if (fInWindow)
+		item->SetTarget(PoseView());
+
+	return item;
+}
+
+
+const char*
+TShortcuts::EnrichLabel()
+{
+	if ((modifiers() & B_SHIFT_KEY) != 0)
+		return B_TRANSLATE("Enrich (Overwrite)");
+	else
+		return B_TRANSLATE("Enrich");
+}
+
+
+BMenuItem*
 TShortcuts::InvertSelectionItem()
 {
 	return new BMenuItem(InvertSelectionLabel(), new BMessage(kInvertSelection), 'S');
@@ -545,6 +569,48 @@ TShortcuts::NewFolderLabel()
 
 
 BMenuItem*
+TShortcuts::NewRelationItem()
+{
+	return new BMenuItem(NewRelationLabel(), new BMessage(kNewRelation), 'N', B_SHIFT_KEY);
+}
+
+
+BMenuItem*
+TShortcuts::NewRelationItem(BMenu* menu)
+{
+	return new BMenuItem(menu, new BMessage(kNewRelation));
+}
+
+
+const char*
+TShortcuts::NewRelationLabel()
+{
+	return B_TRANSLATE("New related" B_UTF8_ELLIPSIS);
+}
+
+
+BMenuItem*
+TShortcuts::NewAssociationItem()
+{
+	return new BMenuItem(NewAssociationLabel(), new BMessage(kNewAssociation), 'N', B_OPTION_KEY);
+}
+
+
+BMenuItem*
+TShortcuts::NewAssociationItem(BMenu* menu)
+{
+	return new BMenuItem(menu, new BMessage(kNewAssociation));
+}
+
+
+const char*
+TShortcuts::NewAssociationLabel()
+{
+	return B_TRANSLATE("Associate with" B_UTF8_ELLIPSIS);
+}
+
+
+BMenuItem*
 TShortcuts::NewTemplatesItem()
 {
 	return new BMenuItem(B_TRANSLATE("New"), new BMessage(kNewEntryFromTemplate));
@@ -590,6 +656,48 @@ const char*
 TShortcuts::OpenParentLabel()
 {
 	return B_TRANSLATE("Open parent");
+}
+
+
+BMenuItem*
+TShortcuts::OpenRelationsItem()
+{
+	return new BMenuItem(OpenRelationsLabel(), new BMessage(kOpenRelations), 'O', B_OPTION_KEY);
+}
+
+
+BMenuItem*
+TShortcuts::OpenRelationsItem(BMenu* menu)
+{
+	return new BMenuItem(menu, new BMessage(kOpenRelations));
+}
+
+
+const char*
+TShortcuts::OpenRelationsLabel()
+{
+	return B_TRANSLATE("Open related" B_UTF8_ELLIPSIS);
+}
+
+
+BMenuItem*
+TShortcuts::OpenSelfRelationsItem()
+{
+	return new BMenuItem(OpenSelfRelationsLabel(), new BMessage(kOpenSelfRelations), 'O', B_OPTION_KEY | B_SHIFT_KEY);
+}
+
+
+BMenuItem*
+TShortcuts::OpenSelfRelationsItem(BMenu* menu)
+{
+	return new BMenuItem(menu, new BMessage(kOpenSelfRelations));
+}
+
+
+const char*
+TShortcuts::OpenSelfRelationsLabel()
+{
+	return B_TRANSLATE("Open self related" B_UTF8_ELLIPSIS);
 }
 
 
@@ -799,6 +907,10 @@ TShortcuts::Update(BMenu* menu)
 
 			case kGetInfo:
 				UpdateGetInfoItem(item);
+				break;
+
+			case kEnrichEntry:
+				UpdateEnrichItem(item);
 				break;
 
 			case kIdentifyEntry:
@@ -1166,6 +1278,21 @@ TShortcuts::UpdateIdentifyItem(BMenuItem* item)
 
 
 void
+TShortcuts::UpdateEnrichItem(BMenuItem* item)
+{
+	if (item == NULL)
+		return;
+
+	item->SetLabel(EnrichLabel());
+	item->Message()->ReplaceBool("wipe", (modifiers() & B_SHIFT_KEY) != 0);
+
+	if (fInWindow) {
+		item->SetEnabled(HasSelection());
+		item->SetTarget(PoseView());
+	}
+}
+
+void
 TShortcuts::UpdateInvertSelectionItem(BMenuItem* item)
 {
 	if (item == NULL)
@@ -1247,7 +1374,7 @@ TShortcuts::UpdateNewTemplatesItem(BMenuItem* item)
 		return;
 
 	if (fInWindow) {
-		item->SetEnabled(TargetIsReadOnly() == false);
+		item->SetEnabled(! TargetIsReadOnly());
 		item->SetTarget(PoseView());
 	}
 }
@@ -1280,12 +1407,64 @@ TShortcuts::UpdateOpenParentItem(BMenuItem* item)
 
 
 void
+TShortcuts::UpdateNewAssociationItem(BMenuItem* item)
+{
+	if (item == NULL)
+		return;
+
+	if (fInWindow) {
+		item->SetEnabled(HasSelection());
+		item->SetTarget(PoseView());
+	}
+}
+
+
+void
+TShortcuts::UpdateNewRelationItem(BMenuItem* item)
+{
+	if (item == NULL)
+		return;
+
+	if (fInWindow) {
+		item->SetEnabled(HasSelection());
+		item->SetTarget(PoseView());
+	}
+}
+
+
+void
+TShortcuts::UpdateOpenRelationsItem(BMenuItem* item)
+{
+	if (item == NULL)
+		return;
+
+	if (fInWindow) {
+		item->SetEnabled(HasSelection());
+		item->SetTarget(PoseView());
+	}
+}
+
+
+void
+TShortcuts::UpdateOpenSelfRelationsItem(BMenuItem* item)
+{
+	if (item == NULL)
+		return;
+
+	if (fInWindow) {
+		item->SetEnabled(HasSelection());
+		item->SetTarget(PoseView());
+	}
+}
+
+
+void
 TShortcuts::UpdateOpenWithItem(BMenuItem* item)
 {
 	if (item == NULL)
 		return;
 
-	item->SetShortcut('O', B_COMMAND_KEY | B_CONTROL_KEY);
+//	item->SetShortcut('O', B_COMMAND_KEY | B_CONTROL_KEY);
 
 	if (fInWindow) {
 		item->SetEnabled(HasSelection());
