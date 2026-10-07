@@ -10,6 +10,7 @@
 #include <Directory.h>
 #include <File.h>
 #include <Messenger.h>
+#include <NodeMonitor.h>
 #include <NodeInfo.h>
 #include <Path.h>
 
@@ -54,8 +55,60 @@ FolderName(const char* relationType)
 }	// namespace
 
 
+/** The node monitor messages of the registered folders, turned into the events of RelationFolders. */
+class RelationFolders::Watcher : public BLooper {
+public:
+	Watcher(RelationFolders* folders)
+		:
+		BLooper("relation folder watcher"),
+		fFolders(folders)
+	{
+	}
+
+	virtual void MessageReceived(BMessage* message)
+	{
+		if (message->what != B_NODE_MONITOR) {
+			BLooper::MessageReceived(message);
+			return;
+		}
+
+		node_ref node;
+		message->FindInt32("device", &node.device);
+		message->FindInt64("node", (int64*) &node.node);
+
+		switch (message->GetInt32("opcode", 0)) {
+			case B_ENTRY_REMOVED:
+				fFolders->EntryRemoved(node);
+				break;
+
+			case B_ENTRY_MOVED:
+			{
+				int64 from = 0, to = 0;
+				message->FindInt64("from directory", &from);
+				message->FindInt64("to directory", &to);
+				if (from == to) {
+					fFolders->EntryRenamed(node, message->GetString("name", ""));
+				} else {
+					node_ref directory(node.device, (ino_t) to);
+					fFolders->EntryMoved(node, directory);
+				}
+				break;
+			}
+
+			case B_ATTR_CHANGED:
+				fFolders->AttributesChanged(node, message->GetString("attr", NULL));
+				break;
+		}
+	}
+
+private:
+	RelationFolders*	fFolders;
+};
+
+
 RelationFolders::RelationFolders()
 	:
+	fWatcher(NULL),
 	fLock("relation folders")
 {
 }
@@ -72,8 +125,34 @@ RelationFolders::Instance()
 void
 RelationFolders::RegisterFolder(const FolderInfo& folder)
 {
+	{
+		BAutolock lock(fLock);
+		fFolders[folder.node] = folder;
+	}
+	StartWatching(folder.node);
+}
+
+
+void
+RelationFolders::StartWatching(const node_ref& folder)
+{
 	BAutolock lock(fLock);
-	fFolders[folder.node] = folder;
+	if (fWatched.find(folder) != fWatched.end())
+		return;
+
+	if (fWatcher == NULL) {
+		fWatcher = new Watcher(this);
+		fWatcher->Run();
+	}
+
+	// one watch for the folder reports what happens to its entries and the attributes of all of them, also the ones that
+	// are created later (B_WATCH_CHILDREN); the entries of folders below it are not reported
+	status_t status = watch_node(&folder, B_WATCH_DIRECTORY | B_WATCH_CHILDREN | B_WATCH_ATTR, BMessenger(fWatcher));
+	if (status != B_OK) {
+		ERROR("could not watch the relation folder: %s\n", strerror(status));
+		return;
+	}
+	fWatched[folder] = true;
 }
 
 
@@ -90,6 +169,11 @@ void
 RelationFolders::Clear()
 {
 	BAutolock lock(fLock);
+	if (fWatcher != NULL) {
+		for (auto& watched : fWatched)
+			watch_node(&watched.first, B_STOP_WATCHING, BMessenger(fWatcher));
+	}
+	fWatched.clear();
 	fFolders.clear();
 	fFiles.clear();
 }

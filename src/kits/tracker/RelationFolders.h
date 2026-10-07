@@ -6,6 +6,7 @@
 
 #include <Entry.h>
 #include <Locker.h>
+#include <Looper.h>
 #include <Message.h>
 #include <Node.h>
 #include <String.h>
@@ -27,9 +28,13 @@
  *
  * Dynamic relations (made by plugins, not stored) are read-only: they are not registered and nothing is sent.
  *
- * The folders and files are registered when they are created. The pose views report what happens to them (this class does
- * not depend on the pose view, so that it can be tested with a real server and real files) and the changes are sent to the
- * SEN server. All methods may be called from any window thread.
+ * The folders and files are registered when they are created. A looper of its own watches every registered folder with the node
+ * monitor: one watch per folder with `B_WATCH_DIRECTORY | B_WATCH_CHILDREN | B_WATCH_ATTR` reports entries that are created, removed,
+ * moved or renamed, and the attribute changes of all files directly in it, also of files that are created later. The folder
+ * is watched whether or not a window shows it, and whoever changes it (Tracker, a shell, another program). The changes are sent to
+ * the SEN server. Only the drop of files is handled by the pose view (see HandleDrop), because it is an interaction, not an event.
+ * The event methods below are public so that they can be tested without a file system.
+ * All methods may be called from any thread.
  */
 class RelationFolders {
 public:
@@ -61,7 +66,7 @@ public:
 	void		RegisterFolder(const FolderInfo& folder);
 	/** Register the file of a stored relation. Not for dynamic relations: they are read-only. */
 	void		RegisterFile(const node_ref& file, const FileInfo& info);
-	/** Forget everything (tests). */
+	/** Forget everything and stop watching (tests). */
 	void		Clear();
 
 	bool		IsRelationFolder(const node_ref& node) const;
@@ -92,7 +97,12 @@ private:
 	status_t	AddRelation(const FolderInfo& folder, const entry_ref& target);
 	status_t	MoveRelation(const FileInfo& info, const FolderInfo& to, const node_ref& fileNode);
 
+	void		StartWatching(const node_ref& folder);
+
+	class Watcher;
+	Watcher*						fWatcher;
 	mutable BLocker					fLock;
 	std::map<node_ref, FolderInfo>	fFolders;
 	std::map<node_ref, FileInfo>	fFiles;
+	std::map<node_ref, bool>		fWatched;
 };
