@@ -3497,20 +3497,20 @@ BPoseView::NewFileFromTemplate(const BMessage* message)
 	NewFileTemplateUndo undo(fileRef, templateRef);
 
 	// coming from "create new relation"?
-	if (message->HasString(SEN_RELATION_TARGET_TYPE)) {
+	if (message->HasString(sen::key::kTargetType)) {
 		// send as SEN scripting message to add relation of desired type
-		BMessage addRelationMsg(SEN_RELATION_ADD);
-		addRelationMsg.AddString(SEN_RELATION_TYPE, message->GetString(SEN_RELATION_TYPE, ""));
-		addRelationMsg.AddString(SEN_RELATION_TARGET_TYPE, message->GetString(SEN_RELATION_TARGET_TYPE, ""));
+		BMessage addRelationMsg(sen::cmd::kRelationAdd);
+		addRelationMsg.AddString(sen::key::kRelationType, message->GetString(sen::key::kRelationType, ""));
+		addRelationMsg.AddString(sen::key::kTargetType, message->GetString(sen::key::kTargetType, ""));
 		entry_ref relationSrcRef;
-		message->FindRef(SEN_RELATION_SOURCE_REF, &relationSrcRef);
-		addRelationMsg.AddRef(SEN_RELATION_SOURCE_REF, &relationSrcRef);
-		addRelationMsg.AddRef(SEN_RELATION_TARGET_REF, &fileRef);
+		message->FindRef(sen::key::kSourceRef, &relationSrcRef);
+		addRelationMsg.AddRef(sen::key::kSourceRef, &relationSrcRef);
+		addRelationMsg.AddRef(sen::key::kTargetRef, &fileRef);
 
 		PRINT(("adding new relation to new target from template with message:\n"));
 		addRelationMsg.PrintToStream();
 
-		BMessenger senMsgr(SEN_SERVER_SIGNATURE);
+		BMessenger senMsgr(sen::kServerSignature);
 		if (senMsgr.IsValid()) {
 			senMsgr.SendMessage(&addRelationMsg);
 		} else {

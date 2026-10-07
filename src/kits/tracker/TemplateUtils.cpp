@@ -163,7 +163,7 @@ status_t TemplateUtils::GetTemplateForType(const char* mimeType, entry_ref* ref)
 			templatePath.SetTo("/tmp");
 		}
 		templatePath.Append("sen");
-		templatePath.Append(SEN_ENTITY_SUPERTYPE);
+		templatePath.Append(sen::mime::kEntitySupertype);
 	}
 
 	BDirectory outputDir;

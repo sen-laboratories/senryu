@@ -25,17 +25,18 @@
 #include <sen/Sen.h>
 #include <sen/Sensei.h>
 #include "Tracker.h"
+#include "TrackerSenLog.h"
 
 bool
 TTracker::HandleSenMessage(BMessage* message)
 {
-	if (message->what == SEN_OPEN_RELATION_TARGET_VIEW) {
+	if (message->what == sen::cmd::kOpenRelationTargetView) {
 		// Note: we need to differentiate between invoking the menu (to open targets in a Tracker relation view)
 		//       vs invoking the relation from the menu itself
 		if ((modifiers() & B_OPTION_KEY) != 0) {
-			// handle as normal ref to be opened through SEN_OPEN_RELATION_TARGET
+			// handle as normal ref to be opened through sen::cmd::kOpenRelationTarget
 			// (intercepted to be enriched with SEN relation properties as args)
-			message->what = SEN_OPEN_RELATION_TARGET;
+			message->what = sen::cmd::kOpenRelationTarget;
 			PRINT(("TrackerSen: switch from open menu -> open target.\n"));
 		}
 	}
@@ -47,15 +48,15 @@ TTracker::HandleSenMessage(BMessage* message)
 		case kOpenRelations:				// menu itself was invoked, adjust command for later processing below
 		case kOpenSelfRelations: {			// fallthrough
 			PRINT(("TrackerSen::Open top-level relation view.\n"));
-			message->what = SEN_OPEN_RELATION_VIEW;
+			message->what = sen::cmd::kOpenRelationView;
 			break;
 		}
-		case SEN_OPEN_RELATION_TARGET: {
-			PRINT(("TrackerSen::SEN_OPEN_RELATION_TARGET\n"));
+		case sen::cmd::kOpenRelationTarget: {
+			PRINT(("TrackerSen::sen::cmd::kOpenRelationTarget\n"));
 
 			// get SEN relation type, if the msg comes from SEN it is required.
 			BString relationType;
-			status_t result = message->FindString(SEN_RELATION_TYPE, &relationType);
+			status_t result = message->FindString(sen::key::kRelationType, &relationType);
 
 			if (result != B_OK) {
 				PRINT(("could not find SEN relationType, aborting: %s",
@@ -68,7 +69,7 @@ TTracker::HandleSenMessage(BMessage* message)
 			entry_ref targetRef;
 			entry_ref senHandlerRef;
 
-			result = message->FindRef(SEN_RELATION_SOURCE_REF, &srcRef);
+			result = message->FindRef(sen::key::kSourceRef, &srcRef);
 			if (result != B_OK) {
 				PRINT(("could not find source ref, aborting: %s",
 					strerror(result) ));
@@ -79,7 +80,7 @@ TTracker::HandleSenMessage(BMessage* message)
 			BMessage relationProperties;
 
 			// relation properties act as arguments for launch app
-			result = message->FindMessage(SEN_RELATION_PROPERTIES, &relationProperties);
+			result = message->FindMessage(sen::key::kRelationProperties, &relationProperties);
 			if (result != B_OK) {
 				if (result != B_NAME_NOT_FOUND) {
 					PRINT(("error getting relation properties from refs msg: %s\n", strerror(result)));
@@ -93,13 +94,13 @@ TTracker::HandleSenMessage(BMessage* message)
 			// get selected relation config from map
 			BMessage relationConfig;
 
-			result = message->FindMessage(SEN_RELATION_CONFIG, &relationConfig);
+			result = message->FindMessage(sen::key::kRelationConfig, &relationConfig);
 			if (result != B_OK) {
 				PRINT(("could not get relation config for type %s: %s\n", relationType.String(), strerror(result) ));
 				return true;	// abort
 			}
 
-			bool selfRelation = relationConfig.GetBool(SEN_RELATION_IS_SELF, false);
+			bool selfRelation = relationConfig.GetBool(sen::conf::kSelf, false);
 
 			PRINT(("got relation config for type %s (is %s)\n",
 				relationType.String(), (selfRelation ? "SELF" : "NORMAL") ));
@@ -166,34 +167,34 @@ TTracker::HandleSenMessage(BMessage* message)
 
 			// open as normal refs with SEN relation handler and pass in targetRef as argument
 			message->what = B_REFS_RECEIVED;
-			message->RemoveName(SEN_RELATION_SOURCE_REF);
+			message->RemoveName(sen::key::kSourceRef);
 			message->AddRef("refs", &targetRef);
 
 			TrackerLaunch(&senHandlerRef, message, true);
 
 			return true;
 		}
-		case SEN_OPEN_RELATION_TARGET_VIEW:	{ // coming from the (sub)menu actions
+		case sen::cmd::kOpenRelationTargetView:	{ // coming from the (sub)menu actions
 			PRINT(("TrackerSen::Open (Self) Relations as target view.\n"));
 			break;
 		}
-		case SEN_RELATIONS_GET_NEW_TARGET:
+		case sen::cmd::kRelationsGetNewTarget:
 			PRINT(("TrackerSen::get NEW target template called.\n"));
 			break;
 
-		case SENSEI_CMD_EXTRACT:
+		case sensei::cmd::kExtract:
 			PRINT(("TrackerSen::SENSEI extract called.\n"));
 			break;
 
-		case SENSEI_CMD_ENRICH:
+		case sensei::cmd::kEnrich:
 			PRINT(("TrackerSen::SENSEI enrich called.\n"));
 			break;
 
-		case SENSEI_CMD_IDENTIFY:
+		case sensei::cmd::kIdentify:
 			PRINT(("TrackerSen::SENSEI identify called.\n"));
 			break;
 
-		case SENSEI_CMD_NAVIGATE:
+		case sensei::cmd::kNavigate:
 			PRINT(("TrackerSen::SENSEI navigate called.\n"));
 			break;
 
@@ -207,44 +208,44 @@ TTracker::HandleSenMessage(BMessage* message)
 	entry_ref relationDirRef;
 
 	switch (message->what) {
-		case SEN_OPEN_RELATION_VIEW:
+		case sen::cmd::kOpenRelationView:
 		{
 			result = PrepareRelationFolder(message, &relationDirRef);
 			break;
 		}
-		case SEN_OPEN_RELATION_TARGET_VIEW:
+		case sen::cmd::kOpenRelationTargetView:
 		{
 			result = PrepareRelationTargetFolder(message, &relationDirRef);
 			break;
 		}
-		case SEN_RELATIONS_GET_NEW_TARGET:
+		case sen::cmd::kRelationsGetNewTarget:
 		{
 			BString relationType;
-			result = message->FindString(SEN_RELATION_TYPE, &relationType);
+			result = message->FindString(sen::key::kRelationType, &relationType);
 			if (result != B_OK) {
 				PRINT(("could not find relation type: %s\n", strerror(result) ));
 				return true;	// abort
 			}
 
 			BString targetType;
-			result = message->FindString(SEN_RELATION_TARGET_TYPE, &targetType);
+			result = message->FindString(sen::key::kTargetType, &targetType);
 			if (result != B_OK) {
 				PRINT(("could not find target type: %s\n", strerror(result) ));
 				return true;	// abort
 			}
 
 			entry_ref sourceRef;
-			result = message->FindRef(SEN_RELATION_SOURCE_REF, &sourceRef);
+			result = message->FindRef(sen::key::kSourceRef, &sourceRef);
 			if (result != B_OK) {
 				PRINT(("could not get source ref: %s\n", strerror(result) ));
 				return true;	// abort
 			}
 
 			entry_ref targetRef;
-			result = message->FindRef(SEN_RELATION_TARGET_REF, &targetRef);
+			result = message->FindRef(sen::key::kTargetRef, &targetRef);
 
 			if (result != B_OK) {
-				if (result == B_NAME_NOT_FOUND && targetType.StartsWith(SEN_CLASS_SUPERTYPE "/")) {
+				if (result == B_NAME_NOT_FOUND && targetType.StartsWith(sen::mime::kClassificationPrefix)) {
 					result = CreateNewAssociationEntity(targetType.String(), &targetRef);
 
 					if (result == B_OK) {
@@ -259,15 +260,15 @@ TTracker::HandleSenMessage(BMessage* message)
 							relationType.String(), BPath(&targetRef).Path(), targetType.String() ));
 
 						// send as SEN scripting message to add relation of desired type
-						BMessage addRelationMsg(SEN_RELATION_ADD);
-						addRelationMsg.AddString(SEN_RELATION_TYPE, relationType);
-						addRelationMsg.AddString(SEN_RELATION_TARGET_TYPE, targetType);
-						addRelationMsg.AddRef(SEN_RELATION_SOURCE_REF, &sourceRef);
-						addRelationMsg.AddRef(SEN_RELATION_TARGET_REF, &targetRef);
+						BMessage addRelationMsg(sen::cmd::kRelationAdd);
+						addRelationMsg.AddString(sen::key::kRelationType, relationType);
+						addRelationMsg.AddString(sen::key::kTargetType, targetType);
+						addRelationMsg.AddRef(sen::key::kSourceRef, &sourceRef);
+						addRelationMsg.AddRef(sen::key::kTargetRef, &targetRef);
 
 						addRelationMsg.PrintToStream();
 
-						BMessenger senMsgr(SEN_SERVER_SIGNATURE);
+						BMessenger senMsgr(sen::kServerSignature);
 						if (senMsgr.IsValid()) {
 							senMsgr.SendMessage(&addRelationMsg);
 						} else {
@@ -330,8 +331,8 @@ TTracker::HandleSenMessage(BMessage* message)
 status_t TTracker::CreateNewAssociationEntity(const char* associationEntityType, entry_ref* targetRef)
 {
 	// create a new association/meta entity instance for the given target (association) type
-	BMessage msgGetClassEntity(SEN_CONFIG_CLASS_ADD);
-	msgGetClassEntity.AddString(SEN_MSG_TYPE, associationEntityType);
+	BMessage msgGetClassEntity(sen::cmd::kClassificationAdd);
+	msgGetClassEntity.AddString(sen::key::kType, associationEntityType);
 
 	BString newClass("New ");
 	BMimeType classMime(associationEntityType);
@@ -344,10 +345,10 @@ status_t TTracker::CreateNewAssociationEntity(const char* associationEntityType,
 		PRINT(("could not get MIME type for target type %s: %s\n", associationEntityType, strerror(result) ));
 		newClass << "(Unknown Classification Type)";
 	}
-	msgGetClassEntity.AddString(SEN_MSG_NAME, newClass);
+	msgGetClassEntity.AddString(sen::key::kName, newClass);
 
 	BMessage msgClassReply;
-	BMessenger senMsgr(SEN_SERVER_SIGNATURE);
+	BMessenger senMsgr(sen::kServerSignature);
 
 	result = senMsgr.SendMessage(&msgGetClassEntity, &msgClassReply);
 	status_t status = msgClassReply.GetInt32("status", B_OK);
@@ -419,9 +420,9 @@ status_t TTracker::PrepareLaunchTarget(
 	const entry_ref* srcRef, const char* targetId, entry_ref* targetRef, BMessage* params)
 {
 	// get relation target by ID from SEN server
-	BMessenger senMessenger(SEN_SERVER_SIGNATURE);
-	BMessage queryTargetRefMsg(SEN_QUERY_REF_FOR_ID);
-	queryTargetRefMsg.AddString(SEN_ID_ATTR, targetId);
+	BMessenger senMessenger(sen::kServerSignature);
+	BMessage queryTargetRefMsg(sen::cmd::kQueryRefForId);
+	queryTargetRefMsg.AddString(sen::attr::kId, targetId);
 
 	BMessage reply;
 	senMessenger.SendMessage(&queryTargetRefMsg, &reply);
@@ -441,15 +442,15 @@ TTracker::PrepareRelationFolder(BMessage *message, entry_ref* relationDirRef)
 {
 	entry_ref srcRef;
 
-	status_t result = message->FindRef(SEN_RELATION_SOURCE_REF, &srcRef);
+	status_t result = message->FindRef(sen::key::kSourceRef, &srcRef);
 	if (result != B_OK) {
-		PRINT(("missing required parameter %s !\n", SEN_RELATION_SOURCE_REF ));
+		PRINT(("missing required parameter %s !\n", sen::key::kSourceRef ));
 		return result;
 	}
 
     // check relations
 	BStringList relations;
-	if (message->FindStrings(SEN_RELATIONS, &relations) != B_OK) {
+	if (message->FindStrings(sen::key::kRelations, &relations) != B_OK) {
 		// TODO: add default relations from MIME DB so users can add targets!
 		PRINT(("no relations to show.\n"));
 		return B_OK;
@@ -459,7 +460,7 @@ TTracker::PrepareRelationFolder(BMessage *message, entry_ref* relationDirRef)
 	PRINT(("got %d relations\n", countRelations) );
 
 	BMessage relationConfigs;
-	result = message->FindMessage(SEN_RELATION_CONFIG_MAP, &relationConfigs);
+	result = message->FindMessage(sen::key::kRelationConfigMap, &relationConfigs);
 	if (result != B_OK) {
 		PRINT(("could not get relation config: %s\n", strerror(result) ));
 		return result;
@@ -510,21 +511,21 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 {
 	entry_ref srcRef;
 
-	status_t result = message->FindRef(SEN_RELATION_SOURCE_REF, &srcRef);
+	status_t result = message->FindRef(sen::key::kSourceRef, &srcRef);
 	if (result != B_OK) {
-		PRINT(("missing required parameter %s !\n", SEN_RELATION_SOURCE_REF ));
+		PRINT(("missing required parameter %s !\n", sen::key::kSourceRef ));
 		return result;
 	}
 
 	const char* relationType;
-	result = message->FindString(SEN_RELATION_TYPE, &relationType);
+	result = message->FindString(sen::key::kRelationType, &relationType);
 	if (result != B_OK) {
-		PRINT(("missing required parameter %s !\n", SEN_RELATION_TYPE ));
+		PRINT(("missing required parameter %s !\n", sen::key::kRelationType ));
 		return result;
 	}
 
 	BMessage relationProperties;
-	message->FindMessage(SEN_RELATION_PROPERTIES, &relationProperties);
+	message->FindMessage(sen::key::kRelationProperties, &relationProperties);
 
 	PRINT(("PrepareRelationTargetFolder: got relation target view message:\n"));
 	message->PrintToStream();
@@ -534,7 +535,7 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 	// holds selected config
 	BMessage relationConf;
 
-	result = message->FindMessage(SEN_RELATION_CONFIG_MAP, &relationConfigs);
+	result = message->FindMessage(sen::key::kRelationConfigMap, &relationConfigs);
 	if (result == B_OK)
 		result = relationConfigs.FindMessage(relationType, &relationConf);
 
@@ -543,9 +544,9 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 		return result;
 	}
 
-	const char* relationName = relationConf.GetString(SEN_RELATION_NAME);
-	bool isSelf    = relationConf.GetBool(SEN_RELATION_IS_SELF);
-	bool isDynamic = relationConf.GetBool(SEN_RELATION_IS_DYNAMIC);
+	const char* relationName = relationConf.GetString(sen::key::kRelationName);
+	bool isSelf    = relationConf.GetBool(sen::conf::kSelf);
+	bool isDynamic = relationConf.GetBool(sen::conf::kDynamic);
 
 	PRINT(("selected relation '%s' of type '%s' is %s and %s.\n",
 		relationName,
@@ -555,7 +556,7 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 
 	// get SEN:ID of source for normal relations, or the inode for self relations
 	BString srcId;
-	message->GetString(SEN_RELATION_SOURCE_ID, srcId);
+	message->GetString(sen::key::kSourceId, srcId);
 
 	if (srcId.IsEmpty()) {	// e.g. for self relations
 		result = TrackerSenRelations::GetInodeForRef(&srcRef, &srcId);
@@ -565,21 +566,21 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 		}
 
 		// save ref along with relation files later, since we have no way to lookup the source by inode alone
-		relationConf.AddRef(SEN_RELATION_SOURCE_REF, &srcRef);
+		relationConf.AddRef(sen::key::kSourceRef, &srcRef);
 
 		if (isSelf) {	// add source as target ref, too, as they are the same
-			relationConf.AddRef(SEN_RELATION_TARGET_REF, &srcRef);
+			relationConf.AddRef(sen::key::kTargetRef, &srcRef);
 		}
 	}
 	// add to config for proccessing
-	relationConf.AddString(SEN_RELATION_SOURCE_ID, srcId);
+	relationConf.AddString(sen::key::kSourceId, srcId);
 
 	BMessage relations;
 
 	if (isSelf) {
 		// get all relations for creating complete relation structure, but open only selected relation view later
 		BMessage* relationRoot;
-		result = message->FindPointer(SEN_RELATION_ROOT, reinterpret_cast<void**>(&relationRoot));
+		result = message->FindPointer(sen::key::kRelationRoot, reinterpret_cast<void**>(&relationRoot));
 
 		if (result == B_OK) {
 			relations = *relationRoot;
@@ -595,18 +596,18 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 		PRINT(("  * got relation ROOT, generating self relation view....\n"));
 
 		// get selected item ID from selected relation properties
-		const char* itemId = relationProperties.GetString(SEN_RELATION_ITEM_ID, "");
+		const char* itemId = relationProperties.GetString(sen::key::kItemId, "");
 		if (strlen(itemId) == 0) {
 			PRINT(("  x got no item ID from selection, check.\n"));
 		} else {
 			PRINT(("  * got item ID %s.\n", itemId));
 		}
 
-		relationConf.AddString(SEN_RELATION_ITEM_ID, itemId);
-		relationConf.AddString(SEN_RELATION_TYPE, relationType);
+		relationConf.AddString(sen::key::kItemId, itemId);
+		relationConf.AddString(sen::key::kRelationType, relationType);
 
 	} else {
-		message->FindMessage(SEN_RELATIONS, &relations);
+		message->FindMessage(sen::key::kRelations, &relations);
 		PRINT(("got relations for type %s for source %s:\n", relationType, srcRef.name));
 	}
 

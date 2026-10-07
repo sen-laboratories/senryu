@@ -54,8 +54,8 @@ OpenRelationTargetsMenu::OpenRelationTargetsMenu(const char* label, const BMessa
 	SetFont(be_plain_font);
 	SetTriggersEnabled(false);
 
-	if (be_roster->IsRunning(SEN_SERVER_SIGNATURE)) {
-		fSenMessenger = new BMessenger(SEN_SERVER_SIGNATURE);
+	if (be_roster->IsRunning(sen::kServerSignature)) {
+		fSenMessenger = new BMessenger(sen::kServerSignature);
 		if (! fSenMessenger->IsValid()) {
 			PRINT(("failed to set up messenger for SEN server!\n"));
 		}
@@ -73,23 +73,23 @@ bool
 OpenRelationTargetsMenu::StartBuildingItemList()
 {
 	switch(fEntriesToOpen.what) {
-		case SENSEI_MESSAGE_RESULT:	// we are a sub menu of self relations
+		case sensei::cmd::kResult:	// we are a sub menu of self relations
 		{
-			PRINT(("  > building self relations submenu from SENSEI_MESSAGE_RESULT in existing sub item msg...\n"));
+			PRINT(("  > building self relations submenu from sensei::cmd::kResult in existing sub item msg...\n"));
 			fRelationTargetsReply = &fEntriesToOpen;
 			return true;
 		}
-		case SEN_RELATIONS_GET_SELF:
+		case sen::cmd::kRelationsGetSelf:
 		{
-			PRINT(("building self relations submenu from SEN_RELATIONS_GET_SELF relation reply...\n"));
+			PRINT(("building self relations submenu from sen::cmd::kRelationsGetSelf relation reply...\n"));
 			break;
 		}
-		case SEN_RELATIONS_GET_COMPATIBLE_TYPES:
+		case sen::cmd::kRelationsGetCompatibleTypes:
 		{
 			PRINT(("building relation targets submenu for compatible targets...\n"));
 			break;
 		}
-		case SEN_RELATIONS_GET:
+		case sen::cmd::kRelationsGet:
 		{
 			PRINT(("building relation targets submenu for existing targets...\n"));
 			break;
@@ -136,16 +136,16 @@ OpenRelationTargetsMenu::DoneBuildingItemList()
 	status_t result;
 
 	switch(fRelationTargetsReply->what) {
-		// fixme: this should be handled as SEN_RESULT_RELATIONS but check there for self relation!
-		case SENSEI_MESSAGE_RESULT:
+		// fixme: this should be handled as sen::cmd::kReplyRelations but check there for self relation!
+		case sensei::cmd::kResult:
 		{
 			// resolve self relations from SENSEI reply
 			result = AddSelfRelationTargetItems(&targets);
 			break;
 		}
-		case SEN_RESULT_RELATIONS:
+		case sen::cmd::kReplyRelations:
 		{
-			if (fEntriesToOpen.what == SEN_RELATIONS_GET_COMPATIBLE_TYPES)
+			if (fEntriesToOpen.what == sen::cmd::kRelationsGetCompatibleTypes)
 				result = AddCompatibleRelationTargetItems(&targets);
 			else
 				result = AddRelationTargetItems(&targets);
@@ -179,14 +179,14 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 	status_t result;
 	entry_ref srcRef;
 
-	result = fEntriesToOpen.FindRef(SEN_RELATION_SOURCE_REF, &srcRef);
+	result = fEntriesToOpen.FindRef(sen::key::kSourceRef, &srcRef);
 	if (result != B_OK) {
 		PRINT(("failed to retrieve relation source ref: %s\n", strerror(result)));
 		return result;
 	}
 
 	BString relationType;
-	result = fEntriesToOpen.FindString(SEN_RELATION_TYPE, &relationType);
+	result = fEntriesToOpen.FindString(sen::key::kRelationType, &relationType);
 	if (result != B_OK) {
 		PRINT(("failed to retrieve relation type: %s\n", strerror(result)));
 		return result;
@@ -205,9 +205,9 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 
 	// handle meta relations for associations
 	// relation type is the classification relation and targetType is some classification type
-	if (relationType == SEN_ASSOC_RELATION_TYPE) {
+	if (relationType == sen::mime::kAssociationRelation) {
 		BString targetType;
-		result = fEntriesToOpen.FindString(SEN_RELATION_TARGET_TYPE, &targetType);
+		result = fEntriesToOpen.FindString(sen::key::kTargetType, &targetType);
 
 		if (result != B_OK) {
 			// targetType param is optional
@@ -222,10 +222,10 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 		PRINT(("collecting association targets for type %s...\n", targetType.String() ));
 
 		// add a shortcut New <AssociationType> on top
-		BMessage* newAssociationMsg = new BMessage(SEN_RELATIONS_GET_NEW_TARGET);
-		newAssociationMsg->AddRef(SEN_RELATION_SOURCE_REF, &srcRef);
-		newAssociationMsg->AddString(SEN_RELATION_TYPE, relationType);
-		newAssociationMsg->AddString(SEN_RELATION_TARGET_TYPE, targetType);
+		BMessage* newAssociationMsg = new BMessage(sen::cmd::kRelationsGetNewTarget);
+		newAssociationMsg->AddRef(sen::key::kSourceRef, &srcRef);
+		newAssociationMsg->AddString(sen::key::kRelationType, relationType);
+		newAssociationMsg->AddString(sen::key::kTargetType, targetType);
 		newAssociationMsg->AddMessenger("TrackerViewToken", fMessenger);
 
 		BString newAssocLabel("New" B_UTF8_ELLIPSIS);
@@ -239,12 +239,12 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 
 		AddSeparatorItem();
 
-		senAddRelationMsg.what = SEN_RELATION_ADD;
-		targetMessenger = BMessenger(SEN_SERVER_SIGNATURE);
+		senAddRelationMsg.what = sen::cmd::kRelationAdd;
+		targetMessenger = BMessenger(sen::kServerSignature);
 
 		// retrieve suitable classifications from SEN config
-		BMessage senFindClassMsg(SEN_CONFIG_CLASS_FIND);
-		senFindClassMsg.AddString(SEN_MSG_TYPE, targetType);
+		BMessage senFindClassMsg(sen::cmd::kClassificationFind);
+		senFindClassMsg.AddString(sen::key::kType, targetType);
 
 		BMessage senFindClassReply;
 		result = fSenMessenger->SendMessage(&senFindClassMsg, &senFindClassReply);
@@ -278,15 +278,15 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 		PRINT(("%s is a normal relation, collecting all compatible templates except for META entities for relation.\n",
 			relationType.String() ));
 
-		senAddRelationMsg.what = SEN_RELATIONS_GET_NEW_TARGET;
+		senAddRelationMsg.what = sen::cmd::kRelationsGetNewTarget;
 		senAddRelationMsg.AddMessenger("TrackerViewToken", fMessenger);
 		targetMessenger = be_app_messenger;
 
 		mimeIncludes.Add(targetTypes);
-		mimeExcludes.Add(SEN_CLASS_SUPERTYPE);
+		mimeExcludes.Add(sen::mime::kClassificationSupertype);
 
 		// here we got a list of compatible target types
-		result = fRelationTargetsReply->FindStrings(SEN_RELATION_TARGET_TYPE, &targetTypes);
+		result = fRelationTargetsReply->FindStrings(sen::key::kTargetType, &targetTypes);
 		if (result != B_OK) {
 			if (result != B_NAME_NOT_FOUND) {	// param is optional
 				PRINT(("failed to retrieve target types for relation: %s\n", strerror(result)));
@@ -325,10 +325,10 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 				PRINT(("adding ref %s for type %s at %d\n", destRef.name, targetType, r));
 
 				BMessage* itemMsg = new BMessage(senAddRelationMsg);
-				itemMsg->AddRef(SEN_RELATION_SOURCE_REF, &srcRef);
-				itemMsg->AddRef(SEN_RELATION_TARGET_REF, &destRef);
-				itemMsg->AddString(SEN_RELATION_TYPE, relationType);
-				itemMsg->AddString(SEN_RELATION_TARGET_TYPE, targetType);
+				itemMsg->AddRef(sen::key::kSourceRef, &srcRef);
+				itemMsg->AddRef(sen::key::kTargetRef, &destRef);
+				itemMsg->AddString(sen::key::kRelationType, relationType);
+				itemMsg->AddString(sen::key::kTargetType, targetType);
 
 				IconMenuItem* item = new IconMenuItem(destRef.name,
 													  itemMsg,
@@ -353,28 +353,28 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 	PRINT(("adding relation menu target items...\n"));
 
 	BString relationType;
-	result = fEntriesToOpen.FindString(SEN_RELATION_TYPE, &relationType);
+	result = fEntriesToOpen.FindString(sen::key::kRelationType, &relationType);
 	if (result != B_OK) {
 		PRINT(("failed to retrieve relation type: %s\n", strerror(result)));
 		return result;
 	}
 
 	BMessage relations;
-	result = fRelationTargetsReply->FindMessage(SEN_RELATIONS, &relations);
+	result = fRelationTargetsReply->FindMessage(sen::key::kRelations, &relations);
 	if (result != B_OK) {
 		PRINT(("failed to retrieve relations from result: %s\n", strerror(result)));
 		return result;
 	}
 
 	BMessage idToRef;
-	result = fRelationTargetsReply->FindMessage(SEN_ID_TO_REF_MAP, &idToRef);
+	result = fRelationTargetsReply->FindMessage(sen::key::kIdToRefMap, &idToRef);
 	if (result != B_OK) {
 		PRINT(("failed to retrieve ID/ref mapping for relations: %s\n", strerror(result)));
 		return result;
 	}
 
 	BMessage 	relationConfigMap, relationConfig;
-	result = fRelationTargetsReply->FindMessage(SEN_RELATION_CONFIG_MAP, &relationConfigMap);
+	result = fRelationTargetsReply->FindMessage(sen::key::kRelationConfigMap, &relationConfigMap);
 	if (result == B_OK)
 		result = relationConfigMap.FindMessage(relationType.String(), &relationConfig);
 
@@ -392,18 +392,18 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 				// which in this case is the associated relation handler.
 
 				// add message with target ref and relation properties for the given ID
-				BMessage itemMessage(SEN_OPEN_RELATION_TARGET);
-				itemMessage.AddRef(SEN_RELATION_SOURCE_REF, &ref);
-				itemMessage.AddString(SEN_RELATION_TYPE, relationType);
+				BMessage itemMessage(sen::cmd::kOpenRelationTarget);
+				itemMessage.AddRef(sen::key::kSourceRef, &ref);
+				itemMessage.AddString(sen::key::kRelationType, relationType);
 
 				// add relation config applicable to this item
-				itemMessage.AddMessage(SEN_RELATION_CONFIG, &relationConfig);
+				itemMessage.AddMessage(sen::key::kRelationConfig, &relationConfig);
 
 				BMessage itemProps;
 				result = relations.FindMessage(idKey, &itemProps);
 				if (result == B_OK) {
 					// add as arguments like with ARGV_RECEIVED but typed
-					itemMessage.AddMessage(SEN_RELATION_PROPERTIES, &itemProps);
+					itemMessage.AddMessage(sen::key::kRelationProperties, &itemProps);
 				}
 
 				PRINT(("adding item message for relationt target with ID %s:\n", idKey));
@@ -423,12 +423,12 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 
 	// cache relations in parent open relations menu item message itself,
 	// so we can reuse it for the relation target view
-	BMenuItem *openRelationTargetsItem = Supermenu()->FindItem(SEN_OPEN_RELATION_TARGET_VIEW);
+	BMenuItem *openRelationTargetsItem = Supermenu()->FindItem(sen::cmd::kOpenRelationTargetView);
 	ASSERT(openRelationTargetsItem != NULL);
 	BMessage  *openRelationTargetsItemMsg = openRelationTargetsItem->Message();
 	ASSERT(openRelationTargetsItemMsg != NULL);
 
-	openRelationTargetsItemMsg->AddMessage(SEN_RELATIONS, &relations);
+	openRelationTargetsItemMsg->AddMessage(sen::key::kRelations, &relations);
 
 	PRINT(("openRelationTargetsItemMsg is:\n"));
 	openRelationTargetsItemMsg->PrintToStream();
@@ -443,7 +443,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 
 	// get relation configs for storing in menu items later
 	BMessage relationConfigs;
-	result = fEntriesToOpen.FindMessage(SEN_RELATION_CONFIG_MAP, &relationConfigs);
+	result = fEntriesToOpen.FindMessage(sen::key::kRelationConfigMap, &relationConfigs);
 
 	if (result != B_OK) {
 		PRINT(("no relation config found, continuing with defaults.\n"));
@@ -451,7 +451,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 
 	// get plug config for default property type from original msg received from parent menu
 	BMessage pluginConfig;
-	result = fEntriesToOpen.FindMessage(SENSEI_PLUGIN_CONFIG_KEY, &pluginConfig);
+	result = fEntriesToOpen.FindMessage(sensei::key::kPluginConfig, &pluginConfig);
 
 	if (result != B_OK) {
 		// at least the attrMapping msg with common label mapping must be there
@@ -461,7 +461,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 
 	// get optional default type from pluginConfig
 	BString defaultType;
-	result = pluginConfig.FindString(SENSEI_DEFAULT_TYPE_KEY, &defaultType);
+	result = pluginConfig.FindString(sensei::key::kDefaultType, &defaultType);
 
 	if (result != B_OK) {
 		if (result != B_NAME_NOT_FOUND) {
@@ -474,7 +474,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 	}
 
 	// check for expected relation nodes
-	if (! fRelationTargetsReply->HasMessage(SEN_RELATIONS)) {
+	if (! fRelationTargetsReply->HasMessage(sen::key::kRelations)) {
 		PRINT(("could not find any items in reply, skipping.\n"));
 		return result;
 	}
@@ -482,7 +482,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 	// get ref to self from original refs received (source of relation)
 	// Note: we expect only 1 ref for self relations, but let's keep it consistent across all relation types
 	entry_ref ref;
-	result = fEntriesToOpen.FindRef(SEN_RELATION_SOURCE_REF, &ref);
+	result = fEntriesToOpen.FindRef(sen::key::kSourceRef, &ref);
 	if (result != B_OK) {
 		PRINT(("failed to resolve self relation to source: %s\n", strerror(result)));
 		return result;
@@ -490,7 +490,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 
     // get number of data (i.e. relation) items in this message
 	int32 relationCount;
-	result = fRelationTargetsReply->GetInfo(SEN_RELATIONS, NULL, &relationCount);
+	result = fRelationTargetsReply->GetInfo(sen::key::kRelations, NULL, &relationCount);
 
 	PRINT(("* building self relation target menu items for %d relations...\n", relationCount));
 
@@ -499,20 +499,20 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 		BString label, type;
 
 		BMessage relationProperties;
-		result = fRelationTargetsReply->FindMessage(SEN_RELATIONS, itemIndex, &relationProperties);
+		result = fRelationTargetsReply->FindMessage(sen::key::kRelations, itemIndex, &relationProperties);
 		if (result != B_OK) {
 			PRINT(("  x could not display item %d, skipping.\n", itemIndex));
 			continue;	// try next
 		}
 
-		result = relationProperties.FindString(SEN_RELATION_LABEL_ATTR, &label);
+		result = relationProperties.FindString(sen::attr::kRelationLabel, &label);
 		if (result == B_OK || result == B_NAME_NOT_FOUND) {
 			if (label.IsEmpty()) {
 				PRINT(("could not get label for item %d: %s\n", itemIndex, strerror(result) ));
 				label = "<no label>";	// should always be present but allow easier debugging
 			}
 
-			result  = relationProperties.FindString(SEN_RELATION_TYPE, &type);	// optional
+			result  = relationProperties.FindString(sen::key::kRelationType, &type);	// optional
 			if (result == B_OK || result == B_NAME_NOT_FOUND) {
 				if (type.IsEmpty())
 					type = fDefaultType;
@@ -527,26 +527,26 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 		BMessage openRelationItemMsg;
 
 		// add common relation properties
-		openRelationItemMsg.AddRef(SEN_RELATION_SOURCE_REF, &ref);	// use standard refs as expected by Tracker
-		openRelationItemMsg.AddString(SEN_RELATION_TYPE, type);
-		openRelationItemMsg.AddMessage(SEN_RELATION_CONFIG_MAP, &relationConfigs);
+		openRelationItemMsg.AddRef(sen::key::kSourceRef, &ref);	// use standard refs as expected by Tracker
+		openRelationItemMsg.AddString(sen::key::kRelationType, type);
+		openRelationItemMsg.AddMessage(sen::key::kRelationConfigMap, &relationConfigs);
 
 		// add as menu if there is a child node, else add as a plain menu item
-		if (! relationProperties.HasMessage(SEN_RELATIONS)) {
+		if (! relationProperties.HasMessage(sen::key::kRelations)) {
 			PRINT(("    > adding self relation item [%d] '%s' of type '%s' with %d properties.\n",
 					itemIndex, label.String(), type.String(), relationProperties.CountNames(B_ANY_TYPE) ));
 
 			// will open the target item as SEN enriched ref in Tracker
-			openRelationItemMsg.what = SEN_OPEN_RELATION_TARGET;
+			openRelationItemMsg.what = sen::cmd::kOpenRelationTarget;
 
 			// here we know which config we need, so pass only the selected type's
-			// config - TrackerSen::HandleSenMessage's SEN_OPEN_RELATION_TARGET case
+			// config - TrackerSen::HandleSenMessage's sen::cmd::kOpenRelationTarget case
 			// looks this up at the top level of the message, not inside properties.
 			BMessage selectedConfig;
 			result = relationConfigs.FindMessage(type, &selectedConfig);
 
 			if (result == B_OK) {
-				openRelationItemMsg.AddMessage(SEN_RELATION_CONFIG, &selectedConfig);
+				openRelationItemMsg.AddMessage(sen::key::kRelationConfig, &selectedConfig);
 			} else {
 				if (result != B_NAME_NOT_FOUND) {
 					PRINT(("    x failed to inspect relation configs: %s\n", strerror(result) ));
@@ -555,7 +555,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 			}
 
 			// add all properties of this relation item to be used as potential args by receiver
-			openRelationItemMsg.AddMessage(SEN_RELATION_PROPERTIES, &relationProperties);
+			openRelationItemMsg.AddMessage(sen::key::kRelationProperties, &relationProperties);
 
 			item = new IconMenuItem(label.String(), new BMessage(openRelationItemMsg), type.String());
 
@@ -564,21 +564,21 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 			PRINT(("  * adding self relation menu [%d] '%s' of type '%s' with %d properties.\n",
 					itemIndex, label.String(), type.String(), relationProperties.CountNames(B_ANY_TYPE) ));
 
-			openRelationItemMsg.what = SEN_OPEN_RELATION_TARGET_VIEW;
+			openRelationItemMsg.what = sen::cmd::kOpenRelationTargetView;
 
 			// keep track of the relations root for building entire structure (i.e. in Tracker folder view)
 			BMessage* relationRoot;
 
 			// root is handed through via menu message
-			result = Superitem()->Message()->FindPointer(SEN_RELATION_ROOT, reinterpret_cast<void**>(&relationRoot));
+			result = Superitem()->Message()->FindPointer(sen::key::kRelationRoot, reinterpret_cast<void**>(&relationRoot));
 
 			if (result == B_OK && relationRoot != NULL) {
 				PRINT(("  * got relation ROOT, handing down.\n"));
-				openRelationItemMsg.AddPointer(SEN_RELATION_ROOT, relationRoot);
+				openRelationItemMsg.AddPointer(sen::key::kRelationRoot, relationRoot);
 			}
 			else {
 				PRINT(("  * SET relation ROOT.\n"));
-				openRelationItemMsg.AddPointer(SEN_RELATION_ROOT, reinterpret_cast<void*>(fRelationTargetsReply));
+				openRelationItemMsg.AddPointer(sen::key::kRelationRoot, reinterpret_cast<void*>(fRelationTargetsReply));
 
 				// save for later below
 				relationRoot = fRelationTargetsReply;
@@ -586,28 +586,28 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 
 			// get child node
 			BMessage childNode;
-			result = relationProperties.FindMessage(SEN_RELATIONS, &childNode);
+			result = relationProperties.FindMessage(sen::key::kRelations, &childNode);
 			ASSERT(result == B_OK);		// already checked above
 
 			// conveniently add selected item from properties directly, too
-			// TODO: handle SEN_RELATION_ITEM_ID, too
-			openRelationItemMsg.AddString(SEN_RELATION_ITEM_ID, relationProperties.GetString(SENSEI_ITEM_ID));
+			// TODO: handle sen::key::kItemId, too
+			openRelationItemMsg.AddString(sen::key::kItemId, relationProperties.GetString(sensei::key::kItemId));
 
 			// add all properties of this relation menu item to be used as potential args by receiver
-			openRelationItemMsg.AddMessage(SEN_RELATION_PROPERTIES, &relationProperties);
+			openRelationItemMsg.AddMessage(sen::key::kRelationProperties, &relationProperties);
 
 			// now adapt childMsg for adding to menu below:
 			// transparently handle just like a normal message result above, but for the subtree
-			// so the submenu will have a SEN:relations and SEN_RELATIONS from the childMsg subtree
-			childNode.what = SENSEI_MESSAGE_RESULT;
-			childNode.AddRef(SEN_RELATION_SOURCE_REF, &ref);
-			childNode.AddString(SEN_RELATION_TYPE, type.String());
-			childNode.AddPointer(SEN_RELATION_ROOT, reinterpret_cast<void*>(relationRoot));
+			// so the submenu will have a SEN:relations and sen::key::kRelations from the childMsg subtree
+			childNode.what = sensei::cmd::kResult;
+			childNode.AddRef(sen::key::kSourceRef, &ref);
+			childNode.AddString(sen::key::kRelationType, type.String());
+			childNode.AddPointer(sen::key::kRelationRoot, reinterpret_cast<void*>(relationRoot));
 
-			childNode.AddMessage(SENSEI_PLUGIN_CONFIG_KEY, &pluginConfig);
+			childNode.AddMessage(sensei::key::kPluginConfig, &pluginConfig);
 			// we need all configs here to select in subtree
 			// TODO: optimize by constraining to single relation per menu or use AddPointer to root config!
-			childNode.AddMessage(SEN_RELATION_CONFIG_MAP, &relationConfigs);
+			childNode.AddMessage(sen::key::kRelationConfigMap, &relationConfigs);
 
 			item = new IconMenuItem(
 				new OpenRelationTargetsMenu(

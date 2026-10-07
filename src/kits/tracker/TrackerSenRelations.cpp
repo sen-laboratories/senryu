@@ -21,6 +21,7 @@
 #include <sen/Sensei.h>
 
 #include "TrackerSenRelations.h"
+#include "TrackerSenLog.h"
 
 bool
 TrackerSenRelations::ResolveRelation(const entry_ref* ref, BString* srcId,
@@ -36,10 +37,10 @@ TrackerSenRelations::ResolveRelation(const entry_ref* ref, BString* srcId,
 		return false;
 	}
 
-	if (result == B_OK) result = relationNode.ReadAttrString(SEN_RELATION_SOURCE_ATTR, srcId);
+	if (result == B_OK) result = relationNode.ReadAttrString(sen::attr::kRelationSource, srcId);
 	if (result == B_NAME_NOT_FOUND) return false;
 
-	if (result == B_OK) result = relationNode.ReadAttrString(SEN_RELATION_TARGET_ATTR, targetId);
+	if (result == B_OK) result = relationNode.ReadAttrString(sen::attr::kRelationTarget, targetId);
 	if (result == B_NAME_NOT_FOUND) return false;
 
 	return (result == B_OK);
@@ -63,10 +64,10 @@ TrackerSenRelations::WriteTargetRelations(
 		workingDirRef = new entry_ref(*openDirRef);
 	}
 
-	bool isDynamic = relationConf->GetBool(SEN_RELATION_IS_DYNAMIC);
-	const char* shortName = relationConf->GetString(SEN_RELATION_NAME);
+	bool isDynamic = relationConf->GetBool(sen::conf::kDynamic);
+	const char* shortName = relationConf->GetString(sen::key::kRelationName);
 	// top-level relation type, may vary for individual relations (e.g. self / n-ary relations)
-	const char* relationDefaultType = relationConf->GetString(SEN_RELATION_TYPE);
+	const char* relationDefaultType = relationConf->GetString(sen::key::kRelationType);
 
 	BDirectory relationDir(workingDirRef);
 	BPath relationDirPath(workingDirRef);
@@ -86,10 +87,10 @@ TrackerSenRelations::WriteTargetRelations(
 	BString itemId, selectedId;
 
 	if (isDynamic) {
-		relations->FindString(SEN_RELATION_ITEM_ID, &itemId);
+		relations->FindString(sen::key::kItemId, &itemId);
 
 		if (! itemId.IsEmpty()) {
-			relationConf->FindString(SEN_RELATION_ITEM_ID, &selectedId);
+			relationConf->FindString(sen::key::kItemId, &selectedId);
 
 			PRINT(("  > check if path is the one to open: %s (current) <-> %s (selected)\n",
 					itemId.String(), selectedId.String() ));
@@ -102,14 +103,14 @@ TrackerSenRelations::WriteTargetRelations(
 		}
 	}
 
-	const char* srcId = relationConf->GetString(SEN_RELATION_SOURCE_ID);
+	const char* srcId = relationConf->GetString(sen::key::kSourceId);
 	if (srcId == NULL) {
 		PRINT(("  x missing relation source, expected inode or SEN:ID\n"));
 		return B_BAD_VALUE;
 	}
 
 	int32 countRelations = 0;
-	relations->GetInfo(SEN_RELATIONS, NULL, &countRelations);
+	relations->GetInfo(sen::key::kRelations, NULL, &countRelations);
 
 	PRINT(("  o processing relation dir '%s' with %d relations...\n", relationDirPath.Path(), countRelations ));
 
@@ -123,7 +124,7 @@ TrackerSenRelations::WriteTargetRelations(
 		BString   entryName;
 
 		// create individual relation targets for each relation of the current target
-		result = relations->FindMessage(SEN_RELATIONS, relationIndex, &properties);
+		result = relations->FindMessage(sen::key::kRelations, relationIndex, &properties);
 
 		if (result != B_OK) {
 			PRINT(("  > could not get relation properties at %d: %s\n",
@@ -134,17 +135,17 @@ TrackerSenRelations::WriteTargetRelations(
 		PRINT(("got relation properties:\n"));
 		properties.PrintToStream();
 
-		targetId = properties.GetString(SEN_TO_ATTR);
+		targetId = properties.GetString(sen::attr::kTo);
 
 		// used for self (and later also n-ary) relations
-		bool hasRelations = properties.HasMessage(SEN_RELATIONS);
+		bool hasRelations = properties.HasMessage(sen::key::kRelations);
 
 		// skip intermediate nodes (only contain sub nodes)
-		const char* relationType = properties.GetString(SEN_RELATION_TYPE, relationDefaultType);
+		const char* relationType = properties.GetString(sen::key::kRelationType, relationDefaultType);
 
 		// determine useful file name for relation
 		// best fit: label, fallback: relation's shortname
-		entryName = properties.GetString(SEN_RELATION_LABEL_ATTR);
+		entryName = properties.GetString(sen::attr::kRelationLabel);
 		if (entryName == NULL) {
 			PRINT(("  x WARN: expected label not found, falling back to short name.\n"));
 			entryName = shortName;
@@ -193,12 +194,12 @@ TrackerSenRelations::WriteTargetRelations(
 			void*  iconBuf;
 			size_t iconSize;
 
-			result = GetSenIcon(relationType, SEN_RELATION_FOLDER_ICON, &iconBuf, &iconSize);
+			result = GetSenIcon(relationType, sen::attr::kRelationFolderIcon, &iconBuf, &iconSize);
 			if (result == B_OK) {
 				ssize_t sizeWritten = relationNode.WriteAttr("BEOS:ICON", B_VECTOR_ICON_TYPE, 0, iconBuf, iconSize);
 				if (sizeWritten < 0) {	// can be interpreted as an error code
 					PRINT(("  x error writing folder icon %s to %s: %s\n",
-							SEN_RELATION_FOLDER_ICON, entryName.String(), strerror(sizeWritten) ));
+							sen::attr::kRelationFolderIcon, entryName.String(), strerror(sizeWritten) ));
 					// keep on going, not tragic
 				}
 			}
@@ -209,7 +210,7 @@ TrackerSenRelations::WriteTargetRelations(
 
 				if (result == B_OK) {
 					BMessage nestedRelations;
-					result = properties.FindMessage(SEN_RELATIONS, &nestedRelations);
+					result = properties.FindMessage(sen::key::kRelations, &nestedRelations);
 
 					if (result == B_OK && ! nestedRelations.IsEmpty()) {
 						PRINT(("  >> entering relation subdir %s...\n", subDirRef.name));
@@ -252,9 +253,9 @@ TrackerSenRelations::WriteTargetRelations(
 		BString srcIdStr(srcId);
 		BString targetIdStr(targetId);
 		if (result == B_OK)
-			result = relationNode.WriteAttrString(SEN_RELATION_SOURCE_ATTR, &srcIdStr);
+			result = relationNode.WriteAttrString(sen::attr::kRelationSource, &srcIdStr);
 		if (result == B_OK)
-			result = relationNode.WriteAttrString(SEN_RELATION_TARGET_ATTR, &targetIdStr);
+			result = relationNode.WriteAttrString(sen::attr::kRelationTarget, &targetIdStr);
 
 		// write refs if any
 		ssize_t sizeRead, sizeWritten;
@@ -263,9 +264,9 @@ TrackerSenRelations::WriteTargetRelations(
 			const void* buffer;
 
 			// we deliberately don't use FindRef since we need the raw buffer and size for writing the attribute below
-			result = relationConf->FindData(SEN_RELATION_SOURCE_REF, B_REF_TYPE, &buffer, &sizeRead);
+			result = relationConf->FindData(sen::key::kSourceRef, B_REF_TYPE, &buffer, &sizeRead);
 			if (result == B_OK) {
-				sizeWritten = relationNode.WriteAttr(SEN_RELATION_SOURCE_REF_ATTR, B_REF_TYPE, 0, buffer, sizeRead);
+				sizeWritten = relationNode.WriteAttr(sen::attr::kRelationSourceRef, B_REF_TYPE, 0, buffer, sizeRead);
 				if (sizeWritten <= 0) {
 					result = sizeWritten;
 					ERROR("  x failed to write relation source ref: %s\n", strerror(result));
@@ -275,9 +276,9 @@ TrackerSenRelations::WriteTargetRelations(
 				result = B_OK;
 			}
 			// same for target ref
-			result = relationConf->FindData(SEN_RELATION_TARGET_REF, B_REF_TYPE, &buffer, &sizeRead);
+			result = relationConf->FindData(sen::key::kTargetRef, B_REF_TYPE, &buffer, &sizeRead);
 			if (result == B_OK) {
-				sizeWritten = relationNode.WriteAttr(SEN_RELATION_TARGET_REF_ATTR, B_REF_TYPE, 0, buffer, sizeRead);
+				sizeWritten = relationNode.WriteAttr(sen::attr::kRelationTargetRef, B_REF_TYPE, 0, buffer, sizeRead);
 				if (sizeWritten <= 0) {
 					result = sizeWritten;
 					ERROR("  x failed to write relation target ref: %s\n", strerror(result));
@@ -367,7 +368,7 @@ TrackerSenRelations::GetRelationAttributeInfo(const char* relationType, BMessage
 	relationMimeType.GetSupertype(&relationSuperType);
 
 	if (!relationSuperType.IsInstalled()) {
-		PRINT(("MIME supertype for relation %s is not installed, check SEN installation!\n", SEN_RELATION_SUPERTYPE));
+		PRINT(("MIME supertype for relation %s is not installed, check SEN installation!\n", sen::mime::kRelationSupertype));
 		return B_ERROR;
 	}
 
@@ -391,8 +392,8 @@ TrackerSenRelations::CreateRelationDirectory(
 	const BMessage* relationConfig,
 	entry_ref* relationDirRef)
 {
-	const char* relationName = relationConfig->GetString(SEN_RELATION_NAME, relationType);	// fall back
-	const char* relationLabel = relationConfig->GetString(SEN_RELATION_LABEL, relationName);
+	const char* relationName = relationConfig->GetString(sen::key::kRelationName, relationType);	// fall back
+	const char* relationLabel = relationConfig->GetString(sen::key::kRelationLabel, relationName);
 
 	PRINT(("* creating relation dir for relation '%s' with name '%s' and label '%s'...\n",
 			relationType, relationName, relationLabel));
@@ -459,18 +460,31 @@ TrackerSenRelations::CreateRelationDirectory(
 		if (result == B_OK) result = relationNodeInfo.InitCheck();
 		if (result == B_OK) result = relationNodeInfo.SetType(relationType);
 		// mark as relation folder for some special features in Tracker (e.g. add/remove relations)
-		if (result == B_OK) result = relationNode.WriteAttrString("META:TYPE", new BString(SEN_RELATION_FOLDER_TYPE));
+		if (result == B_OK) result = relationNode.WriteAttrString("META:TYPE", new BString(sen::mime::kRelationFolder));
 		// add relation properties so we can populate the folder later with proper relation targets
 		// todo: move to SEN:ID for easier uniform handling here?
-		if (result == B_OK) result = relationNode.WriteAttrString(SEN_RELATION_SOURCE_ATTR, new  BString(folderId));
+		if (result == B_OK) result = relationNode.WriteAttrString(sen::attr::kRelationSource, new  BString(folderId));
 		// TODO: also attach relation message for self relations
-		if (result == B_OK) result = relationNode.WriteAttrString(META_FOLDER_NAME, &folderLabel);
+		if (result == B_OK) result = relationNode.WriteAttrString(sen::attr::kFolderName, &folderLabel);
 	}
 
 	// return ref
 	relationDirEntry.GetRef(relationDirRef);
 
 	return result;
+}
+
+
+/** The vocabularies (attribute name prefixes) that relation properties are named with, see the ontologies of SEN. */
+static bool
+IsRelationPropertyAttribute(const char* name)
+{
+	static const char* const kVocabularies[] = {"SEN:", "schema:", "oa:", "be:", "dc:", "dcterms:", "foaf:"};
+	for (const char* prefix : kVocabularies) {
+		if (strncmp(name, prefix, strlen(prefix)) == 0)
+			return true;
+	}
+	return false;
 }
 
 
@@ -497,7 +511,9 @@ TrackerSenRelations::ConvertAttributesToMessage(const entry_ref* ref, BMessage* 
 		    ERROR("error reading attr_info of attribute %s of ref %s: %s\n", attrName, path.Path(), strerror(result));
 		    return result;
         }
-		if (! BString(attrName).StartsWith(SEN_ATTR_PREFIX)) {
+		// relation properties are named by the vocabularies of the relation types (SEN:REL:*, schema:*, oa:*, be:*, ...);
+		// everything else (BEOS:TYPE, ...) belongs to the file
+		if (! IsRelationPropertyAttribute(attrName)) {
 			PRINT(("skipping non-managed attribute '%s' of file %s...\n", attrName, path.Leaf()) );
 			continue;
 		}
@@ -558,7 +574,7 @@ TrackerSenRelations::GetSenIcon(const char* mimeType, const char* iconType, void
 
 	// check for supported icon types
 	BString type(iconType);
-	if (type == NULL || type != SEN_RELATION_FOLDER_ICON || type != "META:ICON") {
+	if (type == NULL || type != sen::attr::kRelationFolderIcon || type != "META:ICON") {
 		return B_BAD_VALUE;
 	}
 
@@ -603,7 +619,7 @@ TrackerSenRelations::GetSenIcon(const char* mimeType, const char* iconType, void
 	*iconBuffer = new char[attrInfo.size];
 	*iconSize   = attrInfo.size;
 
-	ssize_t sizeRead = mimeNode.ReadAttr(SEN_RELATION_FOLDER_ICON, B_VECTOR_ICON_TYPE, 0, *iconBuffer, *iconSize);
+	ssize_t sizeRead = mimeNode.ReadAttr(sen::attr::kRelationFolderIcon, B_VECTOR_ICON_TYPE, 0, *iconBuffer, *iconSize);
 	if (sizeRead < 0) {
 		result = sizeRead;	// can be interpreted as error code
 
@@ -622,9 +638,9 @@ status_t
 TrackerSenRelations::ExtractSenParams(const BMessage* message, BMessage* enrichedMessage)
 {
 	entry_ref srcRef;
-	status_t result = message->FindRef(SEN_RELATION_SOURCE_REF, &srcRef);
+	status_t result = message->FindRef(sen::key::kSourceRef, &srcRef);
 	if (result == B_OK) {
-		enrichedMessage->AddRef(SEN_RELATION_SOURCE_REF, &srcRef);
+		enrichedMessage->AddRef(sen::key::kSourceRef, &srcRef);
 	}
 
 	// add all properties from this item at this index (e.g. page, position,...)
@@ -645,7 +661,7 @@ TrackerSenRelations::ExtractSenParams(const BMessage* message, BMessage* enriche
 		}
 
 		// add message property only if it comes from SEN
-		if (BString(name).IStartsWith(SEN_ATTR_PREFIX) || BString(name).IStartsWith(SENSEI_ATTR_PREFIX)) {
+		if (BString(name).IStartsWith(sen::attr::kPrefix) || BString(name).IStartsWith(sen::attr::kPrefix)) {
 			PRINT(("adding SEN properties at index %d with name %s and count %d:\n", index, name, count));
 		}
 		const void* data;

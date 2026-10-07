@@ -1046,7 +1046,7 @@ BContainerWindow::UpdateTitle()
 		BNode node(TargetModel()->EntryRef());
 		if (node.InitCheck() == B_OK) {
 			BString metaTitle;
-			if (node.ReadAttrString(META_FOLDER_NAME, &metaTitle) == B_OK) {
+			if (node.ReadAttrString(sen::attr::kFolderName, &metaTitle) == B_OK) {
 				title = metaTitle;
 				PRINT(("found meta tiltle '%s' for folder %s.\n", metaTitle.String(), TargetModel()->Name() ));
 			}
@@ -2202,9 +2202,9 @@ BContainerWindow::SetupNewRelationMenu(BMenu* parent, const entry_ref* ref)
 	message.AddMessenger("TrackerViewToken", BMessenger(PoseView()));
 
 	// add desired SEN relations command, handed through to SEN
-	message.AddUInt32(SEN_ACTION_CMD, SEN_RELATIONS_GET_COMPATIBLE);
+	message.AddUInt32(sen::key::kAction, sen::cmd::kRelationsGetCompatible);
 	// indicate for later (i.e. in OpenRelationsMenu) that we don't want Associations to show up
-	message.AddString(SEN_EXCLUDE_TYPES, SEN_ASSOC_RELATION_TYPE);
+	message.AddString(sen::key::kExcludeTypes, sen::mime::kAssociationRelation);
 
 	// reuse OpenRelationsMenu (because it's the same, really, only uses
 	// different command to get all relations compatible to selected file(s) )
@@ -2272,8 +2272,8 @@ BContainerWindow::SetupNewAssociationMenu(BMenu* parent, const entry_ref* ref)
 	}
 
 	// add SEN relations command with special label relation used for classification
-	message.AddUInt32(SEN_ACTION_CMD, SEN_RELATIONS_GET_COMPATIBLE);
-	message.AddString(SEN_RELATION_TYPE, SEN_ASSOC_RELATION_TYPE);
+	message.AddUInt32(sen::key::kAction, sen::cmd::kRelationsGetCompatible);
+	message.AddString(sen::key::kRelationType, sen::mime::kAssociationRelation);
 
 	// reuse OpenRelationsMenu (because it's the same, really, only uses
 	// different command to get all relations compatible to selected file(s) )
@@ -2339,7 +2339,7 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 
 	// add desired SEN relations command for outgoing or self referencing relations
 	// first: outgoing relations
-	message.AddUInt32(SEN_ACTION_CMD, SEN_RELATIONS_GET_ALL);
+	message.AddUInt32(sen::key::kAction, sen::cmd::kRelationsGetAll);
 
 	fOpenRelationsItem = Shortcuts()->OpenRelationsItem(
 		new OpenRelationsMenu(Shortcuts()->OpenRelationsLabel(), &message, this, BMessenger(PoseView())) );
@@ -2349,7 +2349,7 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 
 	// self relations, take over from above but adapt to self relations
 	BMessage messageSelf(message);
-	messageSelf.ReplaceUInt32(SEN_ACTION_CMD, SEN_RELATIONS_GET_ALL_SELF);
+	messageSelf.ReplaceUInt32(sen::key::kAction, sen::cmd::kRelationsGetAllSelf);
 
 	// always build a fresh menu
 	if (fOpenSelfRelationsItem)

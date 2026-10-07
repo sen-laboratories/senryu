@@ -79,8 +79,8 @@ TrackerSenRelationsTest::ResolveRelationFound()
 
 	BString expectedSrcId("src-id-123");
 	BString expectedTargetId("target-id-456");
-	file.WriteAttrString(SEN_RELATION_SOURCE_ATTR, &expectedSrcId);
-	file.WriteAttrString(SEN_RELATION_TARGET_ATTR, &expectedTargetId);
+	file.WriteAttrString(sen::attr::kRelationSource, &expectedSrcId);
+	file.WriteAttrString(sen::attr::kRelationTarget, &expectedTargetId);
 	file.Sync();
 
 	BEntry entry(filePath.Path());
@@ -167,11 +167,14 @@ TrackerSenRelationsTest::ConvertAttributesToMessageFiltersSenPrefix()
 
 	BString senValue("sen-value");
 	BString otherValue("not-managed-by-sen");
-	BString senAttrName(SEN_ATTR_PREFIX);
+	BString senAttrName(sen::attr::kPrefix);
 	senAttrName << "TestAttr";
 
 	file.WriteAttrString(senAttrName.String(), &senValue);
 	file.WriteAttrString("NotSen:TestAttr", &otherValue);
+	// properties named with the standard vocabularies (schema:pageStart, be:line) are converted, too
+	int32 page = 7;
+	file.WriteAttr("schema:pageStart", B_INT32_TYPE, 0, &page, sizeof(page));
 	file.Sync();
 
 	BEntry entry(filePath.Path());
@@ -187,4 +190,9 @@ TrackerSenRelationsTest::ConvertAttributesToMessageFiltersSenPrefix()
 	CPPUNIT_ASSERT(params.FindString(senAttrName.String(), &readBack) == B_OK);
 	CPPUNIT_ASSERT(readBack == senValue);
 	CPPUNIT_ASSERT(!params.HasString("NotSen:TestAttr"));
+	int32 pageRead = 0;
+	CPPUNIT_ASSERT(params.FindInt32("schema:pageStart", &pageRead) == B_OK);
+	CPPUNIT_ASSERT(pageRead == 7);
+	// the attributes of the file system itself (BEOS:TYPE, ...) are not relation properties
+	CPPUNIT_ASSERT(!params.HasString("BEOS:TYPE"));
 }

@@ -54,7 +54,7 @@ const uint32 kIdentifyEntry = 'Tidt';
 const uint32 kOpenSelection = 'Tosl';
 const uint32 kOpenSelectionWith = 'Tosu';
 
-const uint32 kEnrichEntry = SENSEI_CMD_ENRICH;	// reuse SENSEI definition for better interop
+const uint32 kEnrichEntry = sensei::cmd::kEnrich;	// reuse SENSEI definition for better interop
 const uint32 kNewAssociation = 'Tnas';			// new association relation
 const uint32 kOpenRelations = 'Tore';			// Tracker menu command vs. nested relation handling in SEN
 const uint32 kOpenSelfRelations = 'Tosr';		// ditto

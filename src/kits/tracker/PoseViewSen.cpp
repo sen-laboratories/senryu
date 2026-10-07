@@ -48,6 +48,9 @@ All rights reserved.
 
 #include "PoseView.h"
 #include "TrackerSenRelations.h"
+#include <vector>
+
+#include <sen/Sen.h>
 #include <sen/Sensei.h>
 
 
@@ -58,10 +61,10 @@ BPoseView::HandleSenMessage(BMessage* message)
 	switch(message->what) {
 		case kOpenRelations:
 		case kOpenSelfRelations:
-		case SENSEI_CMD_EXTRACT:
-		case SENSEI_CMD_ENRICH:
-		case SENSEI_CMD_IDENTIFY:
-		case SENSEI_CMD_NAVIGATE: { // fallthrough
+		case sensei::cmd::kExtract:
+		case sensei::cmd::kEnrich:
+		case sensei::cmd::kIdentify:
+		case sensei::cmd::kNavigate: { // fallthrough
 			PRINT(("SEN msg detected.\n"));
 			break;	// ok, go on below
 		}
@@ -71,7 +74,7 @@ BPoseView::HandleSenMessage(BMessage* message)
 	}
 
 	// dispatch SENSEI messages
-	BMessage reply(SENSEI_MESSAGE_RESULT);
+	BMessage reply(sensei::cmd::kResult);
 	status_t result = B_OK;
 
 	switch (message->what) {
@@ -113,21 +116,21 @@ BPoseView::HandleSenMessage(BMessage* message)
 			}
 			break;
 		}
-		case SENSEI_CMD_EXTRACT:
+		case sensei::cmd::kExtract:
 			PRINT(("PoseView::SENSEI extract called.\n"));
 			break;
 
-		case SENSEI_CMD_ENRICH: {
+		case sensei::cmd::kEnrich: {
 			PRINT(("PoseView::SENSEI enrich called.\n"));
 			message->PrintToStream();
 			result = EnrichRefsFromSelection(message->GetBool("wipe", true));
 			break;
 		}
-		case SENSEI_CMD_IDENTIFY:
+		case sensei::cmd::kIdentify:
 			PRINT(("PoseView::SENSEI identify called.\n"));
 			break;
 
-		case SENSEI_CMD_NAVIGATE:
+		case sensei::cmd::kNavigate:
 			PRINT(("PoseView::SENSEI navigate called.\n"));
 			break;
 
@@ -157,7 +160,7 @@ BPoseView::ExtractRefsFromSelection(BMessage* refs) {
 		BPose* pose = fSelectionList->ItemAt(index);
 		const entry_ref* ref = pose->TargetModel()->ResolveIfLink()->EntryRef();
 		if (ref != NULL) {
-			result = refs->AddRef(SEN_RELATION_SOURCE_REF, ref);
+			result = refs->AddRef(sen::key::kSourceRef, ref);
 			if (result != B_OK)
 				break;
 		}
@@ -178,7 +181,7 @@ BPoseView::EnrichRefsFromSelection(bool wipe) {
 
 	entry_ref ref;
 	for (int32 index = 0; index < refs.CountNames(B_REF_TYPE); index++) {
-		refs.FindRef(SEN_RELATION_SOURCE_REF, index, &ref);
+		refs.FindRef(sen::key::kSourceRef, index, &ref);
 
 		// call plugin
 		result = EnrichRefWithPlugin(&ref, wipe);
@@ -192,38 +195,44 @@ BPoseView::EnrichRefsFromSelection(bool wipe) {
 
 status_t
 BPoseView::EnrichRefWithPlugin(const entry_ref* ref, bool wipe) {
-	// find suitable/default enrichment plugin
-	// todo: migrate to common method GetPluginsForTypeAndFeature in SEN SelfRelationHandler.cpp !
-    BString predicate(SEN_TYPE "==" SENSEI_PLUGIN_TYPE " && " SENSEI_PLUGIN_FEATURE_ATTR ":");
-            predicate << SENSEI_FEATURE_ENRICH << "==1";	BVolumeRoster volRoster;
+	// find suitable/default enrichment plugin on any mounted volume. The plugin type (META:TYPE) is indexed and has to be
+	// the first attribute of the query; the feature flag is compared on those files.
+	BString predicate;
+	predicate << sen::attr::kType << "==" << sen::mime::kPlugin << " && " << sensei::kFeatureAttrPrefix << ":"
+		<< sensei::feature::kEnrich << "==1";
 
-	BVolume bootVolume;
-	volRoster.GetBootVolume(&bootVolume);
+	std::vector<entry_ref> plugins;
+	status_t result = B_ENTRY_NOT_FOUND;
+	BVolumeRoster volumeRoster;
+	BVolume volume;
+	while (volumeRoster.GetNextVolume(&volume) == B_OK) {
+		if (!volume.KnowsQuery())
+			continue;
 
-	BQuery query;
-	query.SetVolume(&bootVolume);
-	query.SetPredicate(predicate.String());
+		BQuery query;
+		query.SetVolume(&volume);
+		query.SetPredicate(predicate.String());
+		if (query.Fetch() != B_OK)
+			continue;
 
-    status_t result;
-	if ((result = query.Fetch()) != B_OK) {
-        if (result == B_ENTRY_NOT_FOUND) {
-            PRINT(("no matching plugin found for enrichment.\n"));
-            return B_NOT_SUPPORTED;
-        }
-        // something else went wrong
-        PRINT(("could not execute query for suitable SENSEI extractors: %s\n", strerror(result) ));
-        return result;
-    }
+		entry_ref pluginRef;
+		while (query.GetNextRef(&pluginRef) == B_OK)
+			plugins.push_back(pluginRef);
+	}
+
+	if (plugins.empty()) {
+		PRINT(("no matching plugin found for enrichment.\n"));
+		return B_NOT_SUPPORTED;
+	}
 
 	BMessage refsMsg(B_REFS_RECEIVED);
 	refsMsg.AddRef("refs", ref);
 	refsMsg.AddBool("wipe", wipe);
 
-    entry_ref pluginRef;
-    while ((result = query.GetNextRef(&pluginRef)) == B_OK) {
-        PRINT(("handling ref %s with plugin %s\n", ref->name, pluginRef.name ));
+	for (const entry_ref& pluginRef : plugins) {
+		PRINT(("handling ref %s with plugin %s\n", ref->name, pluginRef.name ));
 
-		result = TrackerLaunch(reinterpret_cast<const entry_ref*>(&pluginRef), &refsMsg, false);
+		result = TrackerLaunch(&pluginRef, &refsMsg, false);
 		if (result == B_OK) {
 			// done
 			break;
