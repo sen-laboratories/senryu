@@ -351,7 +351,7 @@ status_t TTracker::CreateNewAssociationEntity(const char* associationEntityType,
 	BMessenger senMsgr(sen::kServerSignature);
 
 	result = senMsgr.SendMessage(&msgGetClassEntity, &msgClassReply);
-	status_t status = msgClassReply.GetInt32("status", B_OK);
+	status_t status = msgClassReply.GetInt32(sen::key::kResult, B_OK);
 
 	if (result != B_OK || status != B_OK) {
 		PRINT(("error creating new ref from type %s: %s, return status was: %s\n",
