@@ -1,8 +1,7 @@
-/**
- * @author Gregor Rosenauer <gregor.rosenauer@gmail.com>
- * All Rights Reserved.
- * Distributed under the terms of the MIT License.
-*/
+/*
+ * SPDX-License-Identifier: MIT
+ * SPDX-FileCopyrightText: 2026 SEN Labs e.U.
+ */
 
 #pragma once
 

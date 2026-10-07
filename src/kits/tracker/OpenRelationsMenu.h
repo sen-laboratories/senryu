@@ -1,12 +1,9 @@
-/**
- * @author Gregor Rosenauer <gregor.rosenauer@gmail.com>
- * All Rights Reserved.
- * Distributed under the terms of the MIT License.
+/*
+ * SPDX-License-Identifier: MIT
+ * SPDX-FileCopyrightText: 2026 SEN Labs e.U.
  */
 
-#ifndef _OPEN_RELATIONS_WINDOW_H
-#define _OPEN_RELATIONS_WINDOW_H
-
+#pragma once
 #include <String.h>
 
 #include "ContainerWindow.h"
@@ -48,5 +45,3 @@ private:
 
 	typedef BSlowMenu _inherited;
 };
-
-#endif	// _OPEN_RELATIONS_WINDOW_H
