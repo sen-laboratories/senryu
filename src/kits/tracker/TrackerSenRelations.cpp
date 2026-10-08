@@ -169,12 +169,14 @@ TrackerSenRelations::WriteTargetRelations(
 		// since dynamic relations are generated, they cannot be changed
 		// Note: Haiku is single user so perms have to apply to root, too
 		// TODO: there seems to be a bug in Haiku's storage kit or Tracker bc you can still delete read-only files!
+		// a relation that is read-only (the relations of an ontology to its types) is shown like one of a plugin
+		bool readOnly = isDynamic || properties.GetBool(sen::attr::kRelationReadOnly, false);
 		mode_t readWriteMode;
 
 		if (hasRelations) {
-			readWriteMode = (isDynamic ? 0555 : 0777);	// ugo=rx if dynamic, else rwx
+			readWriteMode = (readOnly ? 0555 : 0777);	// ugo=rx if read-only, else rwx
 		} else {
-			readWriteMode = (isDynamic ? 0444 : 0555);  // ugo=r  if dynamic, else rw
+			readWriteMode = (readOnly ? 0444 : 0555);  // ugo=r  if read-only, else rw
 		}
 
 		// create file or dir with appropriate permissions
@@ -362,7 +364,7 @@ TrackerSenRelations::WriteTargetRelations(
 
 		// a stored relation can be edited by working with its file: delete, change attributes, move
 		entry_ref storedSourceRef;
-		if (!isDynamic && !hasRelations && relationConf->FindRef(sen::key::kSourceRef, &storedSourceRef) == B_OK) {
+		if (!readOnly && !hasRelations && relationConf->FindRef(sen::key::kSourceRef, &storedSourceRef) == B_OK) {
 			RelationFolders::FileInfo info;
 			BEntry fileEntry(&relationDir, entryName.String());
 			node_ref fileNode;

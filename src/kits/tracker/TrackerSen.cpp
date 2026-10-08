@@ -151,8 +151,16 @@ TTracker::HandleSenMessage(BMessage* message)
 						PRINT(("failed to resolve relation target for ref %s: %s\n", srcRef.name, strerror(result)));
 						return true;
 					}
-					// get default app which should be a SEN relation navigator
-					result = be_roster->FindApp(&srcRef, &senHandlerRef);
+					// the navigator of the relation type if it has one (not Tracker: that is what opens any file),
+					// else the default app of the target, which should be a SEN relation navigator
+					char navigatorSig[B_MIME_TYPE_LENGTH];
+					result = B_ERROR;
+					if (BMimeType(relationType.String()).GetPreferredApp(navigatorSig) == B_OK
+							&& strcasecmp(navigatorSig, kTrackerSignature) != 0) {
+						result = be_roster->FindApp(navigatorSig, &senHandlerRef);
+					}
+					if (result != B_OK)
+						result = be_roster->FindApp(&srcRef, &senHandlerRef);
 					if (result != B_OK) {
 						PRINT(("failed to find default app for ref %s: %s\n", srcRef.name, strerror(result)));
 						return true;
