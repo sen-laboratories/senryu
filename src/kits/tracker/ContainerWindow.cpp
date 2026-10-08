@@ -2155,15 +2155,33 @@ BContainerWindow::SetupOpenWithMenu(BMenu* parent, const entry_ref* ref)
 }
 
 
+// The relation items are built new whenever a menu is shown, and the same window shows them in the File menu and in the context
+// menus of the poses. The old item may be in another menu than the one that is built now: it has to be taken out of the menu
+// that it is in (taking it out of this one leaves it in the other, and the next one is shown next to it), and deleted.
+// Items of the same kind that stayed behind in this menu (a menu that is built twice at once) are removed, too.
+static void
+RemoveRelationItem(BMenuItem*& item, BMenu* parent, uint32 command)
+{
+	if (item != NULL) {
+		if (item->Menu() != NULL)
+			item->Menu()->RemoveItem(item);
+		delete item;
+		item = NULL;
+	}
+	while (BMenuItem* stray = parent->FindItem(command)) {
+		parent->RemoveItem(stray);
+		delete stray;
+	}
+}
+
+
 void
 BContainerWindow::SetupNewRelationMenu(BMenu* parent, const entry_ref* ref)
 {
 	ASSERT(parent != NULL);
 
 	// remove existing relation items from old menu
-	if (fNewRelationItem != NULL) {
-		parent->RemoveItem(fNewRelationItem);
-	}
+	RemoveRelationItem(fNewRelationItem, parent, kNewRelation);
 
 	int32 count = PoseView()->CountSelected();
 	if (count == 0) {
@@ -2224,20 +2242,22 @@ BContainerWindow::SetupNewAssociationMenu(BMenu* parent, const entry_ref* ref)
 {
 	ASSERT(parent != NULL);
 
-	// remove existing association menu (and separator) from old menu
-	if (fNewAssociationItem != NULL) {
-		// delete old separator if it exists (after our association item)
-		BMenu* menu = fNewAssociationItem->Menu();
-		PRINT(("removing old fNewAssociationItem, parent %s menu.\n", parent != menu ? "!=" : "=="));
+	// remove existing association menu (and its separator) from the menu that it is in
+	while (BMenuItem* old = fNewAssociationItem != NULL ? fNewAssociationItem : parent->FindItem(kNewAssociation)) {
+		BMenu* menu = old->Menu();
 		if (menu != NULL) {
-			int32 assocIndex = menu->IndexOf(fNewAssociationItem);
-			if (assocIndex == B_ERROR) {
-				PRINT(("could not find index of association menu.\n"));
-			} else {
-				menu->RemoveItem(assocIndex + 1);
+			// the separator after our association item, if it is one
+			int32 assocIndex = menu->IndexOf(old);
+			BSeparatorItem* separator = assocIndex >= 0 ? dynamic_cast<BSeparatorItem*>(menu->ItemAt(assocIndex + 1)) : NULL;
+			menu->RemoveItem(old);
+			if (separator != NULL) {
+				menu->RemoveItem(separator);
+				delete separator;
 			}
-			menu->RemoveItem(fNewAssociationItem);
 		}
+		delete old;
+		if (old == fNewAssociationItem)
+			fNewAssociationItem = NULL;
 	}
 
 	int32 count = PoseView()->CountSelected();
@@ -2295,14 +2315,9 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 {
 	ASSERT(parent != NULL);
 
-	// remove existing relation items from old menu
-	if (fOpenRelationsItem != NULL) {
-		parent->RemoveItem(fOpenRelationsItem);
-	}
-	// same for self relations
-	if (fOpenSelfRelationsItem != NULL) {
-		parent->RemoveItem(fOpenSelfRelationsItem);
-	}
+	// remove existing relation items from old menu, same for self relations
+	RemoveRelationItem(fOpenRelationsItem, parent, kOpenRelations);
+	RemoveRelationItem(fOpenSelfRelationsItem, parent, kOpenSelfRelations);
 
 	int32 count = PoseView()->CountSelected();
 	if (count == 0) {
@@ -2351,10 +2366,6 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 	// self relations, take over from above but adapt to self relations
 	BMessage messageSelf(message);
 	messageSelf.ReplaceUInt32(sen::key::kAction, sen::cmd::kRelationsGetAllSelf);
-
-	// always build a fresh menu
-	if (fOpenSelfRelationsItem)
-		delete fOpenSelfRelationsItem;
 
 	// Note: the menu itself targets Tracker, same as for fOpenRelationsItem above
 	fOpenSelfRelationsItem = Shortcuts()->OpenSelfRelationsItem(
