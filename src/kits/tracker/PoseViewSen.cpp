@@ -98,6 +98,10 @@ BPoseView::SetupRelationColumns()
 		attrInfo.FindString("attr:display_as", index, &displayAs);
 		AddColumn(new BColumn(publicName, width, (alignment)align, attrName, type, displayAs, false, editable));
 	}
+
+	// no size (the files of a relation are empty: the properties are attributes, which are not counted), and the time of the
+	// last change after the properties
+	AddColumn(new BColumn(B_TRANSLATE("Modified"), 150, B_ALIGN_LEFT, kAttrStatModified, B_TIME_TYPE, true, false));
 	return true;
 }
 

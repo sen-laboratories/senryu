@@ -23,6 +23,9 @@ public:
 	 * with one (the attribute SEN:REL:TRG), else the file itself. A folder (a nested relation) is the relation itself.
 	 */
 	static entry_ref	RelationTargetOrSelf(const entry_ref* ref);
+	/** The name to show for a file (the title of a window...): its title (dc:title), the short description of a MIME type (the
+	 *  file of a type in the MIME database is named like the type), else its file name. The same as the SEN server gives targets. */
+	static BString	DisplayNameOf(const entry_ref& ref);
 	static status_t	GetSenIcon(const char* mimeType, const char* iconType,
 						void** icon, size_t* iconSize);
 	static status_t	GetInodeForRef(const entry_ref* srcRef, BString* inode);

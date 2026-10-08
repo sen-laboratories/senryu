@@ -576,6 +576,21 @@ TrackerSenRelations::ConvertAttributesToMessage(const entry_ref* ref, BMessage* 
 }
 
 
+BString
+TrackerSenRelations::DisplayNameOf(const entry_ref& ref)
+{
+	BNode node(&ref);
+	BString name;
+	if (node.InitCheck() == B_OK) {
+		for (const char* attribute : {"dc:title", "META:S:DESC"}) {
+			if (node.ReadAttrString(attribute, &name) == B_OK && !name.IsEmpty())
+				return name;
+		}
+	}
+	return BString(ref.name);
+}
+
+
 entry_ref
 TrackerSenRelations::RelationTargetOrSelf(const entry_ref* ref)
 {
@@ -835,7 +850,7 @@ TrackerSenRelations::MaterializeType(const entry_ref& sourceRef, const char* vie
 	if (sourceId.IsEmpty())
 		GetInodeForRef(&sourceRef, &sourceId);
 
-	result = CreateRelationDirectory(viewId, sourceId.String(), sourceRef.name, relationType, &relationConfig, typeDirRef);
+	result = CreateRelationDirectory(viewId, sourceId.String(), DisplayNameOf(sourceRef).String(), relationType, &relationConfig, typeDirRef);
 	if (result != B_OK)
 		return result;
 

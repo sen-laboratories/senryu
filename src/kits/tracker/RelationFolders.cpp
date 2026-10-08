@@ -487,7 +487,7 @@ RelationFolders::HandleDrop(const BMessage& drop, const node_ref& folderNode)
 			BEntry typeFolder(path.Path());
 			if (!typeFolder.Exists()) {
 				entry_ref created;
-				if (TrackerSenRelations::CreateRelationDirectory(folder.viewId, folder.sourceId, folder.sourceRef.name, target.relationType,
+				if (TrackerSenRelations::CreateRelationDirectory(folder.viewId, folder.sourceId, TrackerSenRelations::DisplayNameOf(folder.sourceRef).String(), target.relationType,
 						&target.relationConfig, &created) != B_OK) {
 					continue;
 				}
