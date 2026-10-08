@@ -3915,7 +3915,8 @@ BContainerWindow::ShowAttributesPopUp(BPoint where)
 
 		if (message->what != kAttributeItem && message->what != kMIMETypeItem) {
 			// not an attribute (Copy layout, Paste layout,...): as usual
-			chosen->Invoke();
+			BMessage copy(*message);
+			BMessenger(PoseView()).SendMessage(&copy);
 			delete popUp;
 			return;
 		}
