@@ -134,6 +134,9 @@ create_attribute_item(BMessage& attributes, int32 index)
 	bool visible;
 	if (attributes.FindBool("attr:viewable", index, &visible) != B_OK)
 		visible = false;
+	bool searchable;
+	if (attributes.FindBool("attr:searchable", index, &searchable) != B_OK)
+		searchable = false;
 
 	int32 alignment;
 	if (attributes.FindInt32("attr:alignment", index, &alignment) != B_OK)
@@ -144,7 +147,7 @@ create_attribute_item(BMessage& attributes, int32 index)
 		width = 50;
 
 	return new AttributeItem(name, publicName, type, displayAs, alignment,
-		width, visible, editable);
+		width, visible, editable, searchable);
 }
 
 
@@ -153,7 +156,7 @@ create_attribute_item(BMessage& attributes, int32 index)
 
 AttributeItem::AttributeItem(const char* name, const char* publicName,
 	type_code type, const char* displayAs, int32 alignment,
-	int32 width, bool visible, bool editable)
+	int32 width, bool visible, bool editable, bool searchable)
 	:
 	BStringItem(publicName),
 	fName(name),
@@ -162,7 +165,8 @@ AttributeItem::AttributeItem(const char* name, const char* publicName,
 	fAlignment(alignment),
 	fWidth(width),
 	fVisible(visible),
-	fEditable(editable)
+	fEditable(editable),
+	fSearchable(searchable)
 {
 }
 
@@ -174,7 +178,8 @@ AttributeItem::AttributeItem()
 	fAlignment(B_ALIGN_LEFT),
 	fWidth(60),
 	fVisible(true),
-	fEditable(false)
+	fEditable(false),
+	fSearchable(false)
 {
 }
 
@@ -251,6 +256,7 @@ AttributeItem::operator=(const AttributeItem& other)
 	fWidth = other.Width();
 	fVisible = other.Visible();
 	fEditable = other.Editable();
+	fSearchable = other.Searchable();
 
 	return *this;
 }
@@ -266,7 +272,8 @@ AttributeItem::operator==(const AttributeItem& other) const
 		&& Alignment() == other.Alignment()
 		&& Width() == other.Width()
 		&& Visible() == other.Visible()
-		&& Editable() == other.Editable();
+		&& Editable() == other.Editable()
+		&& Searchable() == other.Searchable();
 }
 
 

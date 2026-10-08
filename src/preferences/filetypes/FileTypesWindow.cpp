@@ -88,6 +88,7 @@ static const char* kAttributeNames[] = {
 	"attr:type",
 	"attr:editable",
 	"attr:viewable",
+	"attr:searchable",
 	"attr:extra",
 	"attr:alignment",
 	"attr:width",

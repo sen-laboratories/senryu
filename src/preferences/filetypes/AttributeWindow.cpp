@@ -8,6 +8,7 @@
 #include "FileTypes.h"
 #include "FileTypesWindow.h"
 
+#include <Alert.h>
 #include <Box.h>
 #include <Button.h>
 #include <Catalog.h>
@@ -22,8 +23,13 @@
 #include <SpaceLayoutItem.h>
 #include <String.h>
 #include <TextControl.h>
+#include <Volume.h>
+#include <VolumeRoster.h>
+
+#include <fs_index.h>
 
 #include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>
@@ -31,6 +37,51 @@
 
 #undef B_TRANSLATION_CONTEXT
 #define B_TRANSLATION_CONTEXT "Attribute Window"
+
+
+// SEN: an attribute that is searchable has an index (on every volume that has queries), without it a query for the attribute
+// finds nothing. BFS indexes numbers, strings and times; not booleans, messages, refs...
+static uint32
+index_type_for(type_code type)
+{
+	switch (type) {
+		case B_INT32_TYPE:
+		case B_UINT32_TYPE:
+		case B_INT64_TYPE:
+		case B_UINT64_TYPE:
+		case B_FLOAT_TYPE:
+		case B_DOUBLE_TYPE:
+		case B_STRING_TYPE:
+			return type;
+		case B_MIME_STRING_TYPE:
+			return B_STRING_TYPE;
+		case B_TIME_TYPE:
+			return B_INT64_TYPE;
+		default:
+			return 0;
+	}
+}
+
+
+/** Create or remove the index of an attribute on all volumes that can have one. The first error is returned (existing and
+ *  missing indices are not errors). */
+static status_t
+change_index_on_all_volumes(const char* name, type_code type, bool create)
+{
+	status_t result = B_OK;
+	BVolumeRoster roster;
+	BVolume volume;
+	while (roster.GetNextVolume(&volume) == B_OK) {
+		if (!volume.KnowsQuery() || !volume.KnowsAttr() || volume.IsReadOnly())
+			continue;
+
+		int status = create ? fs_create_index(volume.Device(), name, index_type_for(type), 0)
+			: fs_remove_index(volume.Device(), name);
+		if (status != 0 && errno != B_FILE_EXISTS && errno != B_ENTRY_NOT_FOUND && result == B_OK)
+			result = errno;
+	}
+	return result;
+}
 
 
 const uint32 kMsgAttributeUpdated = 'atup';
@@ -165,6 +216,13 @@ AttributeWindow::AttributeWindow(FileTypesWindow* target, BMimeType& mimeType,
 		new BMessage(kMsgAttributeUpdated));
 	fEditableCheckBox->SetValue(fAttribute.Editable());
 
+	// SEN: independent of whether the attribute is displayed
+	fSearchableCheckBox = new BCheckBox("searchable",
+		B_TRANSLATE_COMMENT("Searchable",
+			"The attribute is indexed on the volumes so that it can be queried."),
+		new BMessage(kMsgAttributeUpdated));
+	fSearchableCheckBox->SetValue(fAttribute.Searchable());
+
 	fSpecialControl = new BTextControl(B_TRANSLATE("Special:"),
 		display_as_parameter(fAttribute.DisplayAs()), NULL);
 	fSpecialControl->SetModificationMessage(
@@ -237,6 +295,7 @@ AttributeWindow::AttributeWindow(FileTypesWindow* target, BMimeType& mimeType,
 			.Add(typeMenuField->CreateLabelLayoutItem(), 0, 2)
 			.Add(typeMenuField->CreateMenuBarLayoutItem(), 1, 2)
 			.End()
+		.Add(fSearchableCheckBox)
 		.Add(visibleBox = new BBox(B_FANCY_BORDER,
 			BLayoutBuilder::Grid<>(padding, padding / 2)
 				.Add(fDisplayAsMenuField->CreateLabelLayoutItem(), 0, 0)
@@ -265,6 +324,7 @@ AttributeWindow::AttributeWindow(FileTypesWindow* target, BMimeType& mimeType,
 	AddToSubset(target);
 
 	_CheckDisplayAs();
+	_CheckSearchable();
 	_CheckAcceptable();
 }
 
@@ -384,7 +444,27 @@ AttributeWindow::_NewItemFromCurrent()
 	return new AttributeItem(newAttribute,
 		fPublicNameControl->Text(), type, displayAs.String(), alignment,
 		width, fVisibleCheckBox->Value() == B_CONTROL_ON,
-		fEditableCheckBox->Value() == B_CONTROL_ON);
+		fEditableCheckBox->Value() == B_CONTROL_ON,
+		fSearchableCheckBox->Value() == B_CONTROL_ON);
+}
+
+
+// SEN: only what BFS can index can be searchable (not a boolean, not a 16 bit number, not a message,...)
+void
+AttributeWindow::_CheckSearchable()
+{
+	AttributeItem* current = _NewItemFromCurrent();
+	bool indexable = index_type_for(current->Type()) != 0;
+	delete current;
+
+	if (!indexable)
+		fSearchableCheckBox->SetValue(B_CONTROL_OFF);
+	fSearchableCheckBox->SetEnabled(indexable);
+
+	// say why it is not available
+	fSearchableCheckBox->SetToolTip(indexable ? NULL
+		: B_TRANSLATE("Only numbers, times and strings can be indexed, so only these can be searchable. "
+			"A boolean, a 16 bit number or a message cannot."));
 }
 
 
@@ -396,6 +476,7 @@ AttributeWindow::MessageReceived(BMessage* message)
 		case kMsgAlignmentChosen:
 		case kMsgTypeChosen:
 			_CheckDisplayAs();
+			_CheckSearchable();
 			_CheckAcceptable();
 			break;
 
@@ -420,6 +501,49 @@ AttributeWindow::MessageReceived(BMessage* message)
 
 		case kMsgAccept:
 		{
+			// SEN: changing "searchable" changes the index of the attribute: the user decides
+			AttributeItem* current = _NewItemFromCurrent();
+			bool wasSearchable = fAttribute.Searchable();
+			BString oldName(fAttribute.Name());
+			BString newName(current->Name());
+			type_code newType = current->Type();
+			bool searchable = current->Searchable();
+			delete current;
+
+			int32 indexChange = 0;		// 1: create the index of newName, -1: remove the index of oldName
+			if (searchable && (!wasSearchable || oldName != newName))
+				indexChange = 1;
+			else if (!searchable && wasSearchable)
+				indexChange = -1;
+
+			if (indexChange == 1 && index_type_for(newType) == 0) {
+				BAlert* alert = new BAlert(B_TRANSLATE("No index possible"),
+					B_TRANSLATE("The type of this attribute cannot be indexed, so it cannot be searchable. "
+						"Choose a number, a string or a time."), B_TRANSLATE("OK"), NULL, NULL,
+					B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+				alert->SetFlags(alert->Flags() | B_CLOSE_ON_ESCAPE);
+				alert->Go();
+				break;
+			}
+
+			if (indexChange != 0) {
+				BString text(indexChange > 0
+					? B_TRANSLATE("The attribute is searchable now. Create its index on all volumes? Queries for an "
+						"attribute without an index find nothing.")
+					: B_TRANSLATE("The attribute is not searchable any more. Remove its index from all volumes? "
+						"Queries for it will find nothing then."));
+				BAlert* alert = new BAlert(B_TRANSLATE("Index"), text.String(), B_TRANSLATE("Cancel"),
+					B_TRANSLATE("Leave the index"),
+					indexChange > 0 ? B_TRANSLATE("Create index") : B_TRANSLATE("Remove index"),
+					B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+				alert->SetShortcut(0, B_ESCAPE);
+				int32 choice = alert->Go();
+				if (choice == 0)
+					break;			// back to the window, nothing is changed
+				if (choice == 1)
+					indexChange = 0;
+			}
+
 			BMessage attributes;
 			status_t status = fMimeType.GetAttrInfo(&attributes);
 			if (status == B_OK) {
@@ -458,6 +582,7 @@ AttributeWindow::MessageReceived(BMessage* message)
 					newAttributes.AddInt32("attr:width", item->Width());
 					newAttributes.AddBool("attr:viewable", item->Visible());
 					newAttributes.AddBool("attr:editable", item->Editable());
+					newAttributes.AddBool("attr:searchable", item->Searchable());
 
 					delete item;
 				}
@@ -468,6 +593,12 @@ AttributeWindow::MessageReceived(BMessage* message)
 			if (status != B_OK) {
 				error_alert(B_TRANSLATE("Could not change attributes"),
 					status);
+			} else if (indexChange != 0) {
+				status = indexChange > 0
+					? change_index_on_all_volumes(newName.String(), newType, true)
+					: change_index_on_all_volumes(oldName.String(), newType, false);
+				if (status != B_OK)
+					error_alert(B_TRANSLATE("Could not change the index"), status);
 			}
 
 			PostMessage(B_QUIT_REQUESTED);

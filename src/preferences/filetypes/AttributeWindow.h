@@ -35,6 +35,7 @@ class AttributeWindow : public BWindow {
 		type_code _CurrentType() const;
 		BMenuItem* _DefaultDisplayAs() const;
 		void _CheckDisplayAs();
+		void _CheckSearchable();
 		void _CheckAcceptable();
 		AttributeItem* _NewItemFromCurrent();
 
@@ -49,6 +50,7 @@ class AttributeWindow : public BWindow {
 		BMenuField*		fAlignmentMenuField;
 		BCheckBox*		fVisibleCheckBox;
 		BCheckBox*		fEditableCheckBox;
+		BCheckBox*		fSearchableCheckBox;
 		BTextControl*	fSpecialControl;
 		BTextControl*	fWidthControl;
 		BButton*		fAcceptButton;

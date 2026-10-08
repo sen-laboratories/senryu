@@ -15,7 +15,7 @@ class AttributeItem : public BStringItem {
 	public:
 		AttributeItem(const char* name, const char* publicName, type_code type,
 			const char* displayAs, int32 alignment, int32 width, bool visible,
-			bool editable);
+			bool editable, bool searchable = false);
 		AttributeItem();
 		AttributeItem(const AttributeItem& other);
 		virtual ~AttributeItem();
@@ -32,6 +32,8 @@ class AttributeItem : public BStringItem {
 		int32 Width() const { return fWidth; }
 		bool Visible() const { return fVisible; }
 		bool Editable() const { return fEditable; }
+		// SEN: the attribute is indexed, so that it can be queried (attr:searchable)
+		bool Searchable() const { return fSearchable; }
 
 		AttributeItem& operator=(const AttributeItem& other);
 
@@ -46,6 +48,7 @@ class AttributeItem : public BStringItem {
 		int32		fWidth;
 		bool		fVisible;
 		bool		fEditable;
+		bool		fSearchable;
 };
 
 class AttributeListView : public BListView {

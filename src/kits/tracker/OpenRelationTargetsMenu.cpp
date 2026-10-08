@@ -533,12 +533,16 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 
 		IconMenuItem* item;
 
+		// An item can be of a type of its own (the attributes that a type contains are of the type of an attribute), which is
+		// not a relation and has no config: the relation is the one of the menu, the type only gives the icon.
+		BString relationOfItem = relationConfigs.HasMessage(type.String()) || fDefaultType.IsEmpty() ? type : fDefaultType;
+
 		// build menu item msg
 		BMessage openRelationItemMsg;
 
 		// add common relation properties
 		openRelationItemMsg.AddRef(sen::key::kSourceRef, &ref);	// use standard refs as expected by Tracker
-		openRelationItemMsg.AddString(sen::key::kRelationType, type);
+		openRelationItemMsg.AddString(sen::key::kRelationType, relationOfItem);
 		openRelationItemMsg.AddMessage(sen::key::kRelationConfigMap, &relationConfigs);
 
 		// add as menu if there is a child node, else add as a plain menu item
@@ -553,7 +557,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 			// config - TrackerSen::HandleSenMessage's sen::cmd::kOpenRelationTarget case
 			// looks this up at the top level of the message, not inside properties.
 			BMessage selectedConfig;
-			result = relationConfigs.FindMessage(type, &selectedConfig);
+			result = relationConfigs.FindMessage(relationOfItem, &selectedConfig);
 
 			if (result == B_OK) {
 				openRelationItemMsg.AddMessage(sen::key::kRelationConfig, &selectedConfig);
@@ -611,7 +615,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 			// so the submenu will have a SEN:relations and sen::key::kRelations from the childMsg subtree
 			childNode.what = sensei::cmd::kResult;
 			childNode.AddRef(sen::key::kSourceRef, &ref);
-			childNode.AddString(sen::key::kRelationType, type.String());
+			childNode.AddString(sen::key::kRelationType, relationOfItem.String());
 			childNode.AddPointer(sen::key::kRelationRoot, reinterpret_cast<void*>(relationRoot));
 
 			childNode.AddMessage(sensei::key::kPluginConfig, &pluginConfig);

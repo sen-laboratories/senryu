@@ -290,6 +290,13 @@ void
 FileTypes::ArgvReceived(int32 argc, char** argv)
 {
 	if (argc == 3 && strcmp(argv[1], "-type") == 0) {
+		if (fTypesWindow != NULL && fTypesWindow->Lock()) {
+			// the window is open already (SEN: another program asks for a type): show it
+			fTypesWindow->SelectType(argv[2]);
+			fTypesWindow->Activate(true);
+			fTypesWindow->Unlock();
+			return;
+		}
 		fArgvType = argv[2];
 		return;
 	}
