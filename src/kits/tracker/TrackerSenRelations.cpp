@@ -730,7 +730,8 @@ TrackerSenRelations::NewViewId(BString* viewId)
 
 
 void
-TrackerSenRelations::RelationsToList(const BMessage& relations, const BMessage& idToRef, BMessage* list)
+TrackerSenRelations::RelationsToList(const BMessage& relations, const BMessage& idToRef, const BMessage& idToName,
+	BMessage* list)
 {
 	char* targetId;
 	type_code type;
@@ -747,7 +748,9 @@ TrackerSenRelations::RelationsToList(const BMessage& relations, const BMessage& 
 			entry_ref target;
 			BString name;
 			if (idToRef.FindRef(targetId, &target) == B_OK) {
-				name = target.name;
+				// the title of the target, not its file name (the name of a MIME type is not what a user knows it by)
+				if (idToName.FindString(targetId, &name) != B_OK || name.IsEmpty())
+					name = target.name;
 			} else {
 				// a relation to a file that does not exist (any more)
 				name = properties.GetString(sen::attr::kRelationLabel, targetId);
@@ -781,9 +784,10 @@ TrackerSenRelations::MaterializeType(const entry_ref& sourceRef, const char* vie
 		return result;
 	}
 
-	BMessage relations, idToRef, configs, relationConfig;
+	BMessage relations, idToRef, idToName, configs, relationConfig;
 	reply.FindMessage(sen::key::kRelations, &relations);
 	reply.FindMessage(sen::key::kIdToRefMap, &idToRef);
+	reply.FindMessage(sen::key::kIdToNameMap, &idToName);
 	if (reply.FindMessage(sen::key::kRelationConfigMap, &configs) != B_OK
 			|| configs.FindMessage(relationType, &relationConfig) != B_OK) {
 		return B_NAME_NOT_FOUND;
@@ -802,7 +806,7 @@ TrackerSenRelations::MaterializeType(const entry_ref& sourceRef, const char* vie
 		return result;
 
 	BMessage list;
-	RelationsToList(relations, idToRef, &list);
+	RelationsToList(relations, idToRef, idToName, &list);
 
 	BMessage config(relationConfig);
 	config.AddString(sen::key::kSourceId, sourceId);

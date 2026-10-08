@@ -376,6 +376,9 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 		PRINT(("failed to retrieve ID/ref mapping for relations: %s\n", strerror(result)));
 		return result;
 	}
+	// the names to show for the targets (optional: else the names of the files)
+	BMessage idToName;
+	fRelationTargetsReply->FindMessage(sen::key::kIdToNameMap, &idToName);
 
 	BMessage 	relationConfigMap, relationConfig;
 	result = fRelationTargetsReply->FindMessage(sen::key::kRelationConfigMap, &relationConfigMap);
@@ -413,7 +416,10 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 				PRINT(("adding item message for relationt target with ID %s:\n", idKey));
 				itemMessage.PrintToStream();
 
-				ModelMenuItem* item = new ModelMenuItem(new Model(&ref, true, true), ref.name, new BMessage(itemMessage));
+				BString name;
+				if (idToName.FindString(idKey, &name) != B_OK || name.IsEmpty())
+					name = ref.name;
+				ModelMenuItem* item = new ModelMenuItem(new Model(&ref, true, true), name.String(), new BMessage(itemMessage));
 				item->SetTarget(be_app_messenger);
 				AddItem(item);
 

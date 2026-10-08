@@ -636,6 +636,13 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 		relationConf.AddString(sen::key::kRelationType, relationType);
 
 	} else {
+		// a stored relation: the view is made as for the menu of all relations (the files of the relations, which can be edited)
+		BString storedViewId;
+		TrackerSenRelations::NewViewId(&storedViewId);
+		result = TrackerSenRelations::MaterializeType(srcRef, storedViewId.String(), relationType, relationDirRef);
+		if (result != B_NOT_SUPPORTED)
+			return result;
+		// resolved at run time (by a plugin): handed over with the menu
 		message->FindMessage(sen::key::kRelations, &relations);
 		PRINT(("got relations for type %s for source %s:\n", relationType, srcRef.name));
 	}

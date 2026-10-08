@@ -51,7 +51,7 @@ public:
 	 * Convert the relations of the server (target ID -> properties) into the list that WriteTargetRelations() expects: one
 	 * item per relation with the target ID, the name of the target (from the resolved targets) and the properties.
 	 */
-	static void		RelationsToList(const BMessage& relations, const BMessage& idToRef, BMessage* list);
+	static void		RelationsToList(const BMessage& relations, const BMessage& idToRef, const BMessage& idToName, BMessage* list);
 	static status_t	ConvertAttributesToMessage(const entry_ref* ref,
 						BMessage* params);
 	static status_t	GetRelationAttributeInfo(const char* relationType,
