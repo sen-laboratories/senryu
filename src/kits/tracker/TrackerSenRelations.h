@@ -17,6 +17,12 @@ class TrackerSenRelations {
 public:
 	static bool		ResolveRelation(const entry_ref* ref, BString* srcId,
 						BString* targetId);
+	/**
+	 * The file of a relation in a relation view stands for the relation, its target is what the relation menus (Open related,
+	 * Open contained) are about. Returns the ref of the target if this file is a relation file with one (the attribute
+	 * SEN:REL:TRG), else the file itself.
+	 */
+	static entry_ref	RelationTargetOrSelf(const entry_ref* ref);
 	static status_t	GetSenIcon(const char* mimeType, const char* iconType,
 						void** icon, size_t* iconSize);
 	static status_t	GetInodeForRef(const entry_ref* srcRef, BString* inode);

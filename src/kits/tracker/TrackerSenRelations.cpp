@@ -576,6 +576,30 @@ TrackerSenRelations::ConvertAttributesToMessage(const entry_ref* ref, BMessage* 
 }
 
 
+entry_ref
+TrackerSenRelations::RelationTargetOrSelf(const entry_ref* ref)
+{
+	BNode node(ref);
+	attr_info info;
+	if (node.InitCheck() != B_OK || node.GetAttrInfo(sen::attr::kRelationTargetRef, &info) != B_OK
+			|| info.type != B_REF_TYPE || info.size <= 0)
+		return *ref;
+
+	// the ref is stored as a message holds it: flattened
+	char* buffer = new char[info.size];
+	entry_ref target = *ref;
+	if (node.ReadAttr(sen::attr::kRelationTargetRef, B_REF_TYPE, 0, buffer, info.size) == info.size) {
+		BMessage holder;
+		entry_ref found;
+		if (holder.AddData("ref", B_REF_TYPE, buffer, info.size, false) == B_OK && holder.FindRef("ref", &found) == B_OK
+				&& BEntry(&found).Exists())
+			target = found;
+	}
+	delete[] buffer;
+	return target;
+}
+
+
 // copied from SEN SelfRelationHandler
 status_t
 TrackerSenRelations::GetInodeForRef(const entry_ref* srcRef, BString* inode)
@@ -753,6 +777,9 @@ TrackerSenRelations::RelationsToList(const BMessage& relations, const BMessage& 
 				// the title of the target, not its file name (the name of a MIME type is not what a user knows it by)
 				if (idToName.FindString(targetId, &name) != B_OK || name.IsEmpty())
 					name = target.name;
+				// the file of the relation stands for it: the menus of the relation are about the target
+				properties.RemoveName(sen::attr::kRelationTargetRef);
+				properties.AddRef(sen::attr::kRelationTargetRef, &target);
 			} else {
 				// a relation to a file that does not exist (any more)
 				name = properties.GetString(sen::attr::kRelationLabel, targetId);

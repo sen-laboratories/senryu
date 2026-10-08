@@ -35,6 +35,7 @@ All rights reserved.
 
 #include "ContainerWindow.h"
 #include "OpenRelationsMenu.h"
+#include "TrackerSenRelations.h"
 
 #include <Alert.h>
 #include <Application.h>
@@ -2347,7 +2348,9 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 
 	for (int32 index = 0; index < count; index++) {
 		BPose* pose = PoseView()->SelectionList()->ItemAt(index);
-		message.AddRef("refs", pose->TargetModel()->EntryRef());
+		// a file in a view of relations stands for its relation: it is about the target
+		entry_ref relatedRef = TrackerSenRelations::RelationTargetOrSelf(pose->TargetModel()->EntryRef());
+		message.AddRef("refs", &relatedRef);
 	}
 
 	// add Tracker token so that refs received recipients can script us
