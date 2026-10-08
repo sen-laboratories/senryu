@@ -498,7 +498,7 @@ TTracker::PrepareRelationFolder(BMessage *message, entry_ref* relationDirRef)
 		// when their menu is used, their folder stays a placeholder here
 		result = TrackerSenRelations::MaterializeType(srcRef, viewId.String(), relationType, relationDirRef);
 		if (result == B_NOT_SUPPORTED) {
-			result = TrackerSenRelations::CreateRelationDirectory(viewId.String(), srcId.String(), relationType,
+			result = TrackerSenRelations::CreateRelationDirectory(viewId.String(), srcId.String(), srcRef.name, relationType,
 				&relationConf, relationDirRef);
 		}
 		if ((result != B_OK)) {
@@ -640,7 +640,7 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 	// TODO: pass in all configs and handle mixed types properly
 	BString viewId;
 	TrackerSenRelations::NewViewId(&viewId);
-	result = TrackerSenRelations::CreateRelationDirectory(viewId.String(), srcId.String(), relationType, &relationConf, relationDirRef);
+	result = TrackerSenRelations::CreateRelationDirectory(viewId.String(), srcId.String(), srcRef.name, relationType, &relationConf, relationDirRef);
 	if ((result != B_OK)) {
 		PRINT(("could not create relation target folder: %s\n", strerror(result)));
 		return result;

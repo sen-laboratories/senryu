@@ -639,14 +639,14 @@ BPoseView::SetupDefaultColumnsIfNeeded()
 	if (CountColumns() != 0)
 		return;
 
-	// TODO: SEN: setup relation columns if in RelationContext!
-
-	AddColumn(new BColumn(B_TRANSLATE("Name"), 145,
-		B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));
-	AddColumn(new BColumn(B_TRANSLATE("Size"), 80,
-		B_ALIGN_RIGHT, kAttrStatSize, B_OFF_T_TYPE, true, false));
-	AddColumn(new BColumn(B_TRANSLATE("Modified"), 150,
-		B_ALIGN_LEFT, kAttrStatModified, B_TIME_TYPE, true, false));
+	if (!SetupRelationColumns()) {
+		AddColumn(new BColumn(B_TRANSLATE("Name"), 145,
+			B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));
+		AddColumn(new BColumn(B_TRANSLATE("Size"), 80,
+			B_ALIGN_RIGHT, kAttrStatSize, B_OFF_T_TYPE, true, false));
+		AddColumn(new BColumn(B_TRANSLATE("Modified"), 150,
+			B_ALIGN_LEFT, kAttrStatModified, B_TIME_TYPE, true, false));
+	}
 
 	if (!IsWatchingDateFormatChange())
 		StartWatchDateFormatChange();
@@ -2651,6 +2651,10 @@ BPoseView::MessageReceived(BMessage* message)
 			HandleAttrMenuItemSelected(message);
 			break;
 
+		case kShowAllAttributes:
+			ContainerWindow()->ShowAllAttributes();
+			break;
+
 		case kAddPrinter:
 			be_app->PostMessage(message);
 			break;
@@ -2957,40 +2961,49 @@ BPoseView::HandleAttrMenuItemSelected(BMessage* message)
 		RemoveColumn(column, true);
 		return;
 	} else {
-		// collect info about selected attribute
-		const char* attrName;
-		if (message->FindString("attr_name", &attrName) != B_OK)
-			return;
-
-		uint32 attrType;
-		if (message->FindInt32("attr_type", (int32*)&attrType) != B_OK)
-			return;
-
-		float attrWidth;
-		if (message->FindFloat("attr_width", &attrWidth) != B_OK)
-			return;
-
-		alignment attrAlign;
-		if (message->FindInt32("attr_align", (int32*)&attrAlign) != B_OK)
-			return;
-
-		bool isEditable;
-		if (message->FindBool("attr_editable", &isEditable) != B_OK)
-			return;
-
-		bool isStatfield;
-		if (message->FindBool("attr_statfield", &isStatfield) != B_OK)
-			return;
-
-		const char* displayAs;
-		message->FindString("attr_display_as", &displayAs);
-
-		column = new BColumn(item->Label(), attrWidth, attrAlign,
-			attrName, attrType, displayAs, isStatfield, isEditable);
-		AddColumn(column);
+		AddAttributeColumn(message, item->Label());
 		if (item->Menu()->Supermenu() == NULL)
 			delete item->Menu();
 	}
+}
+
+
+void
+BPoseView::AddAttributeColumn(const BMessage* message, const char* label)
+{
+	// collect info about the attribute
+	const char* attrName;
+	if (message->FindString("attr_name", &attrName) != B_OK)
+		return;
+
+	uint32 attrType;
+	if (message->FindInt32("attr_type", (int32*)&attrType) != B_OK)
+		return;
+
+	uint32 attrHash;
+	if (message->FindInt32("attr_hash", (int32*)&attrHash) != B_OK || ColumnFor(attrHash) != NULL)
+		return;
+
+	float attrWidth;
+	if (message->FindFloat("attr_width", &attrWidth) != B_OK)
+		return;
+
+	alignment attrAlign;
+	if (message->FindInt32("attr_align", (int32*)&attrAlign) != B_OK)
+		return;
+
+	bool isEditable;
+	if (message->FindBool("attr_editable", &isEditable) != B_OK)
+		return;
+
+	bool isStatfield;
+	if (message->FindBool("attr_statfield", &isStatfield) != B_OK)
+		return;
+
+	const char* displayAs = NULL;
+	message->FindString("attr_display_as", &displayAs);
+
+	AddColumn(new BColumn(label, attrWidth, attrAlign, attrName, attrType, displayAs, isStatfield, isEditable));
 }
 
 

@@ -245,6 +245,8 @@ public:
 
 	BColumn* ColumnAt(int32 index) const;
 	BColumn* ColumnFor(uint32 attribute_hash) const;
+	/** Add the column of an item of the Attributes menu (message kAttributeItem), if the view has none for it yet. */
+	void AddAttributeColumn(const BMessage* attributeItem, const char* label);
 	BColumn* FirstColumn() const;
 	BColumn* LastColumn() const;
 	int32 IndexOfColumn(const BColumn*) const;
@@ -638,6 +640,8 @@ protected:
 	virtual void EditQueries();
 
 	void HandleAttrMenuItemSelected(BMessage*);
+	/** SEN: a folder of relations shows all viewable attributes of its relation type as columns. Returns false if the folder is not one. */
+	bool SetupRelationColumns();
 	void TryUpdatingBrokenLinks();
 		// ran a little after a volume gets mounted
 

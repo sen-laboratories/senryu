@@ -3593,6 +3593,11 @@ BContainerWindow::NewAttributesMenu(BMenu* menu)
 	menu->AddItem(NewAttributeMenuItem(B_TRANSLATE("Permissions"),
 		kAttrStatMode, B_STRING_TYPE, 80, B_ALIGN_LEFT, false, true));
 
+	menu->AddSeparatorItem();
+	menu->AddItem(item = new BMenuItem(B_TRANSLATE("Show all"),
+		new BMessage(kShowAllAttributes)));
+	item->SetTarget(PoseView());
+
 	MarkAttributesMenu(menu);
 }
 
@@ -3768,7 +3773,8 @@ BContainerWindow::NewArrangeByMenu()
 	for (int32 i = 3; i < attrCount; i++) {
 		// skip over "Copy layout", "Paste layout" and separator
 		item = fAttrMenu->ItemAt(i);
-		if (item == NULL || item->Message() == NULL)
+		if (item == NULL || item->Message() == NULL
+			|| item->Message()->what != kAttributeItem)
 			continue;
 
 		item = new BMenuItem(item->Label(), new BMessage(*item->Message()));
@@ -3826,6 +3832,29 @@ BContainerWindow::SetupArrangeByMenu(BMenu* parent)
 	}
 
 	Shortcuts()->UpdateArrangeByItem(fArrangeByItem);
+}
+
+
+static void
+ShowAllAttributesOfMenu(BPoseView* poseView, BMenu* menu)
+{
+	for (int32 index = 0; BMenuItem* item = menu->ItemAt(index); index++) {
+		if (item->Submenu() != NULL)
+			ShowAllAttributesOfMenu(poseView, item->Submenu());
+		else if (item->Message() != NULL && item->Message()->what == kAttributeItem)
+			poseView->AddAttributeColumn(item->Message(), item->Label());
+	}
+}
+
+
+void
+BContainerWindow::ShowAllAttributes()
+{
+	if (fAttrMenu == NULL)
+		return;
+
+	ShowAllAttributesOfMenu(PoseView(), fAttrMenu);
+	MarkAttributesMenu();
 }
 
 

@@ -29,8 +29,9 @@ public:
 	 * inodes are not unique), never share or overwrite one.
 	 * @param viewId   the folder of the view, see NewViewId()
 	 * @param sourceId the SEN:ID of the source of the relations (or its inode, where it has no ID), kept in the folder
+	 * @param sourceName the name of the source file, shown in the title of the folder ("<source> → <relation> relations")
 	 */
-	static status_t	CreateRelationDirectory(const char* viewId, const char* sourceId,
+	static status_t	CreateRelationDirectory(const char* viewId, const char* sourceId, const char* sourceName,
 						const char* relationType,
 						const BMessage* relationConfig,
 						entry_ref* relationDirRef);

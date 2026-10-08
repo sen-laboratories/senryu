@@ -165,6 +165,8 @@ public:
 		// deprecated
 
 	void AddMimeTypesToMenu();
+	/** Show a column for every attribute of the Attributes menu. */
+	void ShowAllAttributes();
 	void AddMimeTypesToMenu(BMenu*);
 
 	BMenuItem* NewArrangeByMenu();

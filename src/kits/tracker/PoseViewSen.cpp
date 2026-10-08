@@ -39,7 +39,11 @@ All rights reserved.
 #include "Commands.h"
 #define DEBUG 1
 
+#include "Attributes.h"
 #include "FSUtils.h"
+#include "Utilities.h"
+#include <Catalog.h>
+#include <NodeInfo.h>
 #include <Query.h>
 #include <VolumeRoster.h>
 
@@ -52,6 +56,52 @@ All rights reserved.
 
 #include <sen/Sen.h>
 #include <sen/Sensei.h>
+
+#undef B_TRANSLATION_CONTEXT
+#define B_TRANSLATION_CONTEXT "PoseView"
+
+
+bool
+BPoseView::SetupRelationColumns()
+{
+	if (TargetModel() == NULL)
+		return false;
+
+	BNode node(TargetModel()->EntryRef());
+	BString kind;
+	if (node.InitCheck() != B_OK || node.ReadAttrString("META:TYPE", &kind) != B_OK
+			|| kind != sen::mime::kRelationFolder)
+		return false;
+
+	char relationType[B_MIME_TYPE_LENGTH];
+	BMessage attrInfo;
+	if (BNodeInfo(&node).GetType(relationType) != B_OK
+			|| TrackerSenRelations::GetRelationAttributeInfo(relationType, &attrInfo) != B_OK)
+		return false;
+
+	AddColumn(new BColumn(B_TRANSLATE("Name"), 145, B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));
+
+	// all attributes of the relation type (and of the relation supertype) that are meant to be displayed
+	const char* publicName;
+	for (int32 index = 0; attrInfo.FindString("attr:public_name", index, &publicName) == B_OK; index++) {
+		int32 type, align, width;
+		bool editable;
+		const char* attrName;
+		if (!attrInfo.FindBool("attr:viewable", index)
+				|| attrInfo.FindString("attr:name", index, &attrName) != B_OK
+				|| attrInfo.FindInt32("attr:type", index, &type) != B_OK
+				|| attrInfo.FindBool("attr:editable", index, &editable) != B_OK
+				|| attrInfo.FindInt32("attr:width", index, &width) != B_OK
+				|| attrInfo.FindInt32("attr:alignment", index, &align) != B_OK
+				|| ColumnFor(AttrHashString(attrName, (uint32)type)) != NULL)
+			continue;
+
+		const char* displayAs = NULL;
+		attrInfo.FindString("attr:display_as", index, &displayAs);
+		AddColumn(new BColumn(publicName, width, (alignment)align, attrName, type, displayAs, false, editable));
+	}
+	return true;
+}
 
 
 bool

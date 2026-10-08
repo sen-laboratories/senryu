@@ -415,6 +415,7 @@ status_t
 TrackerSenRelations::CreateRelationDirectory(
 	const char* viewId,
 	const char* sourceId,
+	const char* sourceName,
 	const char* relationType,
 	const BMessage* relationConfig,
 	entry_ref* relationDirRef)
@@ -474,7 +475,7 @@ TrackerSenRelations::CreateRelationDirectory(
 	relationDir.GetEntry(&relationDirEntry);
 
 	// add a friendly display name
-	BString folderLabel(relationLabel);
+	BString folderLabel(sourceName);
 	folderLabel << " → "  << relationLabel << " relations";
 	BNode relationNode(&relationDirEntry);
 
@@ -791,7 +792,7 @@ TrackerSenRelations::MaterializeType(const entry_ref& sourceRef, const char* vie
 	if (sourceId.IsEmpty())
 		GetInodeForRef(&sourceRef, &sourceId);
 
-	result = CreateRelationDirectory(viewId, sourceId.String(), relationType, &relationConfig, typeDirRef);
+	result = CreateRelationDirectory(viewId, sourceId.String(), sourceRef.name, relationType, &relationConfig, typeDirRef);
 	if (result != B_OK)
 		return result;
 
