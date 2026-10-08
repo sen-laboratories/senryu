@@ -2216,6 +2216,7 @@ BContainerWindow::SetupNewRelationMenu(BMenu* parent, const entry_ref* ref)
 
 	for (int32 index = 0; index < count; index++) {
 		BPose* pose = PoseView()->SelectionList()->ItemAt(index);
+		// "New related" is about the relation itself, also for the file of a relation: it adds a dimension to it (an n-ary relation)
 		message.AddRef("refs", pose->TargetModel()->EntryRef());
 	}
 	// add Tracker token so that we can call back here in Tracker's refs received later
@@ -2290,6 +2291,7 @@ BContainerWindow::SetupNewAssociationMenu(BMenu* parent, const entry_ref* ref)
 	BMessage message(B_REFS_RECEIVED);
 	for (int32 index = 0; index < count; index++) {
 		BPose* pose = PoseView()->SelectionList()->ItemAt(index);
+		// "New related" is about the relation itself, also for the file of a relation: it adds a dimension to it (an n-ary relation)
 		message.AddRef("refs", pose->TargetModel()->EntryRef());
 	}
 

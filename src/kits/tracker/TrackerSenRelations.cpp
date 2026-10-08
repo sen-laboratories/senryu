@@ -579,6 +579,11 @@ TrackerSenRelations::ConvertAttributesToMessage(const entry_ref* ref, BMessage* 
 entry_ref
 TrackerSenRelations::RelationTargetOrSelf(const entry_ref* ref)
 {
+	// a folder is a nested (n-ary) relation: what is done with it is done with that relation
+	BEntry entry(ref);
+	if (entry.InitCheck() != B_OK || entry.IsDirectory())
+		return *ref;
+
 	BNode node(ref);
 	attr_info info;
 	if (node.InitCheck() != B_OK || node.GetAttrInfo(sen::attr::kRelationTargetRef, &info) != B_OK
