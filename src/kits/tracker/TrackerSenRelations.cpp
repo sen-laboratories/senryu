@@ -389,8 +389,9 @@ TrackerSenRelations::GetRelationAttributeInfo(const char* relationType, BMessage
 	BMimeType relationMimeType(relationType);
 	status_t result = relationMimeType.GetAttrInfo(attrInfo);
 	if (result != B_OK) {
-		PRINT(("error reading attribute info for relation with type %s: %s\n", relationType, strerror(result)));
-		return result;
+		// a type without attributes of its own still has the ones of all relations
+		PRINT(("no attribute info for relation with type %s: %s\n", relationType, strerror(result)));
+		attrInfo->MakeEmpty();
 	}
 
 	// get additional attributes from relation supertype

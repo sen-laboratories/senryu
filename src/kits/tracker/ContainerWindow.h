@@ -171,6 +171,9 @@ public:
 	 * @param where where to show it, in screen coordinates
 	 */
 	void ShowAttributesPopUp(BPoint where);
+	/** Choosing the menu of a type (e.g. of a relation) in the Attributes menu: select all its attributes. */
+	void SelectAttributesOfType(const BMessage* mimeTypeItem);
+	void SelectAttributesOfMenu(BMenu* menu);
 	void AddMimeTypesToMenu(BMenu*);
 
 	BMenuItem* NewArrangeByMenu();

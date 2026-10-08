@@ -2651,6 +2651,10 @@ BPoseView::MessageReceived(BMessage* message)
 			HandleAttrMenuItemSelected(message);
 			break;
 
+		case kMIMETypeItem:
+			ContainerWindow()->SelectAttributesOfType(message);
+			break;
+
 		case kAddPrinter:
 			be_app->PostMessage(message);
 			break;

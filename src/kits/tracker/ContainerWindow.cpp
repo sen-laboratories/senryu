@@ -3734,7 +3734,10 @@ BContainerWindow::AddMimeMenu(const BMimeType& mimeType, bool isSuperType,
 
 	BMessage* message = new BMessage(kMIMETypeItem);
 	message->AddString("mimetype", mimeType.Type());
-	menu->AddItem(new IconMenuItem(mimeMenu, message, mimeType.Type()));
+	BMenuItem* mimeItem = new IconMenuItem(mimeMenu, message, mimeType.Type());
+	// choosing the menu of a type selects all its attributes, see BPoseView::MessageReceived()
+	mimeItem->SetTarget(PoseView());
+	menu->AddItem(mimeItem);
 
 	return mimeMenu;
 }
@@ -3831,14 +3834,16 @@ FindMimeItem(BMenu* menu, const char* mimeType)
 }
 
 
-// the attribute items of a menu (not of its submenus)
-static void
-CollectAttributeItems(BMenu* menu, std::vector<BMenuItem*>* items)
+// the item for this MIME type in the menu or its submenus
+static BMenuItem*
+FindMimeItemInTree(BMenu* menu, const char* mimeType)
 {
-	for (int32 index = 0; BMenuItem* item = menu->ItemAt(index); index++) {
-		if (item->Message() != NULL && item->Message()->what == kAttributeItem)
-			items->push_back(item);
+	BMenuItem* found = FindMimeItem(menu, mimeType);
+	for (int32 index = 0; found == NULL && index < menu->CountItems(); index++) {
+		if (menu->ItemAt(index)->Submenu() != NULL)
+			found = FindMimeItemInTree(menu->ItemAt(index)->Submenu(), mimeType);
 	}
+	return found;
 }
 
 
@@ -3872,14 +3877,40 @@ CopyAttributesMenu(const BMenu* source, BMenu* copy)
 
 
 void
+BContainerWindow::SelectAttributesOfMenu(BMenu* menu)
+{
+	// the attributes of this menu (not of its submenus), the ones that are shown stay
+	for (int32 index = 0; BMenuItem* item = menu->ItemAt(index); index++) {
+		if (item->Message() != NULL && item->Message()->what == kAttributeItem)
+			PoseView()->AddAttributeColumn(item->Message(), item->Label());
+	}
+	MarkAttributesMenu();
+}
+
+
+void
+BContainerWindow::SelectAttributesOfType(const BMessage* mimeTypeItem)
+{
+	const char* mimeType;
+	if (fAttrMenu == NULL || mimeTypeItem->FindString("mimetype", &mimeType) != B_OK)
+		return;
+
+	BMenuItem* item = FindMimeItemInTree(fAttrMenu, mimeType);
+	if (item != NULL && item->Submenu() != NULL)
+		SelectAttributesOfMenu(item->Submenu());
+}
+
+
+void
 BContainerWindow::ShowAttributesPopUp(BPoint where)
 {
 	// The menu of the column titles. With Shift pressed an item does not close it: the attribute is selected or deselected, and
 	// the menu is shown again where it was (a menu itself closes when the mouse is released, there is no hook to prevent that).
-	// With Shift on a menu of a relation (or any MIME type) all its attributes are selected, or deselected if they all are
-	// selected. The menu of an attribute that was selected with Shift is shown again, not the one it is in.
+	// A menu of a relation (or any MIME type) selects all its attributes; with Shift it is shown, to select more. The menu
+	// of an attribute that was selected with Shift is shown again, not the one it is in.
 	std::vector<BString> path;	// the MIME types of the menus down to the one that is shown
 	bool again = false;
+	// the menu is always shown where it was first, it would move every time otherwise
 
 	for (;;) {
 		BPopUpMenu* popUp = new BPopUpMenu("Attributes", false, false);
@@ -3911,7 +3942,6 @@ BContainerWindow::ShowAttributesPopUp(BPoint where)
 		BMessage* message = chosen->Message();
 		bool keepOpen = (modifiers() & B_SHIFT_KEY) != 0;
 		BMenu* chosenMenu = chosen->Menu();
-		BRect frame = chosen->Frame();
 
 		if (message->what != kAttributeItem && message->what != kMIMETypeItem) {
 			// not an attribute (Copy layout, Paste layout,...): as usual
@@ -3921,7 +3951,9 @@ BContainerWindow::ShowAttributesPopUp(BPoint where)
 			return;
 		}
 		if (!keepOpen) {
-			if (message->what == kAttributeItem) {
+			if (message->what == kMIMETypeItem && chosen->Submenu() != NULL)
+				SelectAttributesOfMenu(chosen->Submenu());
+			else if (message->what == kAttributeItem) {
 				uint32 attrHash;
 				if (message->FindInt32("attr_hash", (int32*)&attrHash) == B_OK) {
 					if (PoseView()->ColumnFor(attrHash) != NULL)
@@ -3934,10 +3966,6 @@ BContainerWindow::ShowAttributesPopUp(BPoint where)
 			return;
 		}
 
-		BPoint cursor;
-		uint32 buttons;
-		get_mouse(&cursor, &buttons);
-
 		if (message->what == kAttributeItem) {
 			uint32 attrHash;
 			if (message->FindInt32("attr_hash", (int32*)&attrHash) == B_OK) {
@@ -3946,7 +3974,7 @@ BContainerWindow::ShowAttributesPopUp(BPoint where)
 				else
 					PoseView()->AddAttributeColumn(message, chosen->Label());
 			}
-			// the menu this attribute is in, with the cursor on it again
+			// the menu this attribute is in is shown again
 			std::vector<BString> menuPath(path);
 			for (BMenu* menu = chosenMenu; menu != NULL && menu != popUp && menu->Superitem() != NULL;
 					menu = menu->Supermenu()) {
@@ -3957,29 +3985,12 @@ BContainerWindow::ShowAttributesPopUp(BPoint where)
 				menuPath.insert(menuPath.begin() + path.size(), BString(mimeType));
 			}
 			path = menuPath;
-			where = BPoint(cursor.x - frame.left - 4, cursor.y - frame.top - frame.Height() / 2);
 		} else {
-			// a menu of attributes (e.g. of a relation): all or none, and its attributes are shown
+			// a menu of attributes (e.g. of a relation) was chosen: all its attributes are shown, and the menu is shown
 			const char* mimeType;
-			BMenu* submenu = chosen->Submenu();
-			if (submenu != NULL && message->FindString("mimetype", &mimeType) == B_OK) {
-				std::vector<BMenuItem*> items;
-				CollectAttributeItems(submenu, &items);
-				bool allShown = !items.empty();
-				for (BMenuItem* item : items) {
-					int32 attrHash;
-					if (item->Message()->FindInt32("attr_hash", &attrHash) == B_OK)
-						allShown = allShown && PoseView()->ColumnFor((uint32)attrHash) != NULL;
-				}
-				for (BMenuItem* item : items) {
-					if (allShown)
-						PoseView()->RemoveAttributeColumn(item->Message());
-					else
-						PoseView()->AddAttributeColumn(item->Message(), item->Label());
-				}
-				// the menu with the attributes of this one opens where the cursor is
+			if (chosen->Submenu() != NULL && message->FindString("mimetype", &mimeType) == B_OK) {
+				SelectAttributesOfMenu(chosen->Submenu());
 				path.push_back(BString(mimeType));
-				where = BPoint(cursor.x + 20, cursor.y - frame.Height() / 2);
 			}
 		}
 
