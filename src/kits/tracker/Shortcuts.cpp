@@ -697,7 +697,7 @@ TShortcuts::OpenSelfRelationsItem(BMenu* menu)
 const char*
 TShortcuts::OpenSelfRelationsLabel()
 {
-	return B_TRANSLATE("Open self related" B_UTF8_ELLIPSIS);
+	return B_TRANSLATE("Open contained" B_UTF8_ELLIPSIS);
 }
 
 
