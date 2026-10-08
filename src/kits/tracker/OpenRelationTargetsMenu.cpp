@@ -360,6 +360,11 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 
 	BMessage relations;
 	result = fRelationTargetsReply->FindMessage(sen::key::kRelations, &relations);
+	if (result == B_NAME_NOT_FOUND) {
+		// nothing to show: a document without bookmarks has no contained relations, that is not an error
+		PRINT(("no relation targets in the result.\n"));
+		return B_OK;
+	}
 	if (result != B_OK) {
 		PRINT(("failed to retrieve relations from result: %s\n", strerror(result)));
 		return result;
