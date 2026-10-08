@@ -59,6 +59,7 @@ All rights reserved.
 #define APP_SERVER_CLEARS_BACKGROUND 1
 
 
+static const float kMinFontSize = 8.0f;
 static const float kMinTitleHeight = 13.0f;
 static const float kTitleSpacing = 1.4f;
 
@@ -119,12 +120,15 @@ BTitleView::BTitleView(BPoseView* view)
 	SetViewColor(B_TRANSPARENT_COLOR);
 #endif
 
-	// the plain font, in 80% of the height of the header of a BColumnListView (it used to be 3/4 of the font size)
+	// 80% of the plain font and, with it, of the height of the header of a BColumnListView (it used to be 3/4)
+	float fontSize = std::max(kMinFontSize, floorf(be_plain_font->Size() * 0.8f));
+
 	BFont font(be_plain_font);
+	font.SetSize(fontSize);
 	SetFont(&font);
 
 	fPreferredHeight = std::max(kMinTitleHeight,
-		ceilf(font.Size() * kTitleSpacing * 0.8f));
+		ceilf(fontSize * kTitleSpacing));
 
 	Reset();
 }

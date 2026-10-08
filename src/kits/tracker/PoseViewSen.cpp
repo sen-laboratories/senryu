@@ -67,15 +67,13 @@ BPoseView::SetupRelationColumns()
 	if (TargetModel() == NULL)
 		return false;
 
+	// the folder of a relation type, or a folder in it (a nested relation, e.g. a chapter): the type of the folder is the
+	// relation type
 	BNode node(TargetModel()->EntryRef());
-	BString kind;
-	if (node.InitCheck() != B_OK || node.ReadAttrString("META:TYPE", &kind) != B_OK
-			|| kind != sen::mime::kRelationFolder)
-		return false;
-
 	char relationType[B_MIME_TYPE_LENGTH];
 	BMessage attrInfo;
-	if (BNodeInfo(&node).GetType(relationType) != B_OK
+	if (node.InitCheck() != B_OK || BNodeInfo(&node).GetType(relationType) != B_OK
+			|| strncmp(relationType, sen::mime::kRelationPrefix, strlen(sen::mime::kRelationPrefix)) != 0
 			|| TrackerSenRelations::GetRelationAttributeInfo(relationType, &attrInfo) != B_OK)
 		return false;
 
