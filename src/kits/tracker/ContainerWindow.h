@@ -165,8 +165,12 @@ public:
 		// deprecated
 
 	void AddMimeTypesToMenu();
-	/** Show a column for every attribute of the Attributes menu. */
-	void ShowAllAttributes();
+	/**
+	 * The menu of the column titles (right click): select and deselect attributes as columns. With Shift pressed an item does not
+	 * close the menu, to select several; Shift+click on a menu of attributes, e.g. of a relation, selects all of them or none.
+	 * @param where where to show it, in screen coordinates
+	 */
+	void ShowAttributesPopUp(BPoint where);
 	void AddMimeTypesToMenu(BMenu*);
 
 	BMenuItem* NewArrangeByMenu();

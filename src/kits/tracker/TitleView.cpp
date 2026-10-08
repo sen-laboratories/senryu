@@ -310,12 +310,7 @@ BTitleView::MouseDown(BPoint where)
 	// if so, display the attribute menu:
 
 	if (SecondaryMouseButtonDown(modifiers(), buttons)) {
-		BPopUpMenu* menu = new BPopUpMenu("Attributes", false, false);
-		window->NewAttributesMenu(menu);
-		window->AddMimeTypesToMenu(menu);
-		window->MarkAttributesMenu(menu);
-		menu->SetTargetForItems(window->PoseView());
-		menu->Go(ConvertToScreen(where), true, false);
+		window->ShowAttributesPopUp(ConvertToScreen(where));
 		return;
 	}
 

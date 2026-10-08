@@ -604,18 +604,22 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 
 	if (isSelf) {
 		// get all relations for creating complete relation structure, but open only selected relation view later
-		BMessage* relationRoot;
+		// the root is a pointer for the relations in the menus (items with sub items); the menu of a relation type has
+		// no pointer to it, there the whole result is a copy in the message
+		BMessage* relationRoot = NULL;
 		result = message->FindPointer(sen::key::kRelationRoot, reinterpret_cast<void**>(&relationRoot));
-
-		if (result == B_OK) {
+		if (result == B_OK && relationRoot != NULL)
 			relations = *relationRoot;
-			if (relations.IsEmpty()) {
-				PRINT(("  ? no relations contained in result root.\n"));
-				return B_OK;
-			}
-		} else {
+		else
+			result = message->FindMessage(sen::key::kRelationRoot, &relations);
+
+		if (result != B_OK) {
 			PRINT(("  X failed to get relation ROOT: %s\n", strerror(result) ));
 			return result;
+		}
+		if (relations.IsEmpty()) {
+			PRINT(("  ? no relations contained in result root.\n"));
+			return B_OK;
 		}
 
 		PRINT(("  * got relation ROOT, generating self relation view....\n"));

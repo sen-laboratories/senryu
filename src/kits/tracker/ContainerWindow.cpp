@@ -63,6 +63,7 @@ All rights reserved.
 #include <fs_attr.h>
 #include <image.h>
 #include <strings.h>
+#include <vector>
 #include <stdlib.h>
 
 #include "Attributes.h"
@@ -3593,11 +3594,6 @@ BContainerWindow::NewAttributesMenu(BMenu* menu)
 	menu->AddItem(NewAttributeMenuItem(B_TRANSLATE("Permissions"),
 		kAttrStatMode, B_STRING_TYPE, 80, B_ALIGN_LEFT, false, true));
 
-	menu->AddSeparatorItem();
-	menu->AddItem(item = new BMenuItem(B_TRANSLATE("Show all"),
-		new BMessage(kShowAllAttributes)));
-	item->SetTarget(PoseView());
-
 	MarkAttributesMenu(menu);
 }
 
@@ -3631,12 +3627,9 @@ BContainerWindow::MarkAttributesMenu(BMenu* menu)
 	if (menu == NULL)
 		return;
 
-	BMenuItem* item;
-	BMenu* submenu;
-	int32 submenuCount;
 	int32 itemCount = menu->CountItems();
 	for (int32 index = 0; index < itemCount; index++) {
-		item = menu->ItemAt(index);
+		BMenuItem* item = menu->ItemAt(index);
 		uint32 attrHash;
 		if (item->Message() != NULL) {
 			if (item->Message()->FindInt32("attr_hash", (int32*)&attrHash) == B_OK)
@@ -3645,20 +3638,9 @@ BContainerWindow::MarkAttributesMenu(BMenu* menu)
 				item->SetMarked(false);
 		}
 
-		submenu = item->Submenu();
-		if (submenu == NULL)
-			continue;
-
-		submenuCount = submenu->CountItems();
-		for (int32 subindex = 0; subindex < submenuCount; subindex++) {
-			item = submenu->ItemAt(subindex);
-			if (item == NULL || item->Message() == NULL)
-				continue;
-			if (item->Message()->FindInt32("attr_hash", (int32*)&attrHash) == B_OK)
-				item->SetMarked(PoseView()->ColumnFor(attrHash) != 0);
-			else
-				item->SetMarked(false);
-		}
+		// all levels: the menus of the MIME types (e.g. of relations) are nested
+		if (item->Submenu() != NULL)
+			MarkAttributesMenu(item->Submenu());
 	}
 }
 
@@ -3835,26 +3817,174 @@ BContainerWindow::SetupArrangeByMenu(BMenu* parent)
 }
 
 
-static void
-ShowAllAttributesOfMenu(BPoseView* poseView, BMenu* menu)
+// the item of the menu for this MIME type (among the items of this menu, not of its submenus)
+static BMenuItem*
+FindMimeItem(BMenu* menu, const char* mimeType)
 {
 	for (int32 index = 0; BMenuItem* item = menu->ItemAt(index); index++) {
-		if (item->Submenu() != NULL)
-			ShowAllAttributesOfMenu(poseView, item->Submenu());
-		else if (item->Message() != NULL && item->Message()->what == kAttributeItem)
-			poseView->AddAttributeColumn(item->Message(), item->Label());
+		const char* type;
+		if (item->Message() != NULL && item->Message()->what == kMIMETypeItem
+				&& item->Message()->FindString("mimetype", &type) == B_OK && strcmp(type, mimeType) == 0)
+			return item;
+	}
+	return NULL;
+}
+
+
+// the attribute items of a menu (not of its submenus)
+static void
+CollectAttributeItems(BMenu* menu, std::vector<BMenuItem*>* items)
+{
+	for (int32 index = 0; BMenuItem* item = menu->ItemAt(index); index++) {
+		if (item->Message() != NULL && item->Message()->what == kAttributeItem)
+			items->push_back(item);
+	}
+}
+
+
+// a copy of the menu in a pop-up: the items and submenus are new, the marks are kept
+static void
+CopyAttributesMenu(const BMenu* source, BMenu* copy)
+{
+	for (int32 index = 0; BMenuItem* item = source->ItemAt(index); index++) {
+		if (dynamic_cast<BSeparatorItem*>(item) != NULL) {
+			copy->AddSeparatorItem();
+			continue;
+		}
+		if (item->Message() == NULL)
+			continue;
+
+		BMessage* message = new BMessage(*item->Message());
+		BMenuItem* itemCopy;
+		if (item->Submenu() != NULL) {
+			BMenu* submenu = new BMenu(item->Label());
+			CopyAttributesMenu(item->Submenu(), submenu);
+			const char* mimeType = NULL;
+			message->FindString("mimetype", &mimeType);
+			itemCopy = mimeType != NULL ? new IconMenuItem(submenu, message, mimeType) : new BMenuItem(submenu, message);
+		} else {
+			itemCopy = new BMenuItem(item->Label(), message);
+			itemCopy->SetMarked(item->IsMarked());
+		}
+		copy->AddItem(itemCopy);
 	}
 }
 
 
 void
-BContainerWindow::ShowAllAttributes()
+BContainerWindow::ShowAttributesPopUp(BPoint where)
 {
-	if (fAttrMenu == NULL)
-		return;
+	// The menu of the column titles. With Shift pressed an item does not close it: the attribute is selected or deselected, and
+	// the menu is shown again where it was (a menu itself closes when the mouse is released, there is no hook to prevent that).
+	// With Shift on a menu of a relation (or any MIME type) all its attributes are selected, or deselected if they all are
+	// selected. The menu of an attribute that was selected with Shift is shown again, not the one it is in.
+	std::vector<BString> path;	// the MIME types of the menus down to the one that is shown
+	bool again = false;
 
-	ShowAllAttributesOfMenu(PoseView(), fAttrMenu);
-	MarkAttributesMenu();
+	for (;;) {
+		BPopUpMenu* popUp = new BPopUpMenu("Attributes", false, false);
+		NewAttributesMenu(popUp);
+		AddMimeTypesToMenu(popUp);
+		MarkAttributesMenu(popUp);
+
+		BMenu* shown = popUp;
+		for (const BString& mimeType : path) {
+			BMenuItem* item = FindMimeItem(shown, mimeType.String());
+			if (item == NULL || item->Submenu() == NULL)
+				break;
+			shown = item->Submenu();
+		}
+		if (shown != popUp) {
+			BPopUpMenu* copy = new BPopUpMenu("Attributes", false, false);
+			CopyAttributesMenu(shown, copy);
+			delete popUp;
+			popUp = copy;
+		} else
+			popUp->SetTargetForItems(PoseView());
+
+		BMenuItem* chosen = popUp->Go(where, false, again);
+		if (chosen == NULL || chosen->Message() == NULL) {
+			delete popUp;
+			return;
+		}
+
+		BMessage* message = chosen->Message();
+		bool keepOpen = (modifiers() & B_SHIFT_KEY) != 0;
+		BMenu* chosenMenu = chosen->Menu();
+		BRect frame = chosen->Frame();
+
+		if (message->what != kAttributeItem && message->what != kMIMETypeItem) {
+			// not an attribute (Copy layout, Paste layout,...): as usual
+			chosen->Invoke();
+			delete popUp;
+			return;
+		}
+		if (!keepOpen) {
+			if (message->what == kAttributeItem) {
+				uint32 attrHash;
+				if (message->FindInt32("attr_hash", (int32*)&attrHash) == B_OK) {
+					if (PoseView()->ColumnFor(attrHash) != NULL)
+						PoseView()->RemoveAttributeColumn(message);
+					else
+						PoseView()->AddAttributeColumn(message, chosen->Label());
+				}
+			}
+			delete popUp;
+			return;
+		}
+
+		BPoint cursor;
+		uint32 buttons;
+		get_mouse(&cursor, &buttons);
+
+		if (message->what == kAttributeItem) {
+			uint32 attrHash;
+			if (message->FindInt32("attr_hash", (int32*)&attrHash) == B_OK) {
+				if (PoseView()->ColumnFor(attrHash) != NULL)
+					PoseView()->RemoveAttributeColumn(message);
+				else
+					PoseView()->AddAttributeColumn(message, chosen->Label());
+			}
+			// the menu this attribute is in, with the cursor on it again
+			std::vector<BString> menuPath(path);
+			for (BMenu* menu = chosenMenu; menu != NULL && menu != popUp && menu->Superitem() != NULL;
+					menu = menu->Supermenu()) {
+				const char* mimeType;
+				if (menu->Superitem()->Message() == NULL
+						|| menu->Superitem()->Message()->FindString("mimetype", &mimeType) != B_OK)
+					break;
+				menuPath.insert(menuPath.begin() + path.size(), BString(mimeType));
+			}
+			path = menuPath;
+			where = BPoint(cursor.x - frame.left - 4, cursor.y - frame.top - frame.Height() / 2);
+		} else {
+			// a menu of attributes (e.g. of a relation): all or none, and its attributes are shown
+			const char* mimeType;
+			BMenu* submenu = chosen->Submenu();
+			if (submenu != NULL && message->FindString("mimetype", &mimeType) == B_OK) {
+				std::vector<BMenuItem*> items;
+				CollectAttributeItems(submenu, &items);
+				bool allShown = !items.empty();
+				for (BMenuItem* item : items) {
+					int32 attrHash;
+					if (item->Message()->FindInt32("attr_hash", &attrHash) == B_OK)
+						allShown = allShown && PoseView()->ColumnFor((uint32)attrHash) != NULL;
+				}
+				for (BMenuItem* item : items) {
+					if (allShown)
+						PoseView()->RemoveAttributeColumn(item->Message());
+					else
+						PoseView()->AddAttributeColumn(item->Message(), item->Label());
+				}
+				// the menu with the attributes of this one opens where the cursor is
+				path.push_back(BString(mimeType));
+				where = BPoint(cursor.x + 20, cursor.y - frame.Height() / 2);
+			}
+		}
+
+		delete popUp;
+		again = true;
+	}
 }
 
 

@@ -247,6 +247,8 @@ public:
 	BColumn* ColumnFor(uint32 attribute_hash) const;
 	/** Add the column of an item of the Attributes menu (message kAttributeItem), if the view has none for it yet. */
 	void AddAttributeColumn(const BMessage* attributeItem, const char* label);
+	/** Remove the column of an item of the Attributes menu (message kAttributeItem), if the view has one. */
+	void RemoveAttributeColumn(const BMessage* attributeItem);
 	BColumn* FirstColumn() const;
 	BColumn* LastColumn() const;
 	int32 IndexOfColumn(const BColumn*) const;

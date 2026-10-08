@@ -113,7 +113,6 @@ const uint32 kDefaultButton = 'Tact';
 const uint32 kPauseButton = 'Tpaw';
 const uint32 kStopButton = 'Tstp';
 const uint32 kCopyAttributes = 'Tcat';
-const uint32 kShowAllAttributes = 'Tsal';
 const uint32 kPasteAttributes = 'Tpat';
 const uint32 kAttributeItem = 'Tatr';
 const uint32 kMIMETypeItem = 'Tmim';

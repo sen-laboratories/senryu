@@ -2651,10 +2651,6 @@ BPoseView::MessageReceived(BMessage* message)
 			HandleAttrMenuItemSelected(message);
 			break;
 
-		case kShowAllAttributes:
-			ContainerWindow()->ShowAllAttributes();
-			break;
-
 		case kAddPrinter:
 			be_app->PostMessage(message);
 			break;
@@ -2965,6 +2961,19 @@ BPoseView::HandleAttrMenuItemSelected(BMessage* message)
 		if (item->Menu()->Supermenu() == NULL)
 			delete item->Menu();
 	}
+}
+
+
+void
+BPoseView::RemoveAttributeColumn(const BMessage* message)
+{
+	uint32 attrHash;
+	if (message->FindInt32("attr_hash", (int32*)&attrHash) != B_OK)
+		return;
+
+	BColumn* column = ColumnFor(attrHash);
+	if (column != NULL)
+		RemoveColumn(column, true);
 }
 
 

@@ -630,5 +630,14 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 		(*targetCount)++;
 	}	// for
 
+	// the item of the menu itself opens the view of all its relations: it needs the whole result, there is no parent
+	// that has handed a root down (only items with sub items have one)
+	BMessage* menuItemMessage = Superitem() != NULL ? Superitem()->Message() : NULL;
+	if (menuItemMessage != NULL && menuItemMessage->what == sen::cmd::kOpenRelationTargetView
+			&& !menuItemMessage->HasPointer(sen::key::kRelationRoot)) {
+		menuItemMessage->RemoveName(sen::key::kRelationRoot);	// the menu is reused
+		menuItemMessage->AddMessage(sen::key::kRelationRoot, fRelationTargetsReply);
+	}
+
 	return B_OK;
 }

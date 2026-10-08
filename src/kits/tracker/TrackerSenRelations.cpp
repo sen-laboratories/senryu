@@ -18,6 +18,7 @@
 #include <fs_attr.h>
 
 #include <sen/Sen.h>
+#include <sen/SenOntoCore.h>
 #include <sen/Sensei.h>
 
 #include "TrackerSenRelations.h"
@@ -199,9 +200,12 @@ TrackerSenRelations::WriteTargetRelations(
 			void*  iconBuf;
 			size_t iconSize;
 
-			result = GetSenIcon(relationType, sen::attr::kRelationFolderIcon, &iconBuf, &iconSize);
+			// a relation folder inside a relation folder is a "contains": it gets the icon of that relation, not of
+			// the relation type of its content (e.g. a bookmark)
+			result = GetSenIcon(sen::onto::core::mime::kContains, "META:ICON", &iconBuf, &iconSize);
 			if (result == B_OK) {
 				ssize_t sizeWritten = relationNode.WriteAttr("BEOS:ICON", B_VECTOR_ICON_TYPE, 0, iconBuf, iconSize);
+				delete[] (char*)iconBuf;
 				if (sizeWritten < 0) {	// can be interpreted as an error code
 					PRINT(("  x error writing folder icon %s to %s: %s\n",
 							sen::attr::kRelationFolderIcon, entryName.String(), strerror(sizeWritten) ));
@@ -602,7 +606,7 @@ TrackerSenRelations::GetSenIcon(const char* mimeType, const char* iconType, void
 
 	// check for supported icon types
 	BString type(iconType);
-	if (type == NULL || type != sen::attr::kRelationFolderIcon || type != "META:ICON") {
+	if (type != sen::attr::kRelationFolderIcon && type != "META:ICON") {
 		return B_BAD_VALUE;
 	}
 
@@ -647,7 +651,7 @@ TrackerSenRelations::GetSenIcon(const char* mimeType, const char* iconType, void
 	*iconBuffer = new char[attrInfo.size];
 	*iconSize   = attrInfo.size;
 
-	ssize_t sizeRead = mimeNode.ReadAttr(sen::attr::kRelationFolderIcon, B_VECTOR_ICON_TYPE, 0, *iconBuffer, *iconSize);
+	ssize_t sizeRead = mimeNode.ReadAttr(iconType, B_VECTOR_ICON_TYPE, 0, *iconBuffer, *iconSize);
 	if (sizeRead < 0) {
 		result = sizeRead;	// can be interpreted as error code
 
