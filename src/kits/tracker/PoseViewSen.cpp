@@ -43,6 +43,9 @@ All rights reserved.
 #include "FSUtils.h"
 #include "Utilities.h"
 #include <Catalog.h>
+#include <Directory.h>
+#include <Entry.h>
+#include <MimeType.h>
 #include <NodeInfo.h>
 #include <Query.h>
 #include <VolumeRoster.h>
@@ -52,6 +55,8 @@ All rights reserved.
 
 #include "PoseView.h"
 #include "TrackerSenRelations.h"
+#include <set>
+#include <string>
 #include <vector>
 
 #include <sen/Sen.h>
@@ -79,25 +84,46 @@ BPoseView::SetupRelationColumns()
 
 	AddColumn(new BColumn(B_TRANSLATE("Name"), 145, B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));
 
-	// all attributes of the relation type (and of the relation supertype) that are meant to be displayed
-	const char* publicName;
-	for (int32 index = 0; attrInfo.FindString("attr:public_name", index, &publicName) == B_OK; index++) {
-		int32 type, align, width;
-		bool editable;
-		const char* attrName;
-		if (!attrInfo.FindBool("attr:viewable", index)
-				|| attrInfo.FindString("attr:name", index, &attrName) != B_OK
-				|| attrInfo.FindInt32("attr:type", index, &type) != B_OK
-				|| attrInfo.FindBool("attr:editable", index, &editable) != B_OK
-				|| attrInfo.FindInt32("attr:width", index, &width) != B_OK
-				|| attrInfo.FindInt32("attr:alignment", index, &align) != B_OK
-				|| ColumnFor(AttrHashString(attrName, (uint32)type)) != NULL)
-			continue;
+	// the columns for the attributes of an attribute info that are meant to be displayed (and not there yet)
+	auto addColumnsOf = [this](const BMessage& info) {
+		const char* publicName;
+		for (int32 index = 0; info.FindString("attr:public_name", index, &publicName) == B_OK; index++) {
+			int32 type, align, width;
+			bool editable;
+			const char* attrName;
+			if (!info.FindBool("attr:viewable", index)
+					|| info.FindString("attr:name", index, &attrName) != B_OK
+					|| info.FindInt32("attr:type", index, &type) != B_OK
+					|| info.FindBool("attr:editable", index, &editable) != B_OK
+					|| info.FindInt32("attr:width", index, &width) != B_OK
+					|| info.FindInt32("attr:alignment", index, &align) != B_OK
+					|| ColumnFor(AttrHashString(attrName, (uint32)type)) != NULL)
+				continue;
 
-		const char* displayAs = NULL;
-		attrInfo.FindString("attr:display_as", index, &displayAs);
-		AddColumn(new BColumn(publicName, width, (alignment)align, attrName, type, displayAs, false, editable));
+			const char* displayAs = NULL;
+			info.FindString("attr:display_as", index, &displayAs);
+			AddColumn(new BColumn(publicName, width, (alignment)align, attrName, type, displayAs, false, editable));
+		}
+	};
+
+	// what the folder contains can be of another type than the relation, e.g. what a type contains are its attributes: the
+	// properties of those come first, then the ones of the relation type (and of the relation supertype)
+	std::set<std::string> itemTypes;
+	BDirectory folder(TargetModel()->EntryRef());
+	BEntry item;
+	while (folder.GetNextEntry(&item) == B_OK) {
+		BNode itemNode(&item);
+		char itemType[B_MIME_TYPE_LENGTH];
+		if (itemNode.InitCheck() == B_OK && BNodeInfo(&itemNode).GetType(itemType) == B_OK
+				&& strcmp(itemType, relationType) != 0)
+			itemTypes.insert(itemType);
 	}
+	for (const std::string& itemType : itemTypes) {
+		BMessage itemInfo;
+		if (BMimeType(itemType.c_str()).GetAttrInfo(&itemInfo) == B_OK)
+			addColumnsOf(itemInfo);
+	}
+	addColumnsOf(attrInfo);
 
 	// no size (the files of a relation are empty: the properties are attributes, which are not counted), and the time of the
 	// last change after the properties
