@@ -2157,21 +2157,28 @@ BContainerWindow::SetupOpenWithMenu(BMenu* parent, const entry_ref* ref)
 
 
 // The relation items are built new whenever a menu is shown, and the same window shows them in the File menu and in the context
-// menus of the poses. The old item may be in another menu than the one that is built now: it has to be taken out of the menu
-// that it is in (taking it out of this one leaves it in the other, and the next one is shown next to it), and deleted.
-// Items of the same kind that stayed behind in this menu (a menu that is built twice at once) are removed, too.
+// menus of the poses. Every menu takes the items of the same kind out of itself before it adds new ones, so that none is shown twice.
+// Only the items that are in this menu itself are looked at: not the stored pointers (an item that is in another menu can be gone
+// without us knowing: the menu may have been deleted with its items), and not the submenus (BMenu::FindItem() looks into them; the
+// submenus of the relations are built by a thread of their own, and an item of theirs is not ours to delete). The stored pointer is
+// only forgotten when it is one of the items that are deleted.
 static void
-RemoveRelationItem(BMenuItem*& item, BMenu* parent, uint32 command)
+RemoveRelationItems(BMenu* parent, uint32 command, BMenuItem** stored)
 {
-	if (item != NULL) {
-		if (item->Menu() != NULL)
-			item->Menu()->RemoveItem(item);
+	for (int32 index = parent->CountItems() - 1; index >= 0; index--) {
+		BMenuItem* item = parent->ItemAt(index);
+		if (item == NULL || item->Command() != command)
+			continue;
+
+		// (the separator that was added after the item goes with it, see SetupNewAssociationMenu)
+		if (command == kNewAssociation && index + 1 < parent->CountItems()
+				&& dynamic_cast<BSeparatorItem*>(parent->ItemAt(index + 1)) != NULL) {
+			delete parent->RemoveItem(index + 1);
+		}
+		parent->RemoveItem(item);
+		if (stored != NULL && *stored == item)
+			*stored = NULL;
 		delete item;
-		item = NULL;
-	}
-	while (BMenuItem* stray = parent->FindItem(command)) {
-		parent->RemoveItem(stray);
-		delete stray;
 	}
 }
 
@@ -2182,7 +2189,7 @@ BContainerWindow::SetupNewRelationMenu(BMenu* parent, const entry_ref* ref)
 	ASSERT(parent != NULL);
 
 	// remove existing relation items from old menu
-	RemoveRelationItem(fNewRelationItem, parent, kNewRelation);
+	RemoveRelationItems(parent, kNewRelation, &fNewRelationItem);
 
 	int32 count = PoseView()->CountSelected();
 	if (count == 0) {
@@ -2244,23 +2251,8 @@ BContainerWindow::SetupNewAssociationMenu(BMenu* parent, const entry_ref* ref)
 {
 	ASSERT(parent != NULL);
 
-	// remove existing association menu (and its separator) from the menu that it is in
-	while (BMenuItem* old = fNewAssociationItem != NULL ? fNewAssociationItem : parent->FindItem(kNewAssociation)) {
-		BMenu* menu = old->Menu();
-		if (menu != NULL) {
-			// the separator after our association item, if it is one
-			int32 assocIndex = menu->IndexOf(old);
-			BSeparatorItem* separator = assocIndex >= 0 ? dynamic_cast<BSeparatorItem*>(menu->ItemAt(assocIndex + 1)) : NULL;
-			menu->RemoveItem(old);
-			if (separator != NULL) {
-				menu->RemoveItem(separator);
-				delete separator;
-			}
-		}
-		delete old;
-		if (old == fNewAssociationItem)
-			fNewAssociationItem = NULL;
-	}
+	// remove the existing association menu (and its separator) from this menu
+	RemoveRelationItems(parent, kNewAssociation, &fNewAssociationItem);
 
 	int32 count = PoseView()->CountSelected();
 	if (count == 0) {
@@ -2319,8 +2311,8 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 	ASSERT(parent != NULL);
 
 	// remove existing relation items from old menu, same for self relations
-	RemoveRelationItem(fOpenRelationsItem, parent, kOpenRelations);
-	RemoveRelationItem(fOpenSelfRelationsItem, parent, kOpenSelfRelations);
+	RemoveRelationItems(parent, kOpenRelations, &fOpenRelationsItem);
+	RemoveRelationItems(parent, kOpenSelfRelations, &fOpenSelfRelationsItem);
 
 	int32 count = PoseView()->CountSelected();
 	if (count == 0) {
