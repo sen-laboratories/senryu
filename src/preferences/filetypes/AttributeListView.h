@@ -11,6 +11,10 @@
 #include <String.h>
 
 
+// SEN: the field of the attribute info that says that an attribute is indexed (not in the "attr:" namespace of Haiku)
+#define kSenSearchable "SEN:searchable"
+
+
 class AttributeItem : public BStringItem {
 	public:
 		AttributeItem(const char* name, const char* publicName, type_code type,
@@ -32,7 +36,7 @@ class AttributeItem : public BStringItem {
 		int32 Width() const { return fWidth; }
 		bool Visible() const { return fVisible; }
 		bool Editable() const { return fEditable; }
-		// SEN: the attribute is indexed, so that it can be queried (attr:searchable)
+		// SEN: the attribute is indexed, so that it can be queried (SEN:searchable)
 		bool Searchable() const { return fSearchable; }
 
 		AttributeItem& operator=(const AttributeItem& other);

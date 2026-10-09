@@ -135,7 +135,7 @@ create_attribute_item(BMessage& attributes, int32 index)
 	if (attributes.FindBool("attr:viewable", index, &visible) != B_OK)
 		visible = false;
 	bool searchable;
-	if (attributes.FindBool("attr:searchable", index, &searchable) != B_OK)
+	if (attributes.FindBool(kSenSearchable, index, &searchable) != B_OK)
 		searchable = false;
 
 	int32 alignment;

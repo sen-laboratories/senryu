@@ -295,7 +295,6 @@ AttributeWindow::AttributeWindow(FileTypesWindow* target, BMimeType& mimeType,
 			.Add(typeMenuField->CreateLabelLayoutItem(), 0, 2)
 			.Add(typeMenuField->CreateMenuBarLayoutItem(), 1, 2)
 			.End()
-		.Add(fSearchableCheckBox)
 		.Add(visibleBox = new BBox(B_FANCY_BORDER,
 			BLayoutBuilder::Grid<>(padding, padding / 2)
 				.Add(fDisplayAsMenuField->CreateLabelLayoutItem(), 0, 0)
@@ -310,6 +309,7 @@ AttributeWindow::AttributeWindow(FileTypesWindow* target, BMimeType& mimeType,
 				.SetInsets(padding, padding, padding, padding)
 				.View())
 			)
+		.Add(fSearchableCheckBox)
 		.AddGroup(B_HORIZONTAL, padding)
 			.AddGlue()
 			.Add(cancelButton)
@@ -582,7 +582,7 @@ AttributeWindow::MessageReceived(BMessage* message)
 					newAttributes.AddInt32("attr:width", item->Width());
 					newAttributes.AddBool("attr:viewable", item->Visible());
 					newAttributes.AddBool("attr:editable", item->Editable());
-					newAttributes.AddBool("attr:searchable", item->Searchable());
+					newAttributes.AddBool(kSenSearchable, item->Searchable());
 
 					delete item;
 				}
