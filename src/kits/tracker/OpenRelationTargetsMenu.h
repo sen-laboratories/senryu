@@ -30,8 +30,9 @@ private:
 	BMessenger* fSenMessenger;
 	BWindow*	fParentWindow;
 
+	BMessage	fOwnReply;
+	// the answer of the server, or, for a sub menu of contained relations, its own message (the node of the tree)
 	BMessage*	fRelationTargetsReply;
-	BMessage*   fRelationRoot;
 	BString 	fDefaultType;
 
 	typedef BSlowMenu _inherited;

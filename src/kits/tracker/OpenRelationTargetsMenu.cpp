@@ -12,6 +12,7 @@
 #include "FSUtils.h"
 #include "IconMenuItem.h"
 #include "OpenRelationTargetsMenu.h"
+#include "RelationContext.h"
 #include <sen/Sen.h>
 #include <sen/Sensei.h>
 #include "MimeTypes.h"
@@ -45,8 +46,9 @@ OpenRelationTargetsMenu::OpenRelationTargetsMenu(const char* label, const BMessa
 	BSlowMenu(label),
 	fEntriesToOpen(*entriesToOpen),
 	fMessenger(messenger),
+	fSenMessenger(NULL),
 	fParentWindow(parentWindow),
-	fRelationTargetsReply(new BMessage())
+	fRelationTargetsReply(&fOwnReply)
 {
 	InitIconPreloader();
 
@@ -99,11 +101,26 @@ OpenRelationTargetsMenu::StartBuildingItemList()
 		}
 	}
 
+	if (fSenMessenger == NULL || !fSenMessenger->IsValid()) {
+		PRINT(("failed to reach the SEN server.\n"));
+		return false;
+	}
+
 	// prepare items with relation targets result from SEN
-	status_t result = fSenMessenger->SendMessage(new BMessage(fEntriesToOpen), fRelationTargetsReply);
+	BMessage request(fEntriesToOpen);
+	RelationContextRef context = RelationContexts::Find(&fEntriesToOpen);
+	if (context != NULL && fEntriesToOpen.what == sen::cmd::kRelationsGetSelf && !context->pluginConfig.IsEmpty()) {
+		// the server need not look for the plugins again
+		request.AddMessage(sensei::key::kPluginConfig, &context->pluginConfig);
+	}
+	status_t result = fSenMessenger->SendMessage(&request, fRelationTargetsReply);
 	if (result != B_OK) {
 		PRINT(("failed to communicate with SEN server: %s\n", strerror(result)));
 		return false;
+	}
+	if (context != NULL && fEntriesToOpen.what == sen::cmd::kRelationsGetSelf) {
+		// the whole tree of the contained relations, for the views that the items of this menu open
+		context->SetRoot(*fRelationTargetsReply);
 	}
 	#ifdef DEBUG
 		PRINT(("< got relation targets reply:\n"));
@@ -380,10 +397,17 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 	BMessage idToName;
 	fRelationTargetsReply->FindMessage(sen::key::kIdToNameMap, &idToName);
 
+	// the items name the context of the menus, which has the config of the relation (kept once): if it is gone (it cannot be, the menu was
+	// built from it a moment ago) the item brings its own
 	BMessage 	relationConfigMap, relationConfig;
-	result = fRelationTargetsReply->FindMessage(sen::key::kRelationConfigMap, &relationConfigMap);
-	if (result == B_OK)
-		result = relationConfigMap.FindMessage(relationType.String(), &relationConfig);
+	int64 contextId = 0;
+	bool hasContext = fEntriesToOpen.FindInt64(sen::key::kRelationContext, &contextId) == B_OK
+		&& RelationContexts::Find(contextId) != NULL;
+	if (!hasContext) {
+		result = fRelationTargetsReply->FindMessage(sen::key::kRelationConfigMap, &relationConfigMap);
+		if (result == B_OK)
+			result = relationConfigMap.FindMessage(relationType.String(), &relationConfig);
+	}
 
 	char*       idKey;
     type_code   typeCode;
@@ -403,8 +427,11 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 				itemMessage.AddRef(sen::key::kSourceRef, &ref);
 				itemMessage.AddString(sen::key::kRelationType, relationType);
 
-				// add relation config applicable to this item
-				itemMessage.AddMessage(sen::key::kRelationConfig, &relationConfig);
+				// the config applicable to this item
+				if (hasContext)
+					RelationContexts::Tag(&itemMessage, contextId);
+				else
+					itemMessage.AddMessage(sen::key::kRelationConfig, &relationConfig);
 
 				BMessage itemProps;
 				result = relations.FindMessage(idKey, &itemProps);
@@ -452,22 +479,23 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 {
 	status_t result;
 
-	// get relation configs for storing in menu items later
-	BMessage relationConfigs;
-	result = fEntriesToOpen.FindMessage(sen::key::kRelationConfigMap, &relationConfigs);
-
-	if (result != B_OK) {
-		PRINT(("no relation config found, continuing with defaults.\n"));
+	// the relation configs and the plugin config (for the default property type, with the attr mapping) are in the context that the parent
+	// menu made; the items only name it
+	RelationContextRef context = RelationContexts::Find(&fEntriesToOpen);
+	if (context == NULL) {
+		PRINT(("the context of the menu is gone, no relations to show.\n"));
+		return B_NAME_NOT_FOUND;
 	}
+	int64 contextId;
+	fEntriesToOpen.FindInt64(sen::key::kRelationContext, &contextId);
 
-	// get plug config for default property type from original msg received from parent menu
-	BMessage pluginConfig;
-	result = fEntriesToOpen.FindMessage(sensei::key::kPluginConfig, &pluginConfig);
+	BMessage relationConfigs(context->relationConfigs);
+	BMessage pluginConfig(context->pluginConfig);
 
-	if (result != B_OK) {
+	if (pluginConfig.IsEmpty()) {
 		// at least the attrMapping msg with common label mapping must be there
-		PRINT(("could not get plugin config required for resolving self relations: %s\n", strerror(result) ));
-		return result;
+		PRINT(("could not get plugin config required for resolving self relations.\n"));
+		return B_NAME_NOT_FOUND;
 	}
 
 	// get optional default type from pluginConfig
@@ -544,7 +572,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 		// add common relation properties
 		openRelationItemMsg.AddRef(sen::key::kSourceRef, &ref);	// use standard refs as expected by Tracker
 		openRelationItemMsg.AddString(sen::key::kRelationType, relationOfItem);
-		openRelationItemMsg.AddMessage(sen::key::kRelationConfigMap, &relationConfigs);
+		RelationContexts::Tag(&openRelationItemMsg, contextId);
 
 		// add as menu if there is a child node, else add as a plain menu item
 		if (! relationProperties.HasMessage(sen::key::kRelations)) {
@@ -554,20 +582,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 			// will open the target item as SEN enriched ref in Tracker
 			openRelationItemMsg.what = sen::cmd::kOpenRelationTarget;
 
-			// here we know which config we need, so pass only the selected type's
-			// config - TrackerSen::HandleSenMessage's sen::cmd::kOpenRelationTarget case
-			// looks this up at the top level of the message, not inside properties.
-			BMessage selectedConfig;
-			result = relationConfigs.FindMessage(relationOfItem, &selectedConfig);
-
-			if (result == B_OK) {
-				openRelationItemMsg.AddMessage(sen::key::kRelationConfig, &selectedConfig);
-			} else {
-				if (result != B_NAME_NOT_FOUND) {
-					PRINT(("    x failed to inspect relation configs: %s\n", strerror(result) ));
-				}
-				result = B_OK;
-			}
+			// (the config that is needed is the one of relationOfItem in the context: TrackerSen::HandleSenMessage looks it up)
 
 			// add all properties of this relation item to be used as potential args by receiver
 			openRelationItemMsg.AddMessage(sen::key::kRelationProperties, &relationProperties);
@@ -581,23 +596,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 
 			openRelationItemMsg.what = sen::cmd::kOpenRelationTargetView;
 
-			// keep track of the relations root for building entire structure (i.e. in Tracker folder view)
-			BMessage* relationRoot;
-
-			// root is handed through via menu message
-			result = Superitem()->Message()->FindPointer(sen::key::kRelationRoot, reinterpret_cast<void**>(&relationRoot));
-
-			if (result == B_OK && relationRoot != NULL) {
-				PRINT(("  * got relation ROOT, handing down.\n"));
-				openRelationItemMsg.AddPointer(sen::key::kRelationRoot, relationRoot);
-			}
-			else {
-				PRINT(("  * SET relation ROOT.\n"));
-				openRelationItemMsg.AddPointer(sen::key::kRelationRoot, reinterpret_cast<void*>(fRelationTargetsReply));
-
-				// save for later below
-				relationRoot = fRelationTargetsReply;
-			}
+			// (the tree of all the relations that the view of this one is made from is in the context, found by its id)
 
 			// get child node
 			BMessage childNode;
@@ -617,12 +616,8 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 			childNode.what = sensei::cmd::kResult;
 			childNode.AddRef(sen::key::kSourceRef, &ref);
 			childNode.AddString(sen::key::kRelationType, relationOfItem.String());
-			childNode.AddPointer(sen::key::kRelationRoot, reinterpret_cast<void*>(relationRoot));
-
-			childNode.AddMessage(sensei::key::kPluginConfig, &pluginConfig);
-			// we need all configs here to select in subtree
-			// TODO: optimize by constraining to single relation per menu or use AddPointer to root config!
-			childNode.AddMessage(sen::key::kRelationConfigMap, &relationConfigs);
+			// the configs and the tree are in the context, whatever the depth: a sub menu is only a node of the tree
+			RelationContexts::Tag(&childNode, contextId);
 
 			item = new IconMenuItem(
 				new OpenRelationTargetsMenu(
@@ -640,15 +635,6 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 
 		(*targetCount)++;
 	}	// for
-
-	// the item of the menu itself opens the view of all its relations: it needs the whole result, there is no parent
-	// that has handed a root down (only items with sub items have one)
-	BMessage* menuItemMessage = Superitem() != NULL ? Superitem()->Message() : NULL;
-	if (menuItemMessage != NULL && menuItemMessage->what == sen::cmd::kOpenRelationTargetView
-			&& !menuItemMessage->HasPointer(sen::key::kRelationRoot)) {
-		menuItemMessage->RemoveName(sen::key::kRelationRoot);	// the menu is reused
-		menuItemMessage->AddMessage(sen::key::kRelationRoot, fRelationTargetsReply);
-	}
 
 	return B_OK;
 }

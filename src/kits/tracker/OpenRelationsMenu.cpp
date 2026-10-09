@@ -11,6 +11,7 @@
 #include "IconMenuItem.h"
 #include "OpenRelationsMenu.h"
 #include "OpenRelationTargetsMenu.h"
+#include "RelationContext.h"
 #include "MimeTypes.h"
 #include <sen/Sen.h>
 #include <sen/Sensei.h>
@@ -199,12 +200,16 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 		srcId.SetTo("");
 	}
 
-	// get relation configs for storing in menu items later
+	// the configs of the relations are kept once for this menu (see RelationContext), the items only name it
 	BMessage relationConfigs;
 	status_t result = fRelationsReply.FindMessage(sen::key::kRelationConfigMap, &relationConfigs);
 	if (result != B_OK) {
 		PRINT(("no relation config found, continuing with defaults.\n"));
 	}
+	RelationContextRef context = std::make_shared<RelationContext>(*sourceRef, srcId);
+	context->relationConfigs = relationConfigs;
+	fRelationsReply.FindStrings(sen::key::kRelations, &context->relations);
+	int64 contextId = RelationContexts::Add(context);
 
 	// update command for followup action in relation menu items
 	uint32 msgCmd;
@@ -255,6 +260,7 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 		// message for relation menu items
         BMessage* message = new BMessage(msgCmd);
         message->AddRef(sen::key::kSourceRef, sourceRef);
+		RelationContexts::Tag(message, contextId);
 
 		// add relevant message properties for compatible or ALL relations
 		if (buildAssocRelations) {
@@ -269,7 +275,7 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 		BMessage *openRelationTargetsMsg = new BMessage(sen::cmd::kOpenRelationTargetView);
         openRelationTargetsMsg->AddRef(sen::key::kSourceRef, sourceRef);
 		openRelationTargetsMsg->AddString(sen::key::kSourceId, srcId);
-		openRelationTargetsMsg->AddMessage(sen::key::kRelationConfigMap, &relationConfigs);
+		RelationContexts::Tag(openRelationTargetsMsg, contextId);
 
 		if (buildAssocRelations) {
 			openRelationTargetsMsg->AddString(sen::key::kRelationType, sen::mime::kAssociationRelation);
@@ -304,11 +310,10 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 		// always replace any previous data as the parent menu is reused!
 		openRelationsItemMsg->RemoveData(sen::key::kSourceRef);
 		openRelationsItemMsg->RemoveData(sen::key::kSourceId);
-		openRelationsItemMsg->RemoveData(sen::key::kRelationConfigMap);
 
 		openRelationsItemMsg->AddRef(sen::key::kSourceRef, sourceRef);
 		openRelationsItemMsg->AddString(sen::key::kSourceId, srcId);
-		openRelationsItemMsg->AddMessage(sen::key::kRelationConfigMap, &relationConfigs);
+		RelationContexts::Tag(openRelationsItemMsg, contextId);
 	}
 
 	return countRelations;
@@ -363,6 +368,13 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const entry_ref* sourceRef) {
 	PRINT(("got SELF relations config:\n"));
 	pluginConfig.PrintToStream();
 
+	// the configs and the plugins are kept once for this menu (see RelationContext), the items only name it
+	RelationContextRef context = std::make_shared<RelationContext>(*sourceRef, BString());
+	context->relationConfigs = relationConfigs;
+	context->pluginConfig = pluginConfig;
+	fRelationsReply.FindStrings(sen::key::kRelations, &context->relations);
+	int64 contextId = RelationContexts::Add(context);
+
 	int32 pluginCount;
 	char *fileType[B_MIME_TYPE_LENGTH];
 	BString pluginName;
@@ -391,10 +403,8 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const entry_ref* sourceRef) {
         message.AddString(sen::key::kRelationType, defaultType);
 		// add plugin needed to resolve this self relation
 		message.AddString(sensei::key::kPlugin, pluginName);
-		// add plugin config with default type and type+attr mapping
-		message.AddMessage(sensei::key::kPluginConfig, &pluginConfig);
-		// add relation config
-		message.AddMessage(sen::key::kRelationConfigMap, &relationConfigs);
+		// (the plugin config with default type and type+attr mapping is sent to the server by the menu, from the context)
+		RelationContexts::Tag(&message, contextId);
 
 		// message for the relation menu itself
 		BMessage openRelationTargetsMsg(sen::cmd::kOpenRelationTargetView);
@@ -402,11 +412,9 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const entry_ref* sourceRef) {
 		// add only needed parts of SEN relation config as compact individual fields
         openRelationTargetsMsg.AddRef(sen::key::kSourceRef, sourceRef);
 		openRelationTargetsMsg.AddString(sen::key::kRelationType, defaultType);
-		// add relation config - PrepareRelationTargetFolder() looks this up by
-		// sen::key::kRelationConfigMap, same as the non-self relation path above.
-		openRelationTargetsMsg.AddMessage(sen::key::kRelationConfigMap, &relationConfigs);
+		// the configs are in the context, PrepareRelationTargetFolder() looks them up there
+		RelationContexts::Tag(&openRelationTargetsMsg, contextId);
 		openRelationTargetsMsg.AddString(sensei::key::kPlugin, pluginName);
-		openRelationTargetsMsg.AddMessage(sensei::key::kPluginConfig, &pluginConfig);
 
 		// get label from relation config
 		BString label = ResolveRelationLabel(relationConfigs, defaultType);
@@ -430,15 +438,9 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const entry_ref* sourceRef) {
 	if (openSelfRelationsItemMsg != NULL) {
 		// always replace any previous data as the parent menu is reused!
 		openSelfRelationsItemMsg->RemoveData(sen::key::kSourceRef);
-		openSelfRelationsItemMsg->RemoveData(sen::key::kRelations);
-		openSelfRelationsItemMsg->RemoveData(sen::key::kRelationConfigMap);
 
 		openSelfRelationsItemMsg->AddRef(sen::key::kSourceRef, sourceRef);
-
-		BStringList relations;
-		result = fRelationsReply.FindStrings(sen::key::kRelations, &relations);
-		openSelfRelationsItemMsg->AddStrings(sen::key::kRelations,  relations);	// add the emty message if some error occurred
-		openSelfRelationsItemMsg->AddMessage(sen::key::kRelationConfigMap, &relationConfigs);
+		RelationContexts::Tag(openSelfRelationsItemMsg, contextId);
 	}
 
 	return relationsAdded;

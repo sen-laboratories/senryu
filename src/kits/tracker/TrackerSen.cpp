@@ -25,6 +25,7 @@
 #include <sen/Sensei.h>
 #include "Tracker.h"
 #include "TrackerSenLog.h"
+#include "RelationContext.h"
 #include "RelationFolders.h"
 
 bool
@@ -91,10 +92,15 @@ TTracker::HandleSenMessage(BMessage* message)
 			PRINT(("got relation properties:\n"));
 			relationProperties.PrintToStream();
 
-			// get selected relation config from map
+			// the config of the relation: in the context of the menu that this item was made in (and so are all the others of the menu),
+			// or, for an item that has no context, brought by the item
 			BMessage relationConfig;
 
-			result = message->FindMessage(sen::key::kRelationConfig, &relationConfig);
+			RelationContextRef context = RelationContexts::Find(message);
+			if (context != NULL && context->FindConfig(relationType.String(), &relationConfig))
+				result = B_OK;
+			else
+				result = message->FindMessage(sen::key::kRelationConfig, &relationConfig);
 			if (result != B_OK) {
 				PRINT(("could not get relation config for type %s: %s\n", relationType.String(), strerror(result) ));
 				return true;	// abort
@@ -456,9 +462,16 @@ TTracker::PrepareRelationFolder(BMessage *message, entry_ref* relationDirRef)
 		return result;
 	}
 
-    // check relations
-	BStringList relations;
-	if (message->FindStrings(sen::key::kRelations, &relations) != B_OK) {
+	// the relation types and their configs were kept by the menu that made this item (see RelationContext)
+	RelationContextRef context = RelationContexts::Find(message);
+	if (context == NULL) {
+		PRINT(("the context of the menu is gone: open the menu again.\n"));
+		return B_NAME_NOT_FOUND;
+	}
+
+	// check relations
+	BStringList relations(context->relations);
+	if (relations.IsEmpty()) {
 		// TODO: add default relations from MIME DB so users can add targets!
 		PRINT(("no relations to show.\n"));
 		return B_OK;
@@ -467,12 +480,7 @@ TTracker::PrepareRelationFolder(BMessage *message, entry_ref* relationDirRef)
 	int32 countRelations = relations.CountStrings();
 	PRINT(("got %d relations\n", countRelations) );
 
-	BMessage relationConfigs;
-	result = message->FindMessage(sen::key::kRelationConfigMap, &relationConfigs);
-	if (result != B_OK) {
-		PRINT(("could not get relation config: %s\n", strerror(result) ));
-		return result;
-	}
+	BMessage relationConfigs(context->relationConfigs);
 
 	// every view has its own folder (a TSID): the inode of the source is not unique across volumes, and two views
 	// of the same file must not overwrite each other
@@ -563,18 +571,16 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 	PRINT(("PrepareRelationTargetFolder: got relation target view message:\n"));
 	message->PrintToStream();
 
-	// get config for all relations in the result
-	BMessage relationConfigs;
-	// holds selected config
+	// the configs of all relations of the menu, in its context (kept by the menu, see RelationContext), and the selected one
+	RelationContextRef context = RelationContexts::Find(message);
+	if (context == NULL) {
+		PRINT(("the context of the menu is gone: open the menu again.\n"));
+		return B_NAME_NOT_FOUND;
+	}
 	BMessage relationConf;
-
-	result = message->FindMessage(sen::key::kRelationConfigMap, &relationConfigs);
-	if (result == B_OK)
-		result = relationConfigs.FindMessage(relationType, &relationConf);
-
-	if (result != B_OK) {
-		PRINT(("could not get relation config for type %s: %s\n", relationType, strerror(result) ));
-		return result;
+	if (!context->FindConfig(relationType, &relationConf)) {
+		PRINT(("could not get relation config for type %s\n", relationType));
+		return B_NAME_NOT_FOUND;
 	}
 
 	const char* relationName = relationConf.GetString(sen::key::kRelationName);
@@ -611,19 +617,28 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 	BMessage relations;
 
 	if (isSelf) {
-		// get all relations for creating complete relation structure, but open only selected relation view later
-		// the root is a pointer for the relations in the menus (items with sub items); the menu of a relation type has
-		// no pointer to it, there the whole result is a copy in the message
-		BMessage* relationRoot = NULL;
-		result = message->FindPointer(sen::key::kRelationRoot, reinterpret_cast<void**>(&relationRoot));
-		if (result == B_OK && relationRoot != NULL)
-			relations = *relationRoot;
-		else
-			result = message->FindMessage(sen::key::kRelationRoot, &relations);
+		// get all relations for creating complete relation structure, but open only selected relation view later.
+		// The tree is in the context, set by the menu when the answer of the server arrived. A click can be faster than the menu (it is
+		// built in a thread of its own): then the server is asked now.
+		if (!context->GetRoot(&relations)) {
+			BMessage request(sen::cmd::kRelationsGetSelf);
+			request.AddRef(sen::key::kSourceRef, &srcRef);
+			request.AddString(sen::key::kRelationType, relationType);
+			const char* plugin;
+			if (message->FindString(sensei::key::kPlugin, &plugin) == B_OK)
+				request.AddString(sensei::key::kPlugin, plugin);
+			if (!context->pluginConfig.IsEmpty())
+				request.AddMessage(sensei::key::kPluginConfig, &context->pluginConfig);
 
-		if (result != B_OK) {
-			PRINT(("  X failed to get relation ROOT: %s\n", strerror(result) ));
-			return result;
+			BMessenger server(sen::kServerSignature);
+			BMessage answer;
+			result = server.IsValid() ? server.SendMessage(&request, &answer) : B_ERROR;
+			if (result != B_OK) {
+				PRINT(("  X failed to get relation ROOT: %s\n", strerror(result) ));
+				return result;
+			}
+			context->SetRoot(answer);
+			relations = answer;
 		}
 		if (relations.IsEmpty()) {
 			PRINT(("  ? no relations contained in result root.\n"));
