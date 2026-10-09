@@ -2156,6 +2156,17 @@ BContainerWindow::SetupOpenWithMenu(BMenu* parent, const entry_ref* ref)
 }
 
 
+// The relations of SEN are for files and folders: not for the Trash and what is in it, and not for the Desktop folder itself. What is
+// asked is the item that the menu is for (the clicked icon or, for a menu of the window, the folder of the window), not the window: an
+// icon on the Desktop (home...) is an item like any other.
+static bool
+HasNoRelations(const entry_ref* ref)
+{
+	Model model(ref);
+	return model.InitCheck() == B_OK && (model.IsTrash() || model.InTrash() || model.IsDesktop());
+}
+
+
 // The relation items are built new whenever a menu is shown, and the same window shows them in the File menu and in the context
 // menus of the poses. Every menu takes the items of the same kind out of itself before it adds new ones, so that none is shown twice.
 // Only the items that are in this menu itself are looked at: not the stored pointers (an item that is in another menu can be gone
@@ -2209,6 +2220,9 @@ BContainerWindow::SetupNewRelationMenu(BMenu* parent, const entry_ref* ref)
 		ref = TargetModel()->EntryRef();
 
 	ASSERT(ref != NULL);
+
+	if (HasNoRelations(ref))
+		return;
 
 	// bail out if index of "Open" item not found
 	BMenuItem* openItem = parent->FindItem(kOpenSelection);
@@ -2271,6 +2285,9 @@ BContainerWindow::SetupNewAssociationMenu(BMenu* parent, const entry_ref* ref)
 
 	ASSERT(ref != NULL);
 
+	if (HasNoRelations(ref))
+		return;
+
 	// add next to related "create Link" menu item or bail out now
 	int32 menuIndex = parent->IndexOf(fCreateLinkItem);
 	if (menuIndex == B_ERROR) {
@@ -2330,6 +2347,9 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 		ref = TargetModel()->EntryRef();
 
 	ASSERT(ref != NULL);
+
+	if (HasNoRelations(ref))
+		return;
 
 	// bail out if index of "Open With" item not found
 	int32 menuIndex = parent->IndexOf(fOpenWithItem);
@@ -2862,8 +2882,11 @@ BContainerWindow::AddPoseContextMenu(BMenu* menu)
 		menu->AddSeparatorItem();
 	}
 
-	menu->AddItem(Shortcuts()->EnrichItem());
-	menu->AddItem(Shortcuts()->IdentifyItem());
+	// (the SEN items are not for the Trash and what is in it)
+	if (!TargetModel()->IsTrash() && !TargetModel()->InTrash()) {
+		menu->AddItem(Shortcuts()->EnrichItem());
+		menu->AddItem(Shortcuts()->IdentifyItem());
+	}
 
 	if (ShouldHaveAddOnMenus())
 		menu->AddItem(new BMenuItem(new BMenu(Shortcuts()->AddOnsLabel())));
