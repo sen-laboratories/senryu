@@ -6,6 +6,7 @@
 
 #include "ApplicationTypesWindow.h"
 #include "ApplicationTypeWindow.h"
+#include "AttributeWindow.h"
 #include "FileTypes.h"
 #include "FileTypesWindow.h"
 #include "FileTypeWindow.h"
@@ -32,7 +33,8 @@
 #define B_TRANSLATION_CONTEXT "FileTypes"
 
 
-const char* kSignature = "application/x-vnd.Haiku-FileTypes";
+// SEN: the signature of this version (sen::kFileTypesSignature); the FileTypes of Haiku has application/x-vnd.Haiku-FileTypes
+const char* kSignature = "application/x-vnd.sen-labs.FileTypes";
 
 static const uint32 kMsgFileTypesSettings = 'FTst';
 static const uint32 kCascadeOffset = 20;
@@ -82,6 +84,9 @@ private:
 			uint32				fWindowCount;
 			uint32				fTypeWindowCount;
 			BString				fArgvType;
+			// SEN: an attribute that is to be opened when the window of the types is there, and the type that has it
+			BString				fPendingAttribute;
+			BString				fPendingTypeForAttribute;
 };
 
 
@@ -354,9 +359,52 @@ FileTypes::MessageReceived(BMessage* message)
 				}
 				fTypesWindow->Show();
 				fWindowCount++;
+
+				if (fPendingAttribute.Length() > 0) {
+					// SEN: the window was opened to show an attribute of the type (-type is that type)
+					BMessage open(kMsgOpenAttributeByName);
+					open.AddString(kSenMimeTypeKey, fPendingTypeForAttribute.String());
+					open.AddString(kSenAttributeNameKey, fPendingAttribute.String());
+					fTypesWindow->PostMessage(&open);
+					fPendingAttribute = "";
+				}
 			} else
 				fTypesWindow->Activate(true);
 			break;
+
+		case kMsgSenOpenMimeAttribute:
+		{
+			// SEN: the application of another program asks to show an attribute of a type. The dialog of any other attribute is
+			// closed (it is the only kind of dialog that can be open here, the types of applications have a window of their own)
+			// and a new one opens for this attribute.
+			const char* type;
+			if (message->FindString(kSenMimeTypeKey, &type) != B_OK)
+				break;
+			const char* attribute = message->GetString(kSenAttributeNameKey, "");
+
+			for (int32 index = CountWindows() - 1; index >= 0; index--) {
+				BWindow* window = WindowAt(index);
+				if (dynamic_cast<AttributeWindow*>(window) != NULL)
+					window->PostMessage(B_QUIT_REQUESTED);
+			}
+
+			if (fTypesWindow == NULL) {
+				fArgvType = type;
+				fPendingAttribute = attribute;
+				fPendingTypeForAttribute = type;
+				PostMessage(kMsgOpenTypesWindow);
+			} else if (fTypesWindow->Lock()) {
+				fTypesWindow->SelectType(type);
+				fTypesWindow->Activate(true);
+				fTypesWindow->Unlock();
+
+				BMessage open(kMsgOpenAttributeByName);
+				open.AddString(kSenMimeTypeKey, type);
+				open.AddString(kSenAttributeNameKey, attribute);
+				fTypesWindow->PostMessage(&open);
+			}
+			break;
+		}
 		case kMsgTypesWindowClosed:
 			fTypesWindow = NULL;
 			_WindowClosed();

@@ -6,6 +6,7 @@
 
 #include "AttributeListView.h"
 #include "AttributeWindow.h"
+#include "FileTypes.h"
 #include "DropTargetListView.h"
 #include "ExtensionWindow.h"
 #include "FileTypes.h"
@@ -30,6 +31,7 @@
 #include <MenuBar.h>
 #include <MenuField.h>
 #include <MenuItem.h>
+#include <MessageRunner.h>
 #include <Mime.h>
 #include <NodeInfo.h>
 #include <OutlineListView.h>
@@ -855,6 +857,45 @@ FileTypesWindow::MessageReceived(BMessage* message)
 				fMoveUpAttributeButton->SetEnabled(index > 0);
 				fMoveDownAttributeButton->SetEnabled(index >= 0
 					&& index < fAttributeListView->CountItems() - 1);
+			}
+			break;
+		}
+
+		case kMsgOpenAttributeByName:
+		{
+			// SEN: open the attribute (SEN:attr:name) of the type (SEN:mimeType). The list of the attributes is that of the type
+			// that was selected a moment ago: wait (some tries, a moment apart) until it is the one that is asked for.
+			const char* type = message->GetString(kSenMimeTypeKey, "");
+			const char* name = message->GetString(kSenAttributeNameKey, "");
+			if (name[0] == '\0')
+				break;
+
+			int32 found = -1;
+			if (fCurrentType.Type() != NULL && strcasecmp(fCurrentType.Type(), type) == 0) {
+				for (int32 i = 0; i < fAttributeListView->CountItems(); i++) {
+					AttributeItem* item = (AttributeItem*)fAttributeListView->ItemAt(i);
+					if (item != NULL && strcmp(item->Name(), name) == 0) {
+						found = i;
+						break;
+					}
+				}
+			}
+
+			if (found >= 0) {
+				fAttributeListView->Select(found);
+				fAttributeListView->ScrollToSelection();
+
+				BMessage invoke(kMsgAttributeInvoked);
+				invoke.AddInt32("index", found);
+				PostMessage(&invoke);
+			} else {
+				int32 tries = message->GetInt32("tries", 0);
+				if (tries < 30) {
+					BMessage again(*message);
+					again.RemoveName("tries");
+					again.AddInt32("tries", tries + 1);
+					BMessageRunner::StartSending(BMessenger(this), &again, 100000, 1);
+				}
 			}
 			break;
 		}

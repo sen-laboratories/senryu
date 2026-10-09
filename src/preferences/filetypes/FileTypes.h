@@ -26,6 +26,13 @@ static const uint32 kMsgWindowClosed = 'WiCl';
 
 static const uint32 kMsgSettingsChanged = 'SeCh';
 
+// SEN: open an attribute of a type (sen::cmd::kOpenMimeAttribute, with SEN:mimeType and SEN:attr:name), asked by the application of
+// another program (the navigator of references). The window of the types opens the attribute when its type is the current one.
+static const uint32 kMsgSenOpenMimeAttribute = 'SOma';
+static const uint32 kMsgOpenAttributeByName = 'oaBn';
+#define kSenMimeTypeKey "SEN:mimeType"
+#define kSenAttributeNameKey "SEN:attr:name"
+
 
 // exported functions
 
