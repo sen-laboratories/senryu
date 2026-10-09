@@ -2158,12 +2158,26 @@ BContainerWindow::SetupOpenWithMenu(BMenu* parent, const entry_ref* ref)
 
 // The relations of SEN are for files and folders: not for the Trash and what is in it, and not for the Desktop folder itself. What is
 // asked is the item that the menu is for (the clicked icon or, for a menu of the window, the folder of the window), not the window: an
-// icon on the Desktop (home...) is an item like any other.
+// icon on the Desktop (home...) is an item like any other. The folders are those of find_directory(), on the volume of the item.
 static bool
 HasNoRelations(const entry_ref* ref)
 {
-	Model model(ref);
-	return model.InitCheck() == B_OK && (model.IsTrash() || model.InTrash() || model.IsDesktop());
+	BPath path(ref);
+	BVolume volume(ref->device);
+	if (path.InitCheck() != B_OK || volume.InitCheck() != B_OK)
+		return false;
+
+	BPath trash, desktop;
+	if (find_directory(B_TRASH_DIRECTORY, &trash, false, &volume) == B_OK) {
+		// the Trash itself and everything below it
+		BString trashPath(trash.Path());
+		if (trashPath == path.Path() || BString(path.Path()).StartsWith(trashPath << "/"))
+			return true;
+	}
+	if (find_directory(B_DESKTOP_DIRECTORY, &desktop, false, &volume) == B_OK && BString(desktop.Path()) == path.Path())
+		return true;
+
+	return false;
 }
 
 

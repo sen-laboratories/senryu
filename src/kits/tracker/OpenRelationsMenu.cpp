@@ -296,19 +296,20 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 
 	// store SEN:ID and relationType also in root relation menu item message itself,
 	// so we can use it for the top-level relation-view
-	BMenuItem *openRelationsItem = Supermenu()->FindItem(kOpenRelations);
-	ASSERT(openRelationsItem != NULL);
-	BMessage  *openRelationsItemMsg = openRelationsItem->Message();
-	ASSERT(openRelationsItemMsg != NULL);
+	// (the item of this menu: not one that is looked up by its command in the parent menu, which may not be there, e.g. in the
+	// menu of the Trash, and is the one of another menu for the menu of "New related...")
+	BMenuItem* openRelationsItem = Superitem();
+	BMessage* openRelationsItemMsg = openRelationsItem != NULL ? openRelationsItem->Message() : NULL;
+	if (openRelationsItemMsg != NULL) {
+		// always replace any previous data as the parent menu is reused!
+		openRelationsItemMsg->RemoveData(sen::key::kSourceRef);
+		openRelationsItemMsg->RemoveData(sen::key::kSourceId);
+		openRelationsItemMsg->RemoveData(sen::key::kRelationConfigMap);
 
-	// always replace any previous data as the parent menu is reused!
-	openRelationsItemMsg->RemoveData(sen::key::kSourceRef);
-	openRelationsItemMsg->RemoveData(sen::key::kSourceId);
-	openRelationsItemMsg->RemoveData(sen::key::kRelationConfigMap);
-
-	openRelationsItemMsg->AddRef(sen::key::kSourceRef, sourceRef);
-	openRelationsItemMsg->AddString(sen::key::kSourceId, srcId);
-    openRelationsItemMsg->AddMessage(sen::key::kRelationConfigMap, &relationConfigs);
+		openRelationsItemMsg->AddRef(sen::key::kSourceRef, sourceRef);
+		openRelationsItemMsg->AddString(sen::key::kSourceId, srcId);
+		openRelationsItemMsg->AddMessage(sen::key::kRelationConfigMap, &relationConfigs);
+	}
 
 	return countRelations;
 }
@@ -424,22 +425,21 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const entry_ref* sourceRef) {
 
 	// store relationType and config also in root relation menu item message itself,
 	// so we can use it for the top-level relation-view
-	BMenuItem *openSelfRelationsItem = Supermenu()->FindItem(kOpenSelfRelations);
-	ASSERT(openSelfRelationsItem != NULL);
-	BMessage  *openSelfRelationsItemMsg = openSelfRelationsItem->Message();
-	ASSERT(openSelfRelationsItemMsg != NULL);
+	BMenuItem* openSelfRelationsItem = Superitem();
+	BMessage* openSelfRelationsItemMsg = openSelfRelationsItem != NULL ? openSelfRelationsItem->Message() : NULL;
+	if (openSelfRelationsItemMsg != NULL) {
+		// always replace any previous data as the parent menu is reused!
+		openSelfRelationsItemMsg->RemoveData(sen::key::kSourceRef);
+		openSelfRelationsItemMsg->RemoveData(sen::key::kRelations);
+		openSelfRelationsItemMsg->RemoveData(sen::key::kRelationConfigMap);
 
-	// always replace any previous data as the parent menu is reused!
-	openSelfRelationsItemMsg->RemoveData(sen::key::kSourceRef);
-	openSelfRelationsItemMsg->RemoveData(sen::key::kRelations);
-	openSelfRelationsItemMsg->RemoveData(sen::key::kRelationConfigMap);
+		openSelfRelationsItemMsg->AddRef(sen::key::kSourceRef, sourceRef);
 
-	openSelfRelationsItemMsg->AddRef(sen::key::kSourceRef, sourceRef);
-
-	BStringList relations;
-	result = fRelationsReply.FindStrings(sen::key::kRelations, &relations);
-	openSelfRelationsItemMsg->AddStrings(sen::key::kRelations,  relations);	// add the emty message if some error occurred
-    openSelfRelationsItemMsg->AddMessage(sen::key::kRelationConfigMap, &relationConfigs);
+		BStringList relations;
+		result = fRelationsReply.FindStrings(sen::key::kRelations, &relations);
+		openSelfRelationsItemMsg->AddStrings(sen::key::kRelations,  relations);	// add the emty message if some error occurred
+		openSelfRelationsItemMsg->AddMessage(sen::key::kRelationConfigMap, &relationConfigs);
+	}
 
 	return relationsAdded;
 }

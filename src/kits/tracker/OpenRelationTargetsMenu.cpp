@@ -433,15 +433,16 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 
 	// cache relations in parent open relations menu item message itself,
 	// so we can reuse it for the relation target view
-	BMenuItem *openRelationTargetsItem = Supermenu()->FindItem(sen::cmd::kOpenRelationTargetView);
-	ASSERT(openRelationTargetsItem != NULL);
-	BMessage  *openRelationTargetsItemMsg = openRelationTargetsItem->Message();
-	ASSERT(openRelationTargetsItemMsg != NULL);
+	// (the item of this menu: FindItem() by the command would find the first of all relation types)
+	BMenuItem* openRelationTargetsItem = Superitem();
+	BMessage* openRelationTargetsItemMsg = openRelationTargetsItem != NULL ? openRelationTargetsItem->Message() : NULL;
+	if (openRelationTargetsItemMsg != NULL) {
+		openRelationTargetsItemMsg->RemoveName(sen::key::kRelations);	// the menu is reused
+		openRelationTargetsItemMsg->AddMessage(sen::key::kRelations, &relations);
 
-	openRelationTargetsItemMsg->AddMessage(sen::key::kRelations, &relations);
-
-	PRINT(("openRelationTargetsItemMsg is:\n"));
-	openRelationTargetsItemMsg->PrintToStream();
+		PRINT(("openRelationTargetsItemMsg is:\n"));
+		openRelationTargetsItemMsg->PrintToStream();
+	}
 
 	return result;
 }
