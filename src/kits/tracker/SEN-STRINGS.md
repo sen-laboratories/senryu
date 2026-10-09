@@ -5,6 +5,6 @@ Localisation has low priority for now. These strings were added or changed for S
 
 | String | Context | Comment |
 |--------|---------|---------|
-| Open contained... | (Shortcuts.cpp) | menu item for the relations that a file contains (was "Open self related..."), e.g. the bookmarks of a PDF or the attributes of a type |
-| Open related... | (Shortcuts.cpp) | menu item for the relations of a file |
-| New related... | (Shortcuts.cpp) | menu item to add a relation to a file |
+| Open contained... | ContainerWindow | menu item for the relations that a file contains (was "Open self related..."), e.g. the bookmarks of a PDF or the attributes of a type |
+| Open related... | ContainerWindow | menu item for the relations of a file |
+| New related... | ContainerWindow | menu item to add a relation to a file |

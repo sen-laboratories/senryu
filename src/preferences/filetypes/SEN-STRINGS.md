@@ -23,4 +23,4 @@ catalogs are found by the signature: until the catalogs exist for the new signat
 | Create index | |
 | Remove index | |
 | Could not change the index | |
-| OK, Cancel | (used here as well: exist in other contexts, check) |
+| OK | (button of the message that the type cannot be indexed; new in this context, "Cancel" exists already) |
