@@ -132,12 +132,18 @@ TraceSelection(const BPoseView* view, const char* function, const BPose* pose)
 			snprintf(what, sizeof(what), "'%c%c%c%c'", (code >> 24) & 0xff, (code >> 16) & 0xff, (code >> 8) & 0xff, code & 0xff);
 		else
 			snprintf(what, sizeof(what), "0x%x", (unsigned)code);
-		int32 opcode;
+		int32 opcode, key, raw;
 		const char* name;
+		const char* bytes;
 		if (message->FindInt32("opcode", &opcode) == B_OK) {
 			if (message->FindString("name", &name) != B_OK)
 				name = "";
 			snprintf(extra, sizeof(extra), " opcode=%d name=%s", (int)opcode, name);
+		} else if (message->FindString("bytes", &bytes) == B_OK) {
+			// a key: the characters, the key code, the raw character and the modifiers
+			snprintf(extra, sizeof(extra), " bytes=0x%02x key=%d raw=%d modifiers=0x%x",
+				(unsigned char)bytes[0], message->FindInt32("key", &key) == B_OK ? (int)key : -1,
+				message->FindInt32("raw_char", &raw) == B_OK ? (int)raw : -1, (unsigned)message->GetInt32("modifiers", 0));
 		}
 	}
 	thread_info info;
@@ -6845,6 +6851,7 @@ BPoseView::ShowSelectionWindow()
 void
 BPoseView::KeyDown(const char* bytes, int32 count)
 {
+	TRACE_SELECTION(NULL);
 	char key = bytes[0];
 
 	switch (key) {
@@ -8485,6 +8492,7 @@ BPoseView::OpenSelectionUsing(BPose* clickedPose, int32* index)
 void
 BPoseView::OpenSelectionCommon(BPose* clickedPose, int32* poseIndex, bool openWith)
 {
+	TRACE_SELECTION(NULL);
 	int32 selectCount = CountSelected();
 	if (selectCount == 0)
 		return;
