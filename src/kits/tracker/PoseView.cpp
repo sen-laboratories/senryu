@@ -100,6 +100,55 @@ All rights reserved.
 #include "TrackerString.h"
 #include "WidgetAttributeText.h"
 #include "WidthBuffer.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <OS.h>
+
+
+// Selection trace for finding out who changes the selection (set AKITA_TRACE_SELECTION in the environment of Akita): to the
+// stderr, with the message that is handled by the window thread (what, and for node monitor messages the opcode and name).
+static void
+TraceSelection(const BPoseView* view, const char* function, const BPose* pose)
+{
+	static int enabled = -1;
+	if (enabled < 0)
+		enabled = getenv("AKITA_TRACE_SELECTION") != NULL ? 1 : 0;
+	if (enabled == 0)
+		return;
+
+	char what[8] = "-";
+	char extra[B_FILE_NAME_LENGTH + 32] = "";
+	BWindow* window = view->Window();
+	const BMessage* message = window != NULL ? window->CurrentMessage() : NULL;
+	if (message != NULL) {
+		uint32 code = message->what;
+		bool printable = true;
+		for (int i = 0; i < 4; i++) {
+			char c = (code >> (24 - i * 8)) & 0xff;
+			if (c < 32 || c > 126)
+				printable = false;
+		}
+		if (printable)
+			snprintf(what, sizeof(what), "'%c%c%c%c'", (code >> 24) & 0xff, (code >> 16) & 0xff, (code >> 8) & 0xff, code & 0xff);
+		else
+			snprintf(what, sizeof(what), "0x%x", (unsigned)code);
+		int32 opcode;
+		const char* name;
+		if (message->FindInt32("opcode", &opcode) == B_OK) {
+			if (message->FindString("name", &name) != B_OK)
+				name = "";
+			snprintf(extra, sizeof(extra), " opcode=%d name=%s", (int)opcode, name);
+		}
+	}
+	thread_info info;
+	get_thread_info(find_thread(NULL), &info);
+	fprintf(stderr, "[selection] %s pose=%s selected=%d message=%s%s thread=%s view=%s\n", function,
+		pose != NULL && pose->TargetModel() != NULL ? pose->TargetModel()->Name() : "-", (int)view->CountSelected(), what,
+		extra, info.name, view->TargetModel() != NULL ? view->TargetModel()->Name() : "?");
+}
+
+#define TRACE_SELECTION(pose) TraceSelection(this, __func__, pose)
+
 
 
 #undef B_TRANSLATION_CONTEXT
@@ -1714,6 +1763,7 @@ BPoseView::AddTrashPoses()
 void
 BPoseView::AddPosesCompleted()
 {
+	TRACE_SELECTION(NULL);
 	BContainerWindow* window = ContainerWindow();
 	if (window != NULL && window->ShouldAddMenus())
 		window->AddMimeTypesToMenu();
@@ -4066,6 +4116,7 @@ BPoseView::ResetPosePlacementHint()
 void
 BPoseView::SelectPoses(int32 start, int32 end)
 {
+	TRACE_SELECTION(NULL);
 	// clear selection list
 	fSelectionList->MakeEmpty();
 	fMimeTypesInSelectionCache.MakeEmpty();
@@ -4172,6 +4223,7 @@ BPoseView::ScrollIntoView(BRect poseRect)
 void
 BPoseView::SelectPose(BPose* pose, int32 index, bool scrollIntoView)
 {
+	TRACE_SELECTION(pose);
 	if (pose == NULL || CountSelected() > 1 || !pose->IsSelected())
 		ClearSelection();
 
@@ -4185,6 +4237,7 @@ BPoseView::SelectPose(BPose* pose, int32 index, bool scrollIntoView)
 void
 BPoseView::AddPoseToSelection(BPose* pose, int32 index, bool scrollIntoView)
 {
+	TRACE_SELECTION(pose);
 	// TODO: need to check if pose is member of selection list
 	if (pose != NULL && !pose->IsSelected()) {
 		pose->Select(true);
@@ -4209,6 +4262,7 @@ BPoseView::AddPoseToSelection(BPose* pose, int32 index, bool scrollIntoView)
 void
 BPoseView::RemovePoseFromSelection(BPose* pose)
 {
+	TRACE_SELECTION(pose);
 	if (fSelectionPivotPose == pose)
 		fSelectionPivotPose = NULL;
 
@@ -6271,6 +6325,7 @@ BPoseView::DuplicateSelection(BPoint* dropStart, BPoint* dropEnd)
 void
 BPoseView::SelectPoseAtLocation(BPoint point)
 {
+	TRACE_SELECTION(NULL);
 	int32 index;
 	BPose* pose = FindPose(point, &index);
 	if (pose != NULL)
@@ -6618,6 +6673,7 @@ BPoseView::DoMoveToTrash()
 void
 BPoseView::SelectAll()
 {
+	TRACE_SELECTION(NULL);
 	BRect bounds(Bounds());
 
 	// clear selection list
@@ -6665,6 +6721,7 @@ BPoseView::SelectAll()
 void
 BPoseView::InvertSelection()
 {
+	TRACE_SELECTION(NULL);
 	// Since this function shares most code with
 	// SelectAll(), we could make SelectAll() empty the selection,
 	// then call InvertSelection()
@@ -8007,6 +8064,7 @@ BPoseView::GetDragRect(int32 poseIndex)
 void
 BPoseView::SelectPoses(BRect selectionRect, BList** oldList)
 {
+	TRACE_SELECTION(NULL);
 	// TODO: This is a mess due to pose rect calculation and list management
 	// being different for list vs. icon modes. Refactoring needed.
 
@@ -8098,6 +8156,7 @@ BPoseView::SelectPoses(BRect selectionRect, BList** oldList)
 void
 BPoseView::AddRemoveSelectionRange(BPoint where, bool extendSelection, BPose* pose)
 {
+	TRACE_SELECTION(pose);
 	ASSERT(pose != NULL);
 
 	if (pose == fSelectionPivotPose && !extendSelection)
@@ -8213,6 +8272,7 @@ BPoseView::DeleteSymLinkPoseTarget(const node_ref* itemNode, BPose* pose, int32 
 bool
 BPoseView::DeletePose(const node_ref* itemNode, BPose* pose, int32 index)
 {
+	TRACE_SELECTION(pose);
 	StopWatchingNode(itemNode);
 
 	if (pose == NULL)
@@ -8882,6 +8942,7 @@ BPoseView::IdentifySelection(bool force)
 void
 BPoseView::ClearSelection()
 {
+	TRACE_SELECTION(NULL);
 	CommitActivePose();
 	fSelectionPivotPose = NULL;
 	fRealPivotPose = NULL;
