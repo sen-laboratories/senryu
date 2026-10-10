@@ -3959,24 +3959,20 @@ struct SubmenuOpener {
 	static int32 Run(void* data)
 	{
 		SubmenuOpener* self = (SubmenuOpener*)data;
-		// the menu is shown by the thread that called Go()
-		for (int32 tries = 0; self->menu->Window() == NULL && tries < 100; tries++)
-			snooze(20000);
+		// the menu is shown by the thread that called Go(); the keys are sent at once, with no pauses between them, so that the
+		// selection does not wander down the menu in front of the user
+		for (int32 tries = 0; self->menu->Window() == NULL && tries < 500; tries++)
+			snooze(2000);
 		if (self->menu->Window() == NULL)
 			return B_ERROR;
-		snooze(150000);
 
 		BMenu* menu = self->menu;
 		for (size_t level = 0; level < self->path.size() && menu != NULL; level++) {
 			// nothing is selected in the menu that was just shown, a submenu opens with its first item selected
 			int32 downs = self->path[level] + (level == 0 ? 1 : 0);
-			for (int32 i = 0; i < downs; i++) {
+			for (int32 i = 0; i < downs; i++)
 				self->Key(menu, B_DOWN_ARROW);
-				snooze(30000);
-			}
-			self->Key(menu, B_RIGHT_ARROW);
-			snooze(100000);
-			// the item that was opened is the one with this navigation index
+			// the item that is opened is the one with this navigation index
 			BMenuItem* opened = NULL;
 			int32 index = 0;
 			if (menu->LockLooper()) {
@@ -3991,7 +3987,11 @@ struct SubmenuOpener {
 				}
 				menu->UnlockLooper();
 			}
+			self->Key(menu, B_RIGHT_ARROW);
 			menu = opened != NULL ? opened->Submenu() : NULL;
+			// wait for the submenu to be shown before its keys are used
+			for (int32 tries = 0; menu != NULL && menu->Window() == NULL && tries < 250; tries++)
+				snooze(2000);
 		}
 		return B_OK;
 	}
