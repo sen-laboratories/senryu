@@ -85,25 +85,8 @@ TrackerSenRelations::WriteTargetRelations(
 
 	PRINT(("  * working dir is now: '%s'...\n", relationDirPath.Path() ));
 
-	// for dynamic relations, check if current working dir is the selected target we want to open later
-	BString itemId, selectedId;
-
-	if (isDynamic) {
-		relations->FindString(sen::key::kItemId, &itemId);
-
-		if (! itemId.IsEmpty()) {
-			relationConf->FindString(sen::key::kItemId, &selectedId);
-
-			PRINT(("  > check if path is the one to open: %s (current) <-> %s (selected)\n",
-					itemId.String(), selectedId.String() ));
-
-			if (itemId == selectedId) {
-				PRINT(("  * found user selected relations path %s\n", relationDirPath.Path() ));
-				// update open ref so caller knows what directory the user expects to enter
-				*openDirRef = *workingDirRef;
-			}
-		}
-	}
+	// the item that the user chose to open (of a dynamic relation): the view shows what is below it, as the folder of it would
+	const char* selectedId = isDynamic ? relationConf->GetString(sen::key::kItemId, "") : "";
 
 	const char* srcId = relationConf->GetString(sen::key::kSourceId);
 	if (srcId == NULL) {
@@ -217,6 +200,13 @@ TrackerSenRelations::WriteTargetRelations(
 
 			// recurse to create complete relation structure for dynamic relations
 			if (isDynamic) {
+				// the folder of the chosen item is the one to open (an item is found by its own id, not by the ones of its children)
+				const char* itemId = properties.GetString(sen::key::kItemId, "");
+				if (strlen(selectedId) > 0 && strcmp(itemId, selectedId) == 0) {
+					PRINT(("  * found user selected relations path %s\n", relationDirPath.Path() ));
+					*openDirRef = subDirRef;
+				}
+
 				result = subDirEntry.InitCheck();
 
 				if (result == B_OK) {
