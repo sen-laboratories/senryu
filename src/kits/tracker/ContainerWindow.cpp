@@ -3932,13 +3932,92 @@ BContainerWindow::SelectAttributesOfType(const BMessage* mimeTypeItem)
 }
 
 
+namespace {
+
+// the position of the item among the ones that the keys of the menu reach (not separators, not disabled ones)
+int32
+NavigationIndex(BMenu* menu, BMenuItem* item)
+{
+	int32 index = 0;
+	for (int32 i = 0; i < menu->CountItems(); i++) {
+		BMenuItem* other = menu->ItemAt(i);
+		if (other == item)
+			return index;
+		if (other->IsEnabled() && dynamic_cast<BSeparatorItem*>(other) == NULL)
+			index++;
+	}
+	return -1;
+}
+
+
+// Opens the submenus of a menu that is shown, like the cursor keys do: a pop-up menu cannot be opened at a submenu, and the pointer is
+// not where the submenu was (the user clicked an item in it), so it does not open it by hovering over its item.
+struct SubmenuOpener {
+	BPopUpMenu*		menu;
+	std::vector<int32>	path;	// the navigation index of the item to open, at each level
+
+	static int32 Run(void* data)
+	{
+		SubmenuOpener* self = (SubmenuOpener*)data;
+		// the menu is shown by the thread that called Go()
+		for (int32 tries = 0; self->menu->Window() == NULL && tries < 100; tries++)
+			snooze(20000);
+		if (self->menu->Window() == NULL)
+			return B_ERROR;
+		snooze(150000);
+
+		BMenu* menu = self->menu;
+		for (size_t level = 0; level < self->path.size() && menu != NULL; level++) {
+			// nothing is selected in the menu that was just shown, a submenu opens with its first item selected
+			int32 downs = self->path[level] + (level == 0 ? 1 : 0);
+			for (int32 i = 0; i < downs; i++) {
+				self->Key(menu, B_DOWN_ARROW);
+				snooze(30000);
+			}
+			self->Key(menu, B_RIGHT_ARROW);
+			snooze(100000);
+			// the item that was opened is the one with this navigation index
+			BMenuItem* opened = NULL;
+			int32 index = 0;
+			if (menu->LockLooper()) {
+				for (int32 i = 0; i < menu->CountItems(); i++) {
+					BMenuItem* item = menu->ItemAt(i);
+					if (!item->IsEnabled() || dynamic_cast<BSeparatorItem*>(item) != NULL)
+						continue;
+					if (index++ == self->path[level]) {
+						opened = item;
+						break;
+					}
+				}
+				menu->UnlockLooper();
+			}
+			menu = opened != NULL ? opened->Submenu() : NULL;
+		}
+		return B_OK;
+	}
+
+	void Key(BMenu* menu, char key)
+	{
+		if (!menu->LockLooper())
+			return;
+		char bytes[2] = { key, 0 };
+		menu->KeyDown(bytes, 1);
+		menu->UnlockLooper();
+	}
+};
+
+}	// namespace
+
+
 void
 BContainerWindow::ShowAttributesPopUp(BPoint where)
 {
 	// The menu of the column titles. With Shift pressed an item does not close it: the attribute is selected or deselected, and
-	// the whole menu is shown again where it was, as if it had stayed open, with the items marked now (a menu itself closes when
-	// the mouse is released, there is no hook to prevent that). A menu of a relation (or any MIME type) selects all its attributes.
+	// the whole menu is shown again where it was, with the submenus open down to the one that the item was in, as if it had stayed
+	// open and only the marks changed (a menu itself closes when the mouse is released, there is no hook to prevent that).
+	// A menu of a relation (or any MIME type) selects all its attributes.
 	bool again = false;
+	std::vector<int32> path;	// the navigation indices of the submenus to open
 
 	for (;;) {
 		BPopUpMenu* popUp = new BPopUpMenu("Attributes", false, false);
@@ -3947,7 +4026,23 @@ BContainerWindow::ShowAttributesPopUp(BPoint where)
 		MarkAttributesMenu(popUp);
 		popUp->SetTargetForItems(PoseView());
 
+		SubmenuOpener opener;
+		opener.menu = popUp;
+		opener.path = path;
+		thread_id openerThread = -1;
+		if (!path.empty()) {
+			openerThread = spawn_thread(SubmenuOpener::Run, "open attribute submenus", B_NORMAL_PRIORITY, &opener);
+			if (openerThread >= 0)
+				resume_thread(openerThread);
+		}
+
 		BMenuItem* chosen = popUp->Go(where, false, again);
+
+		if (openerThread >= 0) {
+			status_t ignored;
+			wait_for_thread(openerThread, &ignored);
+		}
+
 		if (chosen == NULL || chosen->Message() == NULL) {
 			delete popUp;
 			return;
@@ -3977,9 +4072,25 @@ BContainerWindow::ShowAttributesPopUp(BPoint where)
 			}
 		}
 
-		delete popUp;
-		if (!keepOpen)
+		if (!keepOpen) {
+			delete popUp;
 			return;
+		}
+
+		// the menu that the item was in is shown open again
+		path.clear();
+		for (BMenu* menu = chosen->Menu(); menu != NULL && menu != popUp && menu->Superitem() != NULL;
+				menu = menu->Supermenu()) {
+			BMenu* parent = menu->Supermenu();
+			int32 index = parent != NULL ? NavigationIndex(parent, menu->Superitem()) : -1;
+			if (index < 0) {
+				path.clear();
+				break;
+			}
+			path.insert(path.begin(), index);
+		}
+
+		delete popUp;
 		again = true;
 	}
 }
