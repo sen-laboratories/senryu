@@ -3907,35 +3907,6 @@ FindMimeItemInTree(BMenu* menu, const char* mimeType)
 }
 
 
-// a copy of the menu in a pop-up: the items and submenus are new, the marks are kept
-static void
-CopyAttributesMenu(const BMenu* source, BMenu* copy)
-{
-	for (int32 index = 0; BMenuItem* item = source->ItemAt(index); index++) {
-		if (dynamic_cast<BSeparatorItem*>(item) != NULL) {
-			copy->AddSeparatorItem();
-			continue;
-		}
-		if (item->Message() == NULL)
-			continue;
-
-		BMessage* message = new BMessage(*item->Message());
-		BMenuItem* itemCopy;
-		if (item->Submenu() != NULL) {
-			BMenu* submenu = new BMenu(item->Label());
-			CopyAttributesMenu(item->Submenu(), submenu);
-			const char* mimeType = NULL;
-			message->FindString("mimetype", &mimeType);
-			itemCopy = mimeType != NULL ? new IconMenuItem(submenu, message, mimeType) : new BMenuItem(submenu, message);
-		} else {
-			itemCopy = new BMenuItem(item->Label(), message);
-			itemCopy->SetMarked(item->IsMarked());
-		}
-		copy->AddItem(itemCopy);
-	}
-}
-
-
 void
 BContainerWindow::SelectAttributesOfMenu(BMenu* menu)
 {
@@ -3965,33 +3936,16 @@ void
 BContainerWindow::ShowAttributesPopUp(BPoint where)
 {
 	// The menu of the column titles. With Shift pressed an item does not close it: the attribute is selected or deselected, and
-	// the menu is shown again where it was (a menu itself closes when the mouse is released, there is no hook to prevent that).
-	// A menu of a relation (or any MIME type) selects all its attributes; with Shift the whole menu is shown again. The menu
-	// of an attribute that was selected with Shift is shown again, not the one it is in.
-	std::vector<BString> path;	// the MIME types of the menus down to the one that is shown
+	// the whole menu is shown again where it was, as if it had stayed open, with the items marked now (a menu itself closes when
+	// the mouse is released, there is no hook to prevent that). A menu of a relation (or any MIME type) selects all its attributes.
 	bool again = false;
-	// the menu is always shown where it was first, it would move every time otherwise
 
 	for (;;) {
 		BPopUpMenu* popUp = new BPopUpMenu("Attributes", false, false);
 		NewAttributesMenu(popUp);
 		AddMimeTypesToMenu(popUp);
 		MarkAttributesMenu(popUp);
-
-		BMenu* shown = popUp;
-		for (const BString& mimeType : path) {
-			BMenuItem* item = FindMimeItem(shown, mimeType.String());
-			if (item == NULL || item->Submenu() == NULL)
-				break;
-			shown = item->Submenu();
-		}
-		if (shown != popUp) {
-			BPopUpMenu* copy = new BPopUpMenu("Attributes", false, false);
-			CopyAttributesMenu(shown, copy);
-			delete popUp;
-			popUp = copy;
-		} else
-			popUp->SetTargetForItems(PoseView());
+		popUp->SetTargetForItems(PoseView());
 
 		BMenuItem* chosen = popUp->Go(where, false, again);
 		if (chosen == NULL || chosen->Message() == NULL) {
@@ -4001,7 +3955,6 @@ BContainerWindow::ShowAttributesPopUp(BPoint where)
 
 		BMessage* message = chosen->Message();
 		bool keepOpen = (modifiers() & B_SHIFT_KEY) != 0;
-		BMenu* chosenMenu = chosen->Menu();
 
 		if (message->what != kAttributeItem && message->what != kMIMETypeItem) {
 			// not an attribute (Copy layout, Paste layout,...): as usual
@@ -4010,23 +3963,11 @@ BContainerWindow::ShowAttributesPopUp(BPoint where)
 			delete popUp;
 			return;
 		}
-		if (!keepOpen) {
-			if (message->what == kMIMETypeItem && chosen->Submenu() != NULL)
-				SelectAttributesOfMenu(chosen->Submenu());
-			else if (message->what == kAttributeItem) {
-				uint32 attrHash;
-				if (message->FindInt32("attr_hash", (int32*)&attrHash) == B_OK) {
-					if (PoseView()->ColumnFor(attrHash) != NULL)
-						PoseView()->RemoveAttributeColumn(message);
-					else
-						PoseView()->AddAttributeColumn(message, chosen->Label());
-				}
-			}
-			delete popUp;
-			return;
-		}
 
-		if (message->what == kAttributeItem) {
+		if (message->what == kMIMETypeItem && chosen->Submenu() != NULL) {
+			// a menu of attributes (e.g. of a relation): all its attributes are shown
+			SelectAttributesOfMenu(chosen->Submenu());
+		} else if (message->what == kAttributeItem) {
 			uint32 attrHash;
 			if (message->FindInt32("attr_hash", (int32*)&attrHash) == B_OK) {
 				if (PoseView()->ColumnFor(attrHash) != NULL)
@@ -4034,25 +3975,11 @@ BContainerWindow::ShowAttributesPopUp(BPoint where)
 				else
 					PoseView()->AddAttributeColumn(message, chosen->Label());
 			}
-			// the menu this attribute is in is shown again
-			std::vector<BString> menuPath(path);
-			for (BMenu* menu = chosenMenu; menu != NULL && menu != popUp && menu->Superitem() != NULL;
-					menu = menu->Supermenu()) {
-				const char* mimeType;
-				if (menu->Superitem()->Message() == NULL
-						|| menu->Superitem()->Message()->FindString("mimetype", &mimeType) != B_OK)
-					break;
-				menuPath.insert(menuPath.begin() + path.size(), BString(mimeType));
-			}
-			path = menuPath;
-		} else {
-			// a menu of attributes (e.g. of a relation) was chosen: all its attributes are shown, and the whole menu is shown
-			// again as it was, to keep the context
-			if (chosen->Submenu() != NULL)
-				SelectAttributesOfMenu(chosen->Submenu());
 		}
 
 		delete popUp;
+		if (!keepOpen)
+			return;
 		again = true;
 	}
 }
