@@ -17,7 +17,8 @@ RelationContext::RelationContext(const entry_ref& source, const BString& id)
 	:
 	sourceRef(source),
 	sourceId(id),
-	fHasRoot(false)
+	fHasRoot(false),
+	fIsNode(false)
 {
 }
 
@@ -35,6 +36,26 @@ RelationContext::SetRoot(const BMessage& root)
 	BAutolock locker(fLock);
 	fRoot = root;
 	fHasRoot = true;
+}
+
+
+void
+RelationContext::SetNode(const BMessage& relations)
+{
+	fNodeRelations = relations;
+	fIsNode = true;
+}
+
+
+void
+RelationContext::RestrictToNode(BMessage* reply) const
+{
+	if (!fIsNode)
+		return;
+	reply->RemoveName(sen::key::kRelations);
+	BMessage item;
+	for (int32 index = 0; fNodeRelations.FindMessage(sen::key::kRelations, index, &item) == B_OK; index++)
+		reply->AddMessage(sen::key::kRelations, &item);
 }
 
 

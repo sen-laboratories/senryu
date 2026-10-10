@@ -85,6 +85,51 @@ main()
 		CHECK(strcmp(root.GetString("x", ""), "y") == 0);
 	}
 
+	printf("the context of a node (a bookmark) shows only its children, not the tree of the whole document\n");
+	{
+		BMessage whole(B_REFS_RECEIVED);
+		for (const char* name : {"1 Introduction", "2 Installing", "3 Reading"}) {
+			BMessage item;
+			item.AddString("name", name);
+			whole.AddMessage(sen::key::kRelations, &item);
+		}
+
+		// a context of the document restricts nothing
+		BMessage reply(whole);
+		MakeContext("doc")->RestrictToNode(&reply);
+		CHECK(reply.CountNames(B_MESSAGE_TYPE) == 1);
+		int32 count = 0;
+		reply.GetInfo(sen::key::kRelations, NULL, &count);
+		CHECK(count == 3);
+
+		// a node with two children
+		BMessage children;
+		for (const char* name : {"2.1 Updating", "2.2 What it needs"}) {
+			BMessage item;
+			item.AddString("name", name);
+			children.AddMessage(sen::key::kRelations, &item);
+		}
+		RelationContextRef node = MakeContext("node");
+		CHECK(!node->IsNode());
+		node->SetNode(children);
+		CHECK(node->IsNode());
+		reply = whole;
+		node->RestrictToNode(&reply);
+		count = 0;
+		reply.GetInfo(sen::key::kRelations, NULL, &count);
+		CHECK(count == 2);
+		BMessage first;
+		CHECK(reply.FindMessage(sen::key::kRelations, 0, &first) == B_OK);
+		CHECK(strcmp(first.GetString("name", ""), "2.1 Updating") == 0);
+
+		// a leaf contains nothing
+		RelationContextRef leaf = MakeContext("leaf");
+		leaf->SetNode(BMessage());
+		reply = whole;
+		leaf->RestrictToNode(&reply);
+		CHECK(!reply.HasMessage(sen::key::kRelations));
+	}
+
 	printf("only the latest contexts are kept, the oldest is dropped; one in use stays alive for who holds it\n");
 	{
 		RelationContextRef first = MakeContext("first");

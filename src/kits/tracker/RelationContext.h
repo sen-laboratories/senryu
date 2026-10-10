@@ -39,6 +39,15 @@ public:
 	void					SetRoot(const BMessage& root);
 	bool					GetRoot(BMessage* root) const;
 
+	/**
+	 * For the contained relations of a node of a view (a bookmark in the folders of a document): the tree of the whole document is
+	 * not the one of the node, it contains only its children. Set once before the context is registered (see SetNode).
+	 */
+	void					SetNode(const BMessage& relations);
+	bool					IsNode() const { return fIsNode; }
+	/** Replace the relations of the reply of the server (the whole tree) with the ones of the node, if this is the context of a node. */
+	void					RestrictToNode(BMessage* reply) const;
+
 	entry_ref				sourceRef;
 	BString					sourceId;
 	/** the config of every relation type of the answer, by type (sen::key::kRelationConfigMap) */
@@ -52,6 +61,8 @@ private:
 	mutable BLocker			fLock;
 	BMessage				fRoot;
 	bool					fHasRoot;
+	bool					fIsNode;
+	BMessage				fNodeRelations;
 };
 
 typedef std::shared_ptr<RelationContext> RelationContextRef;

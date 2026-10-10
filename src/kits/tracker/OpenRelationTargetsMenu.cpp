@@ -119,6 +119,8 @@ OpenRelationTargetsMenu::StartBuildingItemList()
 		return false;
 	}
 	if (context != NULL && fEntriesToOpen.what == sen::cmd::kRelationsGetSelf) {
+		// (the children of a node of a view, not the whole tree of the document)
+		context->RestrictToNode(fRelationTargetsReply);
 		// the whole tree of the contained relations, for the views that the items of this menu open
 		context->SetRoot(*fRelationTargetsReply);
 	}

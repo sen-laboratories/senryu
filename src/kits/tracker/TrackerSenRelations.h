@@ -23,6 +23,13 @@ public:
 	 * with one (the attribute SEN:REL:TRG), else the file itself. A folder (a nested relation) is the relation itself.
 	 */
 	static entry_ref	RelationTargetOrSelf(const entry_ref* ref);
+	/**
+	 * A file or folder of a view of contained relations (a bookmark of a document, made by a plugin): its source is the document, the
+	 * file stands for the relation to the target, and what it contains is only its subtree. False if this is not such a node;
+	 * @param source the document
+	 * @param relations the relations of the node (its children), empty for a leaf
+	 */
+	static bool			SelfRelationNode(const entry_ref* ref, entry_ref* source, BMessage* relations);
 	/** The name to show for a file (the title of a window...): its title (dc:title), the short description of a MIME type (the
 	 *  file of a type in the MIME database is named like the type), else its file name. The same as the SEN server gives targets. */
 	static BString	DisplayNameOf(const entry_ref& ref);

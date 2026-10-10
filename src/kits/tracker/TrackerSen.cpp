@@ -637,6 +637,7 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 				PRINT(("  X failed to get relation ROOT: %s\n", strerror(result) ));
 				return result;
 			}
+			context->RestrictToNode(&answer);
 			context->SetRoot(answer);
 			relations = answer;
 		}

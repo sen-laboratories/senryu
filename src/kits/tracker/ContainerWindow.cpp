@@ -2397,6 +2397,21 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 	// self relations, take over from above but adapt to self relations
 	BMessage messageSelf(message);
 	messageSelf.ReplaceUInt32(sen::key::kAction, sen::cmd::kRelationsGetAllSelf);
+	// a node of a view of contained relations (a bookmark) contains what is below it, of the document: the menu shows only that
+	messageSelf.RemoveName("refs");
+	for (int32 index = 0; index < count; index++) {
+		BPose* pose = PoseView()->SelectionList()->ItemAt(index);
+		entry_ref nodeRef = *pose->TargetModel()->EntryRef();
+		entry_ref source;
+		BMessage nodeRelations;
+		if (TrackerSenRelations::SelfRelationNode(&nodeRef, &source, &nodeRelations)) {
+			messageSelf.AddRef("refs", &source);
+			messageSelf.AddRef(sen::key::kRelationNode, &nodeRef);
+		} else {
+			entry_ref relatedRef = TrackerSenRelations::RelationTargetOrSelf(&nodeRef);
+			messageSelf.AddRef("refs", &relatedRef);
+		}
+	}
 
 	// Note: the menu itself targets Tracker, same as for fOpenRelationsItem above
 	fOpenSelfRelationsItem = Shortcuts()->OpenSelfRelationsItem(
@@ -3951,7 +3966,7 @@ BContainerWindow::ShowAttributesPopUp(BPoint where)
 {
 	// The menu of the column titles. With Shift pressed an item does not close it: the attribute is selected or deselected, and
 	// the menu is shown again where it was (a menu itself closes when the mouse is released, there is no hook to prevent that).
-	// A menu of a relation (or any MIME type) selects all its attributes; with Shift it is shown, to select more. The menu
+	// A menu of a relation (or any MIME type) selects all its attributes; with Shift the whole menu is shown again. The menu
 	// of an attribute that was selected with Shift is shown again, not the one it is in.
 	std::vector<BString> path;	// the MIME types of the menus down to the one that is shown
 	bool again = false;
@@ -4031,12 +4046,10 @@ BContainerWindow::ShowAttributesPopUp(BPoint where)
 			}
 			path = menuPath;
 		} else {
-			// a menu of attributes (e.g. of a relation) was chosen: all its attributes are shown, and the menu is shown
-			const char* mimeType;
-			if (chosen->Submenu() != NULL && message->FindString("mimetype", &mimeType) == B_OK) {
+			// a menu of attributes (e.g. of a relation) was chosen: all its attributes are shown, and the whole menu is shown
+			// again as it was, to keep the context
+			if (chosen->Submenu() != NULL)
 				SelectAttributesOfMenu(chosen->Submenu());
-				path.push_back(BString(mimeType));
-			}
 		}
 
 		delete popUp;

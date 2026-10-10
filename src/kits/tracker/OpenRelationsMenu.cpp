@@ -17,6 +17,7 @@
 #include <sen/Sensei.h>
 #include "StopWatch.h"
 #include "Tracker.h"
+#include "TrackerSenRelations.h"
 
 #include <Alert.h>
 #include <Button.h>
@@ -372,6 +373,13 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const entry_ref* sourceRef) {
 	RelationContextRef context = std::make_shared<RelationContext>(*sourceRef, BString());
 	context->relationConfigs = relationConfigs;
 	context->pluginConfig = pluginConfig;
+	entry_ref nodeRef, nodeSource;
+	BMessage nodeRelations;
+	if (fEntriesToOpen.FindRef(sen::key::kRelationNode, &nodeRef) == B_OK
+			&& TrackerSenRelations::SelfRelationNode(&nodeRef, &nodeSource, &nodeRelations)) {
+		// a bookmark of a document: its children are contained, not the whole document
+		context->SetNode(nodeRelations);
+	}
 	fRelationsReply.FindStrings(sen::key::kRelations, &context->relations);
 	int64 contextId = RelationContexts::Add(context);
 

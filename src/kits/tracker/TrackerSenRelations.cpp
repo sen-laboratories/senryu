@@ -591,6 +591,30 @@ TrackerSenRelations::DisplayNameOf(const entry_ref& ref)
 }
 
 
+static bool
+ReadTargetRef(BNode& node, entry_ref* target)
+{
+	attr_info info;
+	if (node.GetAttrInfo(sen::attr::kRelationTargetRef, &info) != B_OK || info.type != B_REF_TYPE || info.size <= 0)
+		return false;
+
+	// the ref is stored as a message holds it: flattened
+	bool found = false;
+	char* buffer = new char[info.size];
+	if (node.ReadAttr(sen::attr::kRelationTargetRef, B_REF_TYPE, 0, buffer, info.size) == info.size) {
+		BMessage holder;
+		entry_ref ref;
+		if (holder.AddData("ref", B_REF_TYPE, buffer, info.size, false) == B_OK && holder.FindRef("ref", &ref) == B_OK
+				&& BEntry(&ref).Exists()) {
+			*target = ref;
+			found = true;
+		}
+	}
+	delete[] buffer;
+	return found;
+}
+
+
 entry_ref
 TrackerSenRelations::RelationTargetOrSelf(const entry_ref* ref)
 {
@@ -600,23 +624,30 @@ TrackerSenRelations::RelationTargetOrSelf(const entry_ref* ref)
 		return *ref;
 
 	BNode node(ref);
-	attr_info info;
-	if (node.InitCheck() != B_OK || node.GetAttrInfo(sen::attr::kRelationTargetRef, &info) != B_OK
-			|| info.type != B_REF_TYPE || info.size <= 0)
+	entry_ref target;
+	if (node.InitCheck() != B_OK || !ReadTargetRef(node, &target))
 		return *ref;
-
-	// the ref is stored as a message holds it: flattened
-	char* buffer = new char[info.size];
-	entry_ref target = *ref;
-	if (node.ReadAttr(sen::attr::kRelationTargetRef, B_REF_TYPE, 0, buffer, info.size) == info.size) {
-		BMessage holder;
-		entry_ref found;
-		if (holder.AddData("ref", B_REF_TYPE, buffer, info.size, false) == B_OK && holder.FindRef("ref", &found) == B_OK
-				&& BEntry(&found).Exists())
-			target = found;
-	}
-	delete[] buffer;
 	return target;
+}
+
+
+bool
+TrackerSenRelations::SelfRelationNode(const entry_ref* ref, entry_ref* source, BMessage* relations)
+{
+	BNode node(ref);
+	attr_info info;
+	// the nodes of the view of a plugin have the id of their item (stored relations have none)
+	if (node.InitCheck() != B_OK || node.GetAttrInfo(sen::key::kItemId, &info) != B_OK || !ReadTargetRef(node, source))
+		return false;
+
+	relations->MakeEmpty();
+	if (node.GetAttrInfo(sen::key::kRelations, &info) == B_OK && info.type == B_MESSAGE_TYPE && info.size > 0) {
+		char* buffer = new char[info.size];
+		if (node.ReadAttr(sen::key::kRelations, B_MESSAGE_TYPE, 0, buffer, info.size) == info.size)
+			relations->Unflatten(buffer);
+		delete[] buffer;
+	}
+	return true;
 }
 
 
