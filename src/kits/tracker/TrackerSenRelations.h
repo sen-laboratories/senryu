@@ -26,8 +26,9 @@ public:
 	/** The relations of SEN are for files and folders: not for the Trash and what is in it, and not for the Desktop folder itself.
 	 *  (The folders are those of find_directory(), on the volume of the item.) */
 	static bool			HasNoRelations(const entry_ref* ref);
-	/** The key of the SEN mode of a drag (dropping files relates them): the Command key, which is the Apple key of a Mac keyboard (and
-	 *  Alt on a PC one). The only place that decides it, so that it can be made a setting. (Option has its own uses, e.g. Option+O.) */
+	/** The key of the SEN mode of a drag (dropping files relates them): the Command key by default, which is the Apple key of a Mac keyboard (and
+	 *  Alt on a PC one), or the one that is set in the Settings of the SEN Deskbar menu (SEN:modifierKey in sen.settings). The only place that
+	 *  decides it. (Option has its own uses, e.g. Option+O.) */
 	static uint32		SenModeKey();
 	/** Whether the SEN mode key is pressed now. */
 	static bool			IsSenMode();

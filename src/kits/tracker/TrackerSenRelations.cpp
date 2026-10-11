@@ -15,7 +15,9 @@
 #include <Node.h>
 #include <NodeInfo.h>
 #include <Path.h>
+#include <Autolock.h>
 #include <InterfaceDefs.h>
+#include <Locker.h>
 #include <Volume.h>
 #include <fs_attr.h>
 
@@ -664,7 +666,31 @@ TrackerSenRelations::SelfRelationNode(const entry_ref* ref, entry_ref* source, B
 uint32
 TrackerSenRelations::SenModeKey()
 {
-	return B_COMMAND_KEY;
+	// the key is a setting of SEN (the Settings window of its Deskbar menu); the file is looked at once a second, not at every mouse move
+	static BLocker lock("SEN mode key");
+	static bigtime_t checked = 0;
+	static uint32 key = B_COMMAND_KEY;
+
+	BAutolock locker(lock);
+	bigtime_t now = system_time();
+	if (checked != 0 && now - checked < 1000000)
+		return key;
+	checked = now;
+
+	BPath path;
+	if (find_directory(B_USER_SETTINGS_DIRECTORY, &path) == B_OK && path.Append("sen") == B_OK
+			&& path.Append(sen::config::kSettingsFile) == B_OK) {
+		BFile file(path.Path(), B_READ_ONLY);
+		BMessage settings;
+		int32 stored;
+		if (file.InitCheck() == B_OK && settings.Unflatten(&file) == B_OK
+				&& settings.FindInt32(sen::key::kModifierKey, &stored) == B_OK
+				&& (stored == B_COMMAND_KEY || stored == B_OPTION_KEY || stored == B_CONTROL_KEY || stored == B_SHIFT_KEY))
+			key = (uint32)stored;
+		else
+			key = B_COMMAND_KEY;
+	}
+	return key;
 }
 
 
