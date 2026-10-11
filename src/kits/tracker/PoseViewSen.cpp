@@ -59,6 +59,7 @@ All rights reserved.
 #include "IconMenuItem.h"
 #include "OpenRelationsRequest.h"
 #include "PoseView.h"
+#include "RelationContext.h"
 #include "RelationFolders.h"
 #include "RelationLabelWindow.h"
 #include "TrackerSenRelations.h"
@@ -147,6 +148,51 @@ BPoseView::SetupRelationColumns()
 }
 
 
+status_t
+BPoseView::RequestOpenRelations(uint32 what, OpenRelationsRequest* request)
+{
+	// the first selected file (a file in a view of relations stands for its target), or else the folder that the window shows
+	entry_ref source;
+	if (CountSelected() > 0) {
+		BPose* pose = fSelectionList->ItemAt(0);
+		source = TrackerSenRelations::RelationTargetOrSelf(pose->TargetModel()->ResolveIfLink()->EntryRef());
+	} else if (TargetModel() != NULL) {
+		source = *TargetModel()->EntryRef();
+	} else
+		return B_ENTRY_NOT_FOUND;
+
+	if (TrackerSenRelations::HasNoRelations(&source))
+		return B_NOT_ALLOWED;
+
+	BMessenger server(sen::kServerSignature);
+	if (!server.IsValid())
+		return B_NOT_INITIALIZED;
+
+	bool self = what == kOpenSelfRelations;
+	BMessage ask(self ? sen::cmd::kRelationsGetAllSelf : sen::cmd::kRelationsGetAll);
+	ask.AddRef(sen::key::kSourceRef, &source);
+	BMessage reply;
+	status_t result = server.SendMessage(&ask, &reply, 5000000, 5000000);
+	if (result != B_OK)
+		return result;
+
+	// what the menus of the file keep: the relation types of the answer and their configs (and the plugins of the contained ones)
+	BString sourceId(reply.GetString(sen::key::kSourceId, ""));
+	RelationContextRef context = std::make_shared<RelationContext>(source, sourceId);
+	reply.FindMessage(sen::key::kRelationConfigMap, &context->relationConfigs);
+	if (self)
+		reply.FindMessage(sensei::key::kPluginConfig, &context->pluginConfig);
+	reply.FindStrings(sen::key::kRelations, &context->relations);
+	if (context->relations.IsEmpty())
+		return B_NAME_NOT_FOUND;
+
+	request->sourceRef = source;
+	request->sourceId = sourceId;
+	request->contextId = RelationContexts::Add(context);
+	return B_OK;
+}
+
+
 bool
 BPoseView::HandleSenMessage(BMessage* message)
 {
@@ -177,6 +223,12 @@ BPoseView::HandleSenMessage(BMessage* message)
 			OpenRelationsRequest request;
 			BString error;
 			result = OpenRelationsRequest::Parse(*message, &request, &error);
+			if (result != B_OK) {
+				// not from a menu that was built (a shortcut, or the item of a menu that was not opened yet): the selection of the window
+				result = RequestOpenRelations(message->what, &request);
+				if (result != B_OK)
+					error.SetTo(strerror(result));
+			}
 			if (result == B_OK) {
 				BMessage open;
 				request.ToMessage(message->what, &open);

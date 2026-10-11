@@ -1951,8 +1951,9 @@ BContainerWindow::AddShortcuts()
 	AddShortcut('U', B_COMMAND_KEY, new BMessage(kUnmountVolume), PoseView());
 	AddShortcut(B_UP_ARROW, B_COMMAND_KEY, new BMessage(kOpenParentDir), PoseView());
 	AddShortcut('O', B_COMMAND_KEY | B_CONTROL_KEY, new BMessage(kOpenSelectionWith), PoseView());
-	AddShortcut('O', B_OPTION_KEY, new BMessage(kOpenRelations), be_app);
-	AddShortcut('O', B_OPTION_KEY | B_SHIFT_KEY, new BMessage(kOpenSelfRelations), be_app);
+	// (the pose view knows the selection that the relations are of)
+	AddShortcut('O', B_OPTION_KEY, new BMessage(kOpenRelations), PoseView());
+	AddShortcut('O', B_OPTION_KEY | B_SHIFT_KEY, new BMessage(kOpenSelfRelations), PoseView());
 
 	BMessage* decreaseSize = new BMessage(kIconMode);
 	decreaseSize->AddInt32("scale", 0);

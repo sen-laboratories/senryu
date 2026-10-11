@@ -61,6 +61,7 @@ All rights reserved.
 #include <ScrollBar.h>
 #include <View.h>
 #include <set>
+#include "OpenRelationsRequest.h"
 
 
 class BRefFilter;
@@ -470,6 +471,10 @@ protected:
 	/** SEN key (Command) + drop on a file or folder: the relations that can be created between the dropped files and the ones that they are
 	 *  dropped on (the selection, if the target is part of it) are shown in a menu, and the one chosen is created. */
 	bool HandleRelationDrop(const BMessage* dragMessage, BPose* targetPose, BPoint dropPoint);
+	/** The request to open the relations ("Open related...", or the contained ones, depending on @p what) of the first selected file, or of the
+	 *  folder of the window if nothing is selected: for what is not started from a menu that was built (a shortcut). Asks the SEN server for the
+	 *  relations and keeps them in a context, like the menu does. */
+	status_t RequestOpenRelations(uint32 what, OpenRelationsRequest* request);
 	status_t ExtractRefsFromSelection(BMessage* refs);
 	status_t EnrichRefsFromSelection(bool wipe = true);
 	status_t EnrichRefWithPlugin(const entry_ref* ref, bool wipe = true);
