@@ -36,6 +36,8 @@ All rights reserved.
 
 #include "PoseView.h"
 #include "RelationFolders.h"
+#include "SenCursors.h"
+#include "TrackerSenRelations.h"
 #include <algorithm>
 #include <functional>
 #include <map>
@@ -278,6 +280,7 @@ BPoseView::BPoseView(Model* model, uint32 viewMode)
 	fIsWatchingDateFormatChange(false),
 	fHasPosesInClipboard(false),
 	fCursorCheck(false),
+	fSenDropMode(false),
 	fTypeAheadFiltering(false),
 	fShowSelectionWhenInactive(TrackerSettings().ShowSelectionWhenInactive()),
 	fIsDrawingSelectionRect(false),
@@ -4603,6 +4606,16 @@ BPoseView::HandleDropCommon(BMessage* message, Model* targetModel, BPose* target
 	BPoseView* poseView = dynamic_cast<BPoseView*>(view);
 	if (poseView != NULL)
 		window = poseView->ContainerWindow();
+
+	// Option+drop on a file or folder relates the files (and does not copy, move or open anything): SEN mode
+	if (poseView != NULL && (modifiers() & B_OPTION_KEY) != 0 && message->HasRef("refs")) {
+		// (not on a file or folder: nothing, the files are not copied into the folder of the window or moved)
+		if (targetPose == NULL) {
+			poseView->SetViewCursor(B_CURSOR_SYSTEM_DEFAULT);
+			return true;
+		}
+		return poseView->HandleRelationDrop(message, targetPose, dropPoint);
+	}
 
 	// files dropped on a relation folder are relations, not files to copy or move: create, or move a relation
 	{
@@ -9954,13 +9967,24 @@ BPoseView::UpdateDropTarget(BPoint mouseLoc, const BMessage* dragMessage,
 	if (targetPose != NULL && DragSelectionContains(targetPose, dragMessage))
 		targetPose = NULL;
 
-	if ((fCursorCheck && targetPose == fDropTarget)
+	// with Option pressed the files are dropped to be related: any file or folder (not in the Trash...) can be the target
+	bool senMode = (modifiers() & B_OPTION_KEY) != 0;
+	if (senMode && targetPose != NULL
+			&& TrackerSenRelations::HasNoRelations(targetPose->TargetModel()->EntryRef())) {
+		targetPose = NULL;
+	}
+
+	if ((fCursorCheck && targetPose == fDropTarget && senMode == fSenDropMode)
 		|| (trackingContextMenu && !targetPose)) {
 		// no change
 		return false;
 	}
 
+	fSenDropMode = senMode;
 	fCursorCheck = true;
+	// the knot of SEN: the files are not dragged to be moved, but to be related
+	if (senMode && SenKnotCursor() != NULL)
+		SetViewCursor(SenKnotCursor());
 	if (fDropTarget && !DragSelectionContains(fDropTarget, dragMessage))
 		HiliteDropTarget(false);
 
@@ -9980,7 +10004,7 @@ BPoseView::UpdateDropTarget(BPoint mouseLoc, const BMessage* dragMessage,
 	bool ignoreTypes = (modifiers() & B_CONTROL_KEY) != 0;
 	if (targetPose != NULL) {
 		if (targetModel != NULL
-			&& CanHandleDragSelection(targetModel, dragMessage, ignoreTypes)) {
+			&& (senMode || CanHandleDragSelection(targetModel, dragMessage, ignoreTypes))) {
 			// new target is valid, select it
 			HiliteDropTarget(true);
 		} else {
@@ -9996,7 +10020,7 @@ BPoseView::UpdateDropTarget(BPoint mouseLoc, const BMessage* dragMessage,
 		return false;
 
 	entry_ref srcRef;
-	if (targetModel->IsDirectory() && dragMessage->HasRef("refs")
+	if (!senMode && targetModel->IsDirectory() && dragMessage->HasRef("refs")
 		&& dragMessage->FindRef("refs", &srcRef) == B_OK) {
 		Model srcModel(&srcRef);
 		if (!CheckDevicesEqual(&srcRef, targetModel)
@@ -10008,7 +10032,8 @@ BPoseView::UpdateDropTarget(BPoint mouseLoc, const BMessage* dragMessage,
 		}
 	}
 
-	SetViewCursor(B_CURSOR_SYSTEM_DEFAULT);
+	if (!senMode || SenKnotCursor() == NULL)
+		SetViewCursor(B_CURSOR_SYSTEM_DEFAULT);
 
 	return true;
 }

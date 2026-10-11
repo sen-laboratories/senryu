@@ -15,6 +15,7 @@
 #include <Node.h>
 #include <NodeInfo.h>
 #include <Path.h>
+#include <Volume.h>
 #include <fs_attr.h>
 
 #include <sen/Sen.h>
@@ -638,6 +639,28 @@ TrackerSenRelations::SelfRelationNode(const entry_ref* ref, entry_ref* source, B
 		delete[] buffer;
 	}
 	return true;
+}
+
+
+bool
+TrackerSenRelations::HasNoRelations(const entry_ref* ref)
+{
+	BPath path(ref);
+	BVolume volume(ref->device);
+	if (path.InitCheck() != B_OK || volume.InitCheck() != B_OK)
+		return false;
+
+	BPath trash, desktop;
+	if (find_directory(B_TRASH_DIRECTORY, &trash, false, &volume) == B_OK) {
+		// the Trash itself and everything below it
+		BString trashPath(trash.Path());
+		if (trashPath == path.Path() || BString(path.Path()).StartsWith(trashPath << "/"))
+			return true;
+	}
+	if (find_directory(B_DESKTOP_DIRECTORY, &desktop, false, &volume) == B_OK && BString(desktop.Path()) == path.Path())
+		return true;
+
+	return false;
 }
 
 

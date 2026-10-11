@@ -42,17 +42,21 @@ All rights reserved.
 #include "Attributes.h"
 #include "FSUtils.h"
 #include "Utilities.h"
+#include <Alert.h>
 #include <Catalog.h>
 #include <Directory.h>
 #include <Entry.h>
 #include <MimeType.h>
 #include <NodeInfo.h>
+#include <PopUpMenu.h>
 #include <Query.h>
+#include <Roster.h>
 #include <VolumeRoster.h>
 
 #include <stdlib.h>
 #include <string.h>
 
+#include "IconMenuItem.h"
 #include "PoseView.h"
 #include "TrackerSenRelations.h"
 #include <set>
@@ -319,4 +323,151 @@ BPoseView::EnrichRefWithPlugin(const entry_ref* ref, bool wipe) {
 		}
 	}
 	return result;
+}
+
+
+// Option+drop: relate files
+//
+// The files that are dragged and the ones that they are dropped on are the two groups of files that are related. A file in a view of
+// relations stands for its target, the Trash and the Desktop folder have no relations. If the pose that the files are dropped on is
+// selected, the whole selection is the target, else just the pose. Which relations are offered is up to the SEN server (what fits all
+// the files on both sides); what is chosen is created between every source and every target. The files are not copied, moved or
+// opened, and stay where they are.
+bool
+BPoseView::HandleRelationDrop(const BMessage* dragMessage, BPose* targetPose, BPoint dropPoint)
+{
+	// (the cursor and the highlight of the target are reset by the caller of the drop)
+	if (fDropTarget != NULL)
+		HiliteDropTarget(false);
+	fDropTarget = NULL;
+	fSenDropMode = false;
+
+	auto add = [](std::vector<entry_ref>* list, const entry_ref& ref) {
+		if (TrackerSenRelations::HasNoRelations(&ref))
+			return;
+		for (const entry_ref& existing : *list) {
+			if (existing == ref)
+				return;
+		}
+		list->push_back(ref);
+	};
+
+	std::vector<entry_ref> sources, targets;
+	entry_ref ref;
+	for (int32 index = 0; dragMessage->FindRef("refs", index, &ref) == B_OK; index++)
+		add(&sources, TrackerSenRelations::RelationTargetOrSelf(&ref));
+
+	if (DragSelectionContains(targetPose, dragMessage))
+		return true;	// dropped on itself: nothing to relate
+	if (targetPose->IsSelected()) {
+		for (int32 index = 0; index < CountSelected(); index++) {
+			BPose* pose = fSelectionList->ItemAt(index);
+			if (DragSelectionContains(pose, dragMessage))
+				continue;
+			add(&targets, TrackerSenRelations::RelationTargetOrSelf(pose->TargetModel()->ResolveIfLink()->EntryRef()));
+		}
+	} else {
+		add(&targets, TrackerSenRelations::RelationTargetOrSelf(targetPose->TargetModel()->ResolveIfLink()->EntryRef()));
+	}
+
+	// a file is not related to itself
+	for (auto it = targets.begin(); it != targets.end();) {
+		bool isSource = false;
+		for (const entry_ref& source : sources)
+			isSource = isSource || source == *it;
+		it = isSource ? targets.erase(it) : it + 1;
+	}
+	if (sources.empty() || targets.empty())
+		return true;
+
+	BMessenger server(sen::kServerSignature);
+	BMessage reply;
+	if (server.IsValid()) {
+		BMessage ask(sen::cmd::kRelationsGetCompatible);
+		for (const entry_ref& source : sources)
+			ask.AddRef(sen::key::kSourceRef, &source);
+		for (const entry_ref& target : targets)
+			ask.AddRef(sen::key::kTargetRef, &target);
+		ask.AddBool(sen::key::kWithConfigs, true);
+		if (server.SendMessage(&ask, &reply, 5000000, 5000000) != B_OK)
+			reply.MakeEmpty();
+	}
+	if (!server.IsValid()) {
+		BAlert* alert = new BAlert("", B_TRANSLATE("The SEN server is not running, files cannot be related."),
+			B_TRANSLATE("OK"), NULL, NULL, B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+		alert->SetFlags(alert->Flags() | B_CLOSE_ON_ESCAPE);
+		alert->Go();
+		return true;
+	}
+
+	// the menu of the relations that fit
+	BMessage configs;
+	reply.FindMessage(sen::key::kRelationConfigMap, &configs);
+	BPopUpMenu menu("relations", false, false);
+	const char* type;
+	for (int32 index = 0; reply.FindString(sen::key::kRelations, index, &type) == B_OK; index++) {
+		BMimeType mime(type);
+		if (!mime.IsInstalled())
+			continue;	// (Tracker could not show it)
+
+		BMessage config;
+		configs.FindMessage(type, &config);
+		BString label = config.GetString(sen::key::kRelationName, "");
+		if (label.IsEmpty()) {
+			char shortName[B_MIME_TYPE_LENGTH];
+			label = mime.GetShortDescription(shortName) == B_OK && shortName[0] != '\0' ? shortName : type;
+		}
+
+		BMessage* choice = new BMessage(sen::cmd::kRelationAdd);
+		choice->AddString(sen::key::kRelationType, type);
+		menu.AddItem(new IconMenuItem(label.String(), choice, type));
+	}
+	if (menu.CountItems() == 0) {
+		BMenuItem* none = new BMenuItem(B_TRANSLATE("No relation fits these files"), NULL);
+		none->SetEnabled(false);
+		menu.AddItem(none);
+	}
+
+	CommitActivePose();
+	BPoint where(dropPoint);
+	ConvertToScreen(&where);
+	// don't send the message, sticky menu, synchronous: Esc or a click outside end it
+	BMenuItem* chosen = menu.Go(where, false, true, false);
+	if (chosen == NULL || chosen->Message() == NULL)
+		return true;
+
+	// the relation is created between every source and every target (the server also writes the opposite direction)
+	const char* relationType = chosen->Message()->GetString(sen::key::kRelationType, "");
+	int32 failed = 0;
+	BString firstError;
+	for (const entry_ref& source : sources) {
+		for (const entry_ref& target : targets) {
+			BMessage add(sen::cmd::kRelationAdd), answer;
+			add.AddString(sen::key::kRelationType, relationType);
+			add.AddRef(sen::key::kSourceRef, &source);
+			add.AddRef(sen::key::kTargetRef, &target);
+			status_t result = server.SendMessage(&add, &answer, 10000000, 10000000);
+			int32 status = answer.GetInt32(sen::key::kStatus, 0);
+			if (result != B_OK || status >= 400) {
+				if (failed++ == 0) {
+					firstError = answer.GetString(sen::key::kDetail, "");
+					if (firstError.IsEmpty())
+						firstError = result != B_OK ? strerror(result) : "";
+				}
+			}
+		}
+	}
+
+	if (failed > 0) {
+		BString text(B_TRANSLATE("%count% of the relations could not be created."));
+		BString count;
+		count << failed;
+		text.ReplaceFirst("%count%", count);
+		if (!firstError.IsEmpty())
+			text << "\n\n" << firstError;
+		BAlert* alert = new BAlert("", text.String(), B_TRANSLATE("OK"), NULL, NULL, B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+		alert->SetFlags(alert->Flags() | B_CLOSE_ON_ESCAPE);
+		alert->Go();
+	}
+	return true;
 }

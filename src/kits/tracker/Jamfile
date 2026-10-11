@@ -98,6 +98,7 @@ for architectureObject in [ MultiArchSubDirSetup ] {
 			TrackerSen.cpp
 			TrackerSenRelations.cpp
 			RelationContext.cpp
+			SenCursors.cpp
 			RelationFolders.cpp
 			TrackerSettings.cpp
 			TrackerSettingsWindow.cpp
