@@ -200,6 +200,18 @@ public:
 //	#pragma mark - BStatusWindow
 
 
+void
+BStatusWindow::MessageReceived(BMessage* message)
+{
+	// files dropped on the window (it takes none, but is in the way of a drag now and then) are ignored: the default reports every one
+	// with a dump of the message
+	if (message->WasDropped())
+		return;
+
+	BWindow::MessageReceived(message);
+}
+
+
 BStatusWindow::BStatusWindow()
 	:
 	BWindow(kStatusRect, B_TRANSLATE("Tracker status"),	B_TITLED_WINDOW,

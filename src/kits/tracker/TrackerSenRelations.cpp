@@ -15,6 +15,7 @@
 #include <Node.h>
 #include <NodeInfo.h>
 #include <Path.h>
+#include <InterfaceDefs.h>
 #include <Volume.h>
 #include <fs_attr.h>
 
@@ -639,6 +640,20 @@ TrackerSenRelations::SelfRelationNode(const entry_ref* ref, entry_ref* source, B
 		delete[] buffer;
 	}
 	return true;
+}
+
+
+uint32
+TrackerSenRelations::SenModeKey()
+{
+	return B_COMMAND_KEY;
+}
+
+
+bool
+TrackerSenRelations::IsSenMode()
+{
+	return (modifiers() & SenModeKey()) != 0;
 }
 
 

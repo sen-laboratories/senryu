@@ -64,6 +64,8 @@ public:
 								BStatusWindow();
 	virtual						~BStatusWindow();
 
+	virtual	void				MessageReceived(BMessage*);
+
 			void				CreateStatusItem(thread_id,
 									StatusWindowState);
 			void				InitStatusItem(thread_id, int32 totalItems,

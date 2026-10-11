@@ -326,7 +326,7 @@ BPoseView::EnrichRefWithPlugin(const entry_ref* ref, bool wipe) {
 }
 
 
-// Option+drop: relate files
+// SEN key (Command) + drop: relate files
 //
 // The files that are dragged and the ones that they are dropped on are the two groups of files that are related. A file in a view of
 // relations stands for its target, the Trash and the Desktop folder have no relations. If the pose that the files are dropped on is

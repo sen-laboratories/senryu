@@ -467,7 +467,7 @@ protected:
 
 	// SEN integration
 	virtual bool HandleSenMessage(BMessage* message);
-	/** Option+drop on a file or folder: the relations that can be created between the dropped files and the ones that they are
+	/** SEN key (Command) + drop on a file or folder: the relations that can be created between the dropped files and the ones that they are
 	 *  dropped on (the selection, if the target is part of it) are shown in a menu, and the one chosen is created. */
 	bool HandleRelationDrop(const BMessage* dragMessage, BPose* targetPose, BPoint dropPoint);
 	status_t ExtractRefsFromSelection(BMessage* refs);
@@ -848,7 +848,7 @@ private:
 	bool fHasPosesInClipboard : 1;
 	bool fCursorCheck : 1;
 	bool fSenDropMode : 1;
-		// the drag is over a pose with Option pressed: it is a drop to relate the files (see HandleRelationDrop)
+		// the drag is over a pose with the SEN key pressed: it is a drop to relate the files (see HandleRelationDrop)
 	bool fTypeAheadFiltering : 1;
 	bool fShowSelectionWhenInactive : 1;
 	bool fIsDrawingSelectionRect : 1;

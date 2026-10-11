@@ -4607,8 +4607,8 @@ BPoseView::HandleDropCommon(BMessage* message, Model* targetModel, BPose* target
 	if (poseView != NULL)
 		window = poseView->ContainerWindow();
 
-	// Option+drop on a file or folder relates the files (and does not copy, move or open anything): SEN mode
-	if (poseView != NULL && (modifiers() & B_OPTION_KEY) != 0 && message->HasRef("refs")) {
+	// the SEN key (Command) + drop on a file or folder relates the files (and does not copy, move or open anything): SEN mode
+	if (poseView != NULL && TrackerSenRelations::IsSenMode() && message->HasRef("refs")) {
 		// (not on a file or folder: nothing, the files are not copied into the folder of the window or moved)
 		if (targetPose == NULL) {
 			poseView->SetViewCursor(B_CURSOR_SYSTEM_DEFAULT);
@@ -9967,8 +9967,8 @@ BPoseView::UpdateDropTarget(BPoint mouseLoc, const BMessage* dragMessage,
 	if (targetPose != NULL && DragSelectionContains(targetPose, dragMessage))
 		targetPose = NULL;
 
-	// with Option pressed the files are dropped to be related: any file or folder (not in the Trash...) can be the target
-	bool senMode = (modifiers() & B_OPTION_KEY) != 0;
+	// with the SEN key pressed the files are dropped to be related: any file or folder (not in the Trash...) can be the target
+	bool senMode = TrackerSenRelations::IsSenMode();
 	if (senMode && targetPose != NULL
 			&& TrackerSenRelations::HasNoRelations(targetPose->TargetModel()->EntryRef())) {
 		targetPose = NULL;

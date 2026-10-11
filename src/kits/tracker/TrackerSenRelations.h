@@ -26,6 +26,11 @@ public:
 	/** The relations of SEN are for files and folders: not for the Trash and what is in it, and not for the Desktop folder itself.
 	 *  (The folders are those of find_directory(), on the volume of the item.) */
 	static bool			HasNoRelations(const entry_ref* ref);
+	/** The key of the SEN mode of a drag (dropping files relates them): the Command key, which is the Apple key of a Mac keyboard (and
+	 *  Alt on a PC one). The only place that decides it, so that it can be made a setting. (Option has its own uses, e.g. Option+O.) */
+	static uint32		SenModeKey();
+	/** Whether the SEN mode key is pressed now. */
+	static bool			IsSenMode();
 	/**
 	 * A file or folder of a view of contained relations (a bookmark of a document, made by a plugin): its source is the document, the
 	 * file stands for the relation to the target, and what it contains is only its subtree. False if this is not such a node;
