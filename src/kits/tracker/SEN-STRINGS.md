@@ -11,3 +11,7 @@ Localisation has low priority for now. These strings were added or changed for S
 | The SEN server is not running, files cannot be related. | PoseView | alert when files are dropped with Option on other files and the server is not there |
 | No relation fits these files | PoseView | disabled item of the menu of an Option+drop when no relation can be created between the files |
 | %count% of the relations could not be created. | PoseView | alert after an Option+drop; %count% is replaced by the number of relations that failed |
+| Label of the relation | RelationLabelWindow | title of the window that asks for the label of a relation (Shift+choose in the menu of a Command+drop); the name of the relation is appended |
+| Label: | RelationLabelWindow | text field of that window |
+| Cancel | RelationLabelWindow | button |
+| OK | RelationLabelWindow | button |

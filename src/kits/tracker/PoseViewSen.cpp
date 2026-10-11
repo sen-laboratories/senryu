@@ -58,6 +58,7 @@ All rights reserved.
 
 #include "IconMenuItem.h"
 #include "PoseView.h"
+#include "RelationLabelWindow.h"
 #include "TrackerSenRelations.h"
 #include <set>
 #include <string>
@@ -420,6 +421,7 @@ BPoseView::HandleRelationDrop(const BMessage* dragMessage, BPose* targetPose, BP
 
 		BMessage* choice = new BMessage(sen::cmd::kRelationAdd);
 		choice->AddString(sen::key::kRelationType, type);
+		choice->AddString(sen::key::kRelationName, label);
 		menu.AddItem(new IconMenuItem(label.String(), choice, type));
 	}
 	if (menu.CountItems() == 0) {
@@ -436,6 +438,16 @@ BPoseView::HandleRelationDrop(const BMessage* dragMessage, BPose* targetPose, BP
 	if (chosen == NULL || chosen->Message() == NULL)
 		return true;
 
+	// with Shift pressed when the relation is chosen, the user can give it a label
+	BMessage properties;
+	if ((modifiers() & B_SHIFT_KEY) != 0) {
+		BString label;
+		if (!PromptForRelationLabel(chosen->Message()->GetString(sen::key::kRelationName, ""), &label))
+			return true;	// cancelled: nothing is created
+		if (!label.IsEmpty())
+			properties.AddString(sen::attr::kRelationLabel, label);
+	}
+
 	// the relation is created between every source and every target (the server also writes the opposite direction)
 	const char* relationType = chosen->Message()->GetString(sen::key::kRelationType, "");
 	int32 failed = 0;
@@ -446,6 +458,8 @@ BPoseView::HandleRelationDrop(const BMessage* dragMessage, BPose* targetPose, BP
 			add.AddString(sen::key::kRelationType, relationType);
 			add.AddRef(sen::key::kSourceRef, &source);
 			add.AddRef(sen::key::kTargetRef, &target);
+			if (!properties.IsEmpty())
+				add.AddMessage(sen::key::kRelationProperties, &properties);
 			status_t result = server.SendMessage(&add, &answer, 10000000, 10000000);
 			int32 status = answer.GetInt32(sen::key::kStatus, 0);
 			if (result != B_OK || status >= 400) {
