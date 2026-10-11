@@ -70,6 +70,8 @@ public:
 	void		Clear();
 
 	bool		IsRelationFolder(const node_ref& node) const;
+	/** The folder of all the relation types of a file ("Open related..."): its items are the folders of the types. */
+	bool		IsTopLevelFolder(const node_ref& node) const;
 	bool		IsRelationFile(const node_ref& node) const;
 
 	// What happens in a relation folder, reported by the pose views. All return true if the event was about a relation.

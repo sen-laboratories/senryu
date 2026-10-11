@@ -57,7 +57,9 @@ All rights reserved.
 #include <string.h>
 
 #include "IconMenuItem.h"
+#include "OpenRelationsRequest.h"
 #include "PoseView.h"
+#include "RelationFolders.h"
 #include "RelationLabelWindow.h"
 #include "TrackerSenRelations.h"
 #include <set>
@@ -76,6 +78,14 @@ BPoseView::SetupRelationColumns()
 {
 	if (TargetModel() == NULL)
 		return false;
+
+	// the folder of all the relations of a file: its items are the folders of the relation types, named after the relation. Only the name
+	// and when it changed: the folders have no size, and none of the properties of the relations are theirs.
+	if (RelationFolders::Instance().IsTopLevelFolder(*TargetModel()->NodeRef())) {
+		AddColumn(new BColumn(B_TRANSLATE("Name"), 200, B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));
+		AddColumn(new BColumn(B_TRANSLATE("Modified"), 150, B_ALIGN_LEFT, kAttrStatModified, B_TIME_TYPE, true, false));
+		return true;
+	}
 
 	// the folder of a relation type, or a folder in it (a nested relation, e.g. a chapter): the type of the folder is the
 	// relation type
@@ -161,41 +171,18 @@ BPoseView::HandleSenMessage(BMessage* message)
 	status_t result = B_OK;
 
 	switch (message->what) {
-		case kOpenRelations: {
-			PRINT(("PoseView:: got kOpenRelations message from menu:\n"));
-			message->PrintToStream();
-
-			BMessage relationRefs(kOpenRelations);
-			result = TrackerSenRelations::ExtractSenParams(message, &relationRefs);
-
-			if (result == B_OK) {
-				// forward to TrackerSen for central relation folder handling
-				PRINT(("PoseView::SEN Open relations menu called, forwarding message:\n"));
-				relationRefs.PrintToStream();
-
-				be_app->PostMessage(&relationRefs);
-			} else {
-				PRINT(("failed to extract refs from selection: %s\n", strerror(result) ));
-				break;
-			}
-			break;
-		}
+		case kOpenRelations:
 		case kOpenSelfRelations: {
-			PRINT(("PoseView:: got kOpenSelfRelations message from menu:\n"));
-			message->PrintToStream();
-
-			BMessage relationRefs(kOpenRelations);
-			result = TrackerSenRelations::ExtractSenParams(message, &relationRefs);
-
+			// the menu item says which file and which menu (see OpenRelationsRequest); the application opens the folder
+			OpenRelationsRequest request;
+			BString error;
+			result = OpenRelationsRequest::Parse(*message, &request, &error);
 			if (result == B_OK) {
-				// forward to TrackerSen for central relation folder handling
-				PRINT(("PoseView::SEN Open self relations menu called, forwarding message:\n"));
-				relationRefs.PrintToStream();
-
-				be_app->PostMessage(&relationRefs);
+				BMessage open;
+				request.ToMessage(message->what, &open);
+				be_app->PostMessage(&open);
 			} else {
-				PRINT(("failed to extract refs from selection: %s\n", strerror(result) ));
-				break;
+				PRINT(("cannot open the relations: %s\n", error.String()));
 			}
 			break;
 		}

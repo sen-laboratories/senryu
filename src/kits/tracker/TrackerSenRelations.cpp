@@ -436,9 +436,26 @@ TrackerSenRelations::CreateRelationDirectory(
 
 	result = relationsDirPath.Append("sen");
 	relationsDirPath.Append(viewId);
-	// Note: since relations are required to be a subtype of relation,
-	//       this will automatically create a relation subdir, handy:)
-	relationsDirPath.Append(relationType);
+	// the folder is named after the relation (its name is unique among the relations of a file), not after the MIME type, which is the
+	// type of the folder and is not for people to read; in the folder of the supertype, like the MIME types are
+	relationsDirPath.Append(sen::mime::kRelationSupertype);
+	{
+		BString folderName(relationName);
+		folderName.ReplaceAll('/', '\\');
+		if (folderName.IsEmpty() || folderName[0] == '.')
+			folderName.Prepend("_");
+		BPath candidate(relationsDirPath);
+		candidate.Append(folderName.String());
+
+		// another relation type with the same name keeps its folder: this one is named after its type, too
+		char otherType[B_MIME_TYPE_LENGTH];
+		BNode other(candidate.Path());
+		if (other.InitCheck() == B_OK && BNodeInfo(&other).GetType(otherType) == B_OK && strcmp(otherType, relationType) != 0) {
+			const char* shortType = strrchr(relationType, '/');
+			folderName << " (" << (shortType != NULL ? shortType + 1 : relationType) << ")";
+		}
+		relationsDirPath.Append(folderName.String());
+	}
 
 	// TODO: prepare suitable folder attribute layout using archived relation attribute columns
 	// see PoseView::SaveState() and ViewState::ArchiveToStream()
@@ -767,48 +784,6 @@ TrackerSenRelations::GetSenIcon(const char* mimeType, const char* iconType, void
 	}
 
 	return result;
-}
-
-
-// moved from BPoseView::ExtractSenParams (PoseViewSen.cpp) - operates only on
-// the passed-in messages, no pose/selection state involved.
-status_t
-TrackerSenRelations::ExtractSenParams(const BMessage* message, BMessage* enrichedMessage)
-{
-	entry_ref srcRef;
-	status_t result = message->FindRef(sen::key::kSourceRef, &srcRef);
-	if (result == B_OK) {
-		enrichedMessage->AddRef(sen::key::kSourceRef, &srcRef);
-	}
-
-	// copy over all the fields of the message (the properties of the item: the relation context, the source id, page, position,...), with
-	// all the values of each (the source ref is in already)
-	char* name;
-	type_code typeCode;
-	int32 count;
-	for (int32 field = 0; message->GetInfo(B_ANY_TYPE, field, &name, &typeCode, &count) == B_OK; field++) {
-		if (strcmp(name, sen::key::kSourceRef) == 0)
-			continue;
-
-		bool fixedSize = true;
-		message->GetInfo(name, &typeCode, &fixedSize);
-		for (int32 item = 0; item < count; item++) {
-			const void* data;
-			ssize_t size;
-			result = message->FindData(name, typeCode, item, &data, &size);
-			if (result != B_OK) {
-				PRINT(("failed to get message data for property %s[%d]: %s\n", name, (int)item, strerror(result)));
-				return result;
-			}
-			result = enrichedMessage->AddData(name, typeCode, data, size, fixedSize);
-			if (result != B_OK) {
-				PRINT(("failed to add message data '%s' at index %d: %s\n", name, (int)item, strerror(result)));
-				return result;
-			}
-		}
-	}
-
-	return B_OK;	// all params are optional for now
 }
 
 

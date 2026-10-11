@@ -81,11 +81,6 @@ public:
 	static status_t	GetRelationAttributeInfo(const char* relationType,
 						BMessage* attrInfo);
 
-	// used by BPoseView::HandleSenMessage; doesn't touch pose/selection
-	// state, only the passed-in messages.
-	static status_t	ExtractSenParams(const BMessage* message,
-						BMessage* enrichedMessage);
-
 	// only static access allowed
 	TrackerSenRelations() = delete;
 };

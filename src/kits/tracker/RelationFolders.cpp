@@ -188,6 +188,15 @@ RelationFolders::IsRelationFolder(const node_ref& node) const
 
 
 bool
+RelationFolders::IsTopLevelFolder(const node_ref& node) const
+{
+	BAutolock lock(fLock);
+	auto found = fFolders.find(node);
+	return found != fFolders.end() && found->second.relationType.IsEmpty();
+}
+
+
+bool
 RelationFolders::IsRelationFile(const node_ref& node) const
 {
 	BAutolock lock(fLock);
