@@ -781,46 +781,31 @@ TrackerSenRelations::ExtractSenParams(const BMessage* message, BMessage* enriche
 		enrichedMessage->AddRef(sen::key::kSourceRef, &srcRef);
 	}
 
-	// add all properties from this item at this index (e.g. page, position,...)
+	// copy over all the fields of the message (the properties of the item: the relation context, the source id, page, position,...), with
+	// all the values of each (the source ref is in already)
 	char* name;
-	int32 count;
-	int32 index = 0;
 	type_code typeCode;
-	result = B_OK;	// could be B_NAME_NOT_FOUND from above!
+	int32 count;
+	for (int32 field = 0; message->GetInfo(B_ANY_TYPE, field, &name, &typeCode, &count) == B_OK; field++) {
+		if (strcmp(name, sen::key::kSourceRef) == 0)
+			continue;
 
-	while (result == B_OK) {
-		result = message->GetInfo(B_ANY_TYPE, index, &name,	&typeCode, &count);
-		if (result != B_OK) {
-			if (result == B_BAD_INDEX) {
-				break;	// end of line, done
+		bool fixedSize = true;
+		message->GetInfo(name, &typeCode, &fixedSize);
+		for (int32 item = 0; item < count; item++) {
+			const void* data;
+			ssize_t size;
+			result = message->FindData(name, typeCode, item, &data, &size);
+			if (result != B_OK) {
+				PRINT(("failed to get message data for property %s[%d]: %s\n", name, (int)item, strerror(result)));
+				return result;
 			}
-			PRINT(("failed to get message info at index #%d: %s\n", index, strerror(result)));
-			return result;
+			result = enrichedMessage->AddData(name, typeCode, data, size, fixedSize);
+			if (result != B_OK) {
+				PRINT(("failed to add message data '%s' at index %d: %s\n", name, (int)item, strerror(result)));
+				return result;
+			}
 		}
-
-		// add message property only if it comes from SEN
-		if (BString(name).IStartsWith(sen::attr::kPrefix) || BString(name).IStartsWith(sen::attr::kPrefix)) {
-			PRINT(("adding SEN properties at index %d with name %s and count %d:\n", index, name, count));
-		}
-		const void* data;
-		ssize_t size;
-
-		result = message->FindData(name, typeCode, index, &data, &size);
-		if (result != B_OK) {
-			PRINT(("failed to get message data for property %s[%d]: %s\n",
-					name, index, strerror(result)));
-			return result;
-		}
-
-		// finally copy over data to keep
-		result = enrichedMessage->AddData(name, typeCode, data, size);
-		if (result != B_OK) {
-			PRINT(("failed to add message data '%s' at index %d: %s\n",
-					name, index, strerror(result)));
-			return result;
-		}
-
-		index++;
 	}
 
 	return B_OK;	// all params are optional for now

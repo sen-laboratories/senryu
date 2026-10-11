@@ -337,6 +337,10 @@ BPoseView::EnrichRefWithPlugin(const entry_ref* ref, bool wipe) {
 bool
 BPoseView::HandleRelationDrop(const BMessage* dragMessage, BPose* targetPose, BPoint dropPoint)
 {
+	// Shift pressed with the drop (or later, when a relation is chosen) means that the relation gets a label: remembered, so that the menu
+	// can be used with the keys released
+	bool withLabel = (modifiers() & B_SHIFT_KEY) != 0;
+
 	// (the cursor and the highlight of the target are reset by the caller of the drop)
 	if (fDropTarget != NULL)
 		HiliteDropTarget(false);
@@ -422,6 +426,9 @@ BPoseView::HandleRelationDrop(const BMessage* dragMessage, BPose* targetPose, BP
 		BMessage* choice = new BMessage(sen::cmd::kRelationAdd);
 		choice->AddString(sen::key::kRelationType, type);
 		choice->AddString(sen::key::kRelationName, label);
+		// (the ellipsis says that more is asked for, as in any menu)
+		if (withLabel)
+			label << B_UTF8_ELLIPSIS;
 		menu.AddItem(new IconMenuItem(label.String(), choice, type));
 	}
 	if (menu.CountItems() == 0) {
@@ -438,9 +445,9 @@ BPoseView::HandleRelationDrop(const BMessage* dragMessage, BPose* targetPose, BP
 	if (chosen == NULL || chosen->Message() == NULL)
 		return true;
 
-	// with Shift pressed when the relation is chosen, the user can give it a label
+	// with Shift pressed when the files were dropped or the relation is chosen, the user can give it a label
 	BMessage properties;
-	if ((modifiers() & B_SHIFT_KEY) != 0) {
+	if (withLabel || (modifiers() & B_SHIFT_KEY) != 0) {
 		BString label;
 		if (!PromptForRelationLabel(chosen->Message()->GetString(sen::key::kRelationName, ""), &label))
 			return true;	// cancelled: nothing is created
