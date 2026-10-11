@@ -932,7 +932,10 @@ TTracker::OpenRef(const entry_ref* ref, const node_ref* nodeToClose,
 		PRINT(("nodeToSelect is %s, nodeToEdit is %s\n",
 			(nodeToSelect ? "set" : "unset"), (nodeToEdit ? "set" : "unset") ));
 
-		SelectChildInParentSoon(ref, nodeToSelect, nodeToEdit);
+		// (the node refs are copied for later: one that is not given must not be a null pointer; an empty node_ref, with device
+		// and node -1, is no node)
+		node_ref none;
+		SelectChildInParentSoon(ref, nodeToSelect != NULL ? nodeToSelect : &none, nodeToEdit != NULL ? nodeToEdit : &none);
 	}
 	return B_OK;
 }
