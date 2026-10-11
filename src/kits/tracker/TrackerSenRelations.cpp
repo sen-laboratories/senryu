@@ -161,7 +161,7 @@ TrackerSenRelations::WriteTargetRelations(
 		if (hasRelations) {
 			readWriteMode = (readOnly ? 0555 : 0777);	// ugo=rx if read-only, else rwx
 		} else {
-			readWriteMode = (readOnly ? 0444 : 0555);  // ugo=r  if read-only, else rw
+			readWriteMode = (readOnly ? 0444 : 0644);	// ugo=r if read-only, else u=rw (never executable: a file that is would be taken for a program)
 		}
 
 		// create file or dir with appropriate permissions
@@ -235,7 +235,8 @@ TrackerSenRelations::WriteTargetRelations(
 				}
 			}
 		} else {
-			BFile relationTarget(&relationDir, entryName.String(), readWriteMode | B_CREATE_FILE);
+			BFile relationTarget(&relationDir, entryName.String(), B_READ_WRITE | B_CREATE_FILE);
+			// (the permissions are set below, on the node)
 			relationNode.SetTo(&relationDir, entryName.String());
 
 			PRINT(("  > writing to relation file %s...\n", entryName.String() ));
