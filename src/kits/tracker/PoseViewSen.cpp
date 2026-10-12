@@ -47,6 +47,8 @@ All rights reserved.
 #include <Directory.h>
 #include <Entry.h>
 #include <MimeType.h>
+#include <Path.h>
+#include <FindDirectory.h>
 #include <NodeInfo.h>
 #include <PopUpMenu.h>
 #include <Query.h>
@@ -74,31 +76,23 @@ All rights reserved.
 #define B_TRANSLATION_CONTEXT "PoseView"
 
 
+/** the folder of the ontologies in the settings of SEN: a file for each ontology, of the type that has the attributes of an ontology */
+static bool
+IsOntologiesFolder(const Model* model)
+{
+	BPath expected, folder;
+	if (find_directory(B_USER_SETTINGS_DIRECTORY, &expected) != B_OK || expected.Append("sen") != B_OK
+			|| expected.Append(sen::config::kOntologiesDir) != B_OK)
+		return false;
+	return folder.SetTo(model->EntryRef()) == B_OK && strcmp(folder.Path(), expected.Path()) == 0;
+}
+
+
 bool
 BPoseView::SetupRelationColumns()
 {
 	if (TargetModel() == NULL)
 		return false;
-
-	// the folder of all the relations of a file: its items are the folders of the relation types, named after the relation. Only the name
-	// and when it changed: the folders have no size, and none of the properties of the relations are theirs.
-	if (RelationFolders::Instance().IsTopLevelFolder(*TargetModel()->NodeRef())) {
-		AddColumn(new BColumn(B_TRANSLATE("Name"), 200, B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));
-		AddColumn(new BColumn(B_TRANSLATE("Modified"), 150, B_ALIGN_LEFT, kAttrStatModified, B_TIME_TYPE, true, false));
-		return true;
-	}
-
-	// the folder of a relation type, or a folder in it (a nested relation, e.g. a chapter): the type of the folder is the
-	// relation type
-	BNode node(TargetModel()->EntryRef());
-	char relationType[B_MIME_TYPE_LENGTH];
-	BMessage attrInfo;
-	if (node.InitCheck() != B_OK || BNodeInfo(&node).GetType(relationType) != B_OK
-			|| strncmp(relationType, sen::mime::kRelationPrefix, strlen(sen::mime::kRelationPrefix)) != 0
-			|| TrackerSenRelations::GetRelationAttributeInfo(relationType, &attrInfo) != B_OK)
-		return false;
-
-	AddColumn(new BColumn(B_TRANSLATE("Name"), 145, B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));
 
 	// the columns for the attributes of an attribute info that are meant to be displayed (and not there yet)
 	auto addColumnsOf = [this](const BMessage& info) {
@@ -121,6 +115,37 @@ BPoseView::SetupRelationColumns()
 			AddColumn(new BColumn(publicName, width, (alignment)align, attrName, type, displayAs, false, editable));
 		}
 	};
+
+	// the folder of all the relations of a file: its items are the folders of the relation types, named after the relation. Only the name
+	// and when it changed: the folders have no size, and none of the properties of the relations are theirs.
+	if (RelationFolders::Instance().IsTopLevelFolder(*TargetModel()->NodeRef())) {
+		AddColumn(new BColumn(B_TRANSLATE("Name"), 200, B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));
+		AddColumn(new BColumn(B_TRANSLATE("Modified"), 150, B_ALIGN_LEFT, kAttrStatModified, B_TIME_TYPE, true, false));
+		return true;
+	}
+
+	// the ontologies: the name, then what an ontology is about (the attributes of its type in the order of the schema: version, description,
+	// author...), and when it changed
+	if (IsOntologiesFolder(TargetModel())) {
+		AddColumn(new BColumn(B_TRANSLATE("Name"), 120, B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));
+		BMessage ontologyInfo;
+		if (BMimeType(sen::mime::kOntology).GetAttrInfo(&ontologyInfo) == B_OK)
+			addColumnsOf(ontologyInfo);
+		AddColumn(new BColumn(B_TRANSLATE("Modified"), 150, B_ALIGN_LEFT, kAttrStatModified, B_TIME_TYPE, true, false));
+		return true;
+	}
+
+	// the folder of a relation type, or a folder in it (a nested relation, e.g. a chapter): the type of the folder is the
+	// relation type
+	BNode node(TargetModel()->EntryRef());
+	char relationType[B_MIME_TYPE_LENGTH];
+	BMessage attrInfo;
+	if (node.InitCheck() != B_OK || BNodeInfo(&node).GetType(relationType) != B_OK
+			|| strncmp(relationType, sen::mime::kRelationPrefix, strlen(sen::mime::kRelationPrefix)) != 0
+			|| TrackerSenRelations::GetRelationAttributeInfo(relationType, &attrInfo) != B_OK)
+		return false;
+
+	AddColumn(new BColumn(B_TRANSLATE("Name"), 145, B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));
 
 	// what the folder contains can be of another type than the relation, e.g. what a type contains are its attributes: the
 	// properties of those come first, then the ones of the relation type (and of the relation supertype)
