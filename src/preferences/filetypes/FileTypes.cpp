@@ -22,8 +22,14 @@
 #include <Directory.h>
 #include <Entry.h>
 #include <Path.h>
+#include <NodeInfo.h>
 #include <Resources.h>
 #include <Screen.h>
+
+#include <sen/Sen.h>
+#include <sen/SenLookup.h>
+
+#include <vector>
 
 #include <stdio.h>
 #include <strings.h>
@@ -219,14 +225,75 @@ FileTypes::ReadyToRun()
 }
 
 
+/** SEN: the MIME type that a file in the MIME database of the user stands for ("category/name"), empty for any other file */
+static BString
+MimeTypeOfDatabaseEntry(const entry_ref& ref)
+{
+	BPath settings, entry(&ref);
+	if (find_directory(B_USER_SETTINGS_DIRECTORY, &settings) != B_OK || settings.Append("mime_db") != B_OK || entry.InitCheck() != B_OK)
+		return BString();
+
+	BString database(settings.Path());
+	database << "/";
+	BString file(entry.Path());
+	if (!file.StartsWith(database))
+		return BString();
+	file.Remove(0, database.Length());
+	return file.FindFirst('/') > 0 ? file : BString();
+}
+
+
+/**
+ * SEN: the type that a file stands for, which is what people want to see when they open it with FileTypes (not the type of the file, which is what
+ * FileTypes shows for any other file): a file of the MIME database is the type that it describes, an ontology is its first type.
+ */
+static BString
+SenTypeOfRef(const entry_ref& ref)
+{
+	BString type = MimeTypeOfDatabaseEntry(ref);
+	if (!type.IsEmpty())
+		return type;
+
+	BNode node(&ref);
+	char fileType[B_MIME_TYPE_LENGTH];
+	if (BNodeInfo(&node).GetType(fileType) != B_OK || strcmp(fileType, sen::mime::kOntology) != 0)
+		return BString();
+
+	std::vector<entry_ref> targets;
+	if (sen::lookup::Targets(ref, &targets) != B_OK)
+		return BString();
+	for (const entry_ref& target : targets) {
+		type = MimeTypeOfDatabaseEntry(target);
+		if (!type.IsEmpty())
+			return type;
+	}
+	return BString();
+}
+
+
 void
 FileTypes::RefsReceived(BMessage* message)
 {
 	bool traverseLinks = (modifiers() & B_SHIFT_KEY) == 0;
+	entry_ref ref;
+
+	// SEN: the files of the MIME database and the ontologies stand for types: the type is shown (this takes them out of the list)
+	for (int32 index = 0; message->FindRef("refs", index, &ref) == B_OK;) {
+		BString type = SenTypeOfRef(ref);
+		if (type.IsEmpty()) {
+			index++;
+			continue;
+		}
+		BMessage show(kMsgSenOpenMimeAttribute);
+		show.AddString(kSenMimeTypeKey, type.String());
+		PostMessage(&show);
+		message->RemoveData("refs", index);
+	}
+	if (!message->HasRef("refs"))
+		return;
 
 	// filter out applications and entries we can't open
 	int32 index = 0;
-	entry_ref ref;
 	while (message->FindRef("refs", index++, &ref) == B_OK) {
 		BEntry entry;
 		BFile file;

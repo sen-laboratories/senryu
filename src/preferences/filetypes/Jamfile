@@ -6,6 +6,10 @@ UseLibraryHeaders icon ;
 UsePrivateHeaders shared tracker ;
 SubDirSysHdrs $(HAIKU_TOP) src kits tracker ;
 
+# SEN (Semantic Extensions Native) headers, installed as a non-packaged
+# Haiku developer package rather than vendored into this source tree.
+SubDirC++Flags -I/boot/home/config/non-packaged/develop/headers ;
+
 Application FileTypes :
 	FileTypes.cpp
 	FileTypesWindow.cpp

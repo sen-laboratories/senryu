@@ -3523,6 +3523,9 @@ BPoseView::NewFileFromTemplate(const BMessage* message)
 	BEntry fileEntry(&destDir, fileName);
 	fileEntry.GetRef(&fileRef);
 
+	// SEN: what is made new goes into the sticky classifications (before the relation to it is added: it is the same server, in order)
+	TrackerSenRelations::ApplySticky(fileRef);
+
 	// create the UndoItem
 	NewFileTemplateUndo undo(fileRef, templateRef);
 
@@ -6418,6 +6421,20 @@ BPoseView::MoveSelectionOrEntryToTrash(const entry_ref* ref, bool selectNext)
 			entriesToDeleteOnTheSpot, &deviceHasTrash);
 	}
 
+	// SEN: files that have relations: the user is asked, and the relations are removed with the files
+	{
+		BObjectList<entry_ref, true> everything(entriesToTrash->CountItems() + entriesToDeleteOnTheSpot->CountItems());
+		for (int32 index = 0; index < entriesToTrash->CountItems(); index++)
+			everything.AddItem(new entry_ref(*entriesToTrash->ItemAt(index)));
+		for (int32 index = 0; index < entriesToDeleteOnTheSpot->CountItems(); index++)
+			everything.AddItem(new entry_ref(*entriesToDeleteOnTheSpot->ItemAt(index)));
+		if (!TrackerSenRelations::ConfirmDeletion(everything)) {
+			delete entriesToTrash;
+			delete entriesToDeleteOnTheSpot;
+			return;
+		}
+	}
+
 	if (entriesToDeleteOnTheSpot->CountItems()) {
 		BString alertText;
 		if (ref != NULL) {
@@ -6516,6 +6533,12 @@ void
 BPoseView::Delete(BObjectList<entry_ref, true>* list, bool selectNext, bool confirm)
 {
 	if (list->CountItems() == 0) {
+		delete list;
+		return;
+	}
+
+	// SEN: files that have relations: the user is asked, and the relations are removed with the files
+	if (!TrackerSenRelations::ConfirmDeletion(*list)) {
 		delete list;
 		return;
 	}

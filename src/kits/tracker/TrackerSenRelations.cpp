@@ -23,7 +23,13 @@
 
 #include <sen/Sen.h>
 #include <sen/SenOntoCore.h>
+#include <sen/SenLookup.h>
 #include <sen/Sensei.h>
+
+#include <Alert.h>
+#include <Catalog.h>
+#include <Messenger.h>
+#include <vector>
 
 #include "TrackerSenRelations.h"
 #include "RelationFolders.h"
@@ -414,6 +420,43 @@ TrackerSenRelations::GetRelationAttributeInfo(const char* relationType, BMessage
 
 
 status_t
+TrackerSenRelations::RelationDirectoryPath(const char* viewId, const char* relationType, const BMessage* relationConfig, BPath* relationsDirPath)
+{
+	const char* relationName = relationConfig->GetString(sen::key::kRelationName, relationType);	// fall back
+
+	status_t result = find_directory(B_SYSTEM_TEMP_DIRECTORY, relationsDirPath);
+	if (result != B_OK) {
+		PRINT(("could not find temp directory: %s\n", strerror(result) ));
+		return result;
+	}
+
+	result = relationsDirPath->Append("sen");
+	relationsDirPath->Append(viewId);
+	// the folder is named after the relation (its name is unique among the relations of a file), not after the MIME type, which is the
+	// type of the folder and is not for people to read; in the folder of the supertype, like the MIME types are
+	relationsDirPath->Append(sen::mime::kRelationSupertype);
+	{
+		BString folderName(relationName);
+		folderName.ReplaceAll('/', '\\');
+		if (folderName.IsEmpty() || folderName[0] == '.')
+			folderName.Prepend("_");
+		BPath candidate(*relationsDirPath);
+		candidate.Append(folderName.String());
+
+		// another relation type with the same name keeps its folder: this one is named after its type, too
+		char otherType[B_MIME_TYPE_LENGTH];
+		BNode other(candidate.Path());
+		if (other.InitCheck() == B_OK && BNodeInfo(&other).GetType(otherType) == B_OK && strcmp(otherType, relationType) != 0) {
+			const char* shortType = strrchr(relationType, '/');
+			folderName << " (" << (shortType != NULL ? shortType + 1 : relationType) << ")";
+		}
+		relationsDirPath->Append(folderName.String());
+	}
+	return result;
+}
+
+
+status_t
 TrackerSenRelations::CreateRelationDirectory(
 	const char* viewId,
 	const char* sourceId,
@@ -430,35 +473,9 @@ TrackerSenRelations::CreateRelationDirectory(
 
 	status_t result;
 	BPath relationsDirPath;
-
-	result = find_directory(B_SYSTEM_TEMP_DIRECTORY, &relationsDirPath);
-	if (result != B_OK) {
-		PRINT(("could not find temp directory: %s\n", strerror(result) ));
+	result = RelationDirectoryPath(viewId, relationType, relationConfig, &relationsDirPath);
+	if (result != B_OK)
 		return result;
-	}
-
-	result = relationsDirPath.Append("sen");
-	relationsDirPath.Append(viewId);
-	// the folder is named after the relation (its name is unique among the relations of a file), not after the MIME type, which is the
-	// type of the folder and is not for people to read; in the folder of the supertype, like the MIME types are
-	relationsDirPath.Append(sen::mime::kRelationSupertype);
-	{
-		BString folderName(relationName);
-		folderName.ReplaceAll('/', '\\');
-		if (folderName.IsEmpty() || folderName[0] == '.')
-			folderName.Prepend("_");
-		BPath candidate(relationsDirPath);
-		candidate.Append(folderName.String());
-
-		// another relation type with the same name keeps its folder: this one is named after its type, too
-		char otherType[B_MIME_TYPE_LENGTH];
-		BNode other(candidate.Path());
-		if (other.InitCheck() == B_OK && BNodeInfo(&other).GetType(otherType) == B_OK && strcmp(otherType, relationType) != 0) {
-			const char* shortType = strrchr(relationType, '/');
-			folderName << " (" << (shortType != NULL ? shortType + 1 : relationType) << ")";
-		}
-		relationsDirPath.Append(folderName.String());
-	}
 
 	// TODO: prepare suitable folder attribute layout using archived relation attribute columns
 	// see PoseView::SaveState() and ViewState::ArchiveToStream()
@@ -720,6 +737,103 @@ TrackerSenRelations::HasNoRelations(const entry_ref* ref)
 		return true;
 
 	return false;
+}
+
+
+bool
+TrackerSenRelations::ConfirmDeletion(const BObjectList<entry_ref, true>& refs)
+{
+	struct Related {
+		entry_ref				ref;
+		std::vector<BString>	targets;		// the names of the files that it is related to (those that are there)
+	};
+	std::vector<Related> related;
+	std::vector<entry_ref> stale;
+
+	for (int32 index = 0; index < refs.CountItems(); index++) {
+		const entry_ref* ref = refs.ItemAt(index);
+		if (ref == NULL || HasNoRelations(ref))
+			continue;
+
+		BNode node(ref);
+		std::vector<std::string> ids;
+		if (node.InitCheck() != B_OK || sen::lookup::TargetIds(node, &ids) != B_OK || ids.empty())
+			continue;
+
+		Related entry;
+		entry.ref = *ref;
+		for (const std::string& id : ids) {
+			entry_ref target;
+			if (sen::lookup::EntryForId(id, &target) == B_OK)
+				entry.targets.push_back(DisplayNameOf(target));
+		}
+		if (entry.targets.empty())
+			stale.push_back(*ref);
+		else
+			related.push_back(entry);
+	}
+
+	if (!related.empty()) {
+		BString text;
+		const size_t kShown = 3;
+		for (size_t i = 0; i < related.size() && i < kShown; i++) {
+			if (i > 0)
+				text << "\n";
+			text << "\xe2\x80\x9c" << related[i].ref.name << "\xe2\x80\x9d: ";
+			for (size_t t = 0; t < related[i].targets.size() && t < kShown; t++) {
+				if (t > 0)
+					text << ", ";
+				text << related[i].targets[t];
+			}
+			if (related[i].targets.size() > kShown)
+				text << " (+" << (int32)(related[i].targets.size() - kShown) << ")";
+		}
+		if (related.size() > kShown)
+			text << "\n(+" << (int32)(related.size() - kShown) << ")";
+
+		BString message;
+		if (related.size() == 1)
+			message << "This file has relations to other files:\n\n";
+		else
+			message << "These files have relations to other files:\n\n";
+		message << text << "\n\nIf you delete ";
+		message << (related.size() == 1 ? "it" : "them") << ", the relations are removed, too. Do you want to delete ";
+		message << (related.size() == 1 ? "it" : "them") << "?";
+
+		BAlert* alert = new BAlert("", message.String(), "Cancel", "Delete", NULL, B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+		alert->SetShortcut(0, B_ESCAPE);
+		if (alert->Go() == 0)
+			return false;
+	}
+
+	// the relations go (on both sides); a server that is not there is not waited for
+	BMessenger server(sen::kServerSignature);
+	if (!server.IsValid())
+		return true;
+	std::vector<entry_ref> all(stale);
+	for (const Related& entry : related)
+		all.push_back(entry.ref);
+	for (const entry_ref& ref : all) {
+		BMessage remove(sen::cmd::kRelationsRemoveAll);
+		remove.AddRef(sen::key::kSourceRef, &ref);
+		BMessage reply;
+		status_t result = server.SendMessage(&remove, &reply, 5000000, 5000000);
+		if (result != B_OK)
+			ERROR("could not remove the relations of %s: %s\n", ref.name, strerror(result));
+	}
+	return true;
+}
+
+
+void
+TrackerSenRelations::ApplySticky(const entry_ref& ref)
+{
+	BMessenger server(sen::kServerSignature);
+	if (!server.IsValid())
+		return;
+	BMessage apply(sen::cmd::kClassificationApplySticky);
+	apply.AddRef(sen::key::kSourceRef, &ref);
+	server.SendMessage(&apply);
 }
 
 

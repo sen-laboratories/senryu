@@ -7,6 +7,8 @@
 
 #include <Entry.h>
 #include <Message.h>
+#include <ObjectList.h>
+#include <Path.h>
 #include <String.h>
 #include <SupportDefs.h>
 
@@ -42,6 +44,17 @@ public:
 	/** The name to show for a file (the title of a window...): its title (dc:title), the short description of a MIME type (the
 	 *  file of a type in the MIME database is named like the type), else its file name. The same as the SEN server gives targets. */
 	static BString	DisplayNameOf(const entry_ref& ref);
+	/**
+	 * Before files are deleted or moved to the Trash: a file that has relations (it lists targets in SEN:TO, which is what a file that is part of a
+	 * relation has: they are bidirectional) is asked about. The user is told which files it is related to and decides; if the user agrees, the relations
+	 * of the files are removed (by the SEN server, on both sides) so that there are no dangling links; the files are then deleted as usual.
+	 * Relations that point to files that are gone are removed without asking. Files in the Trash are not asked about (their relations went when they
+	 * were put there).
+	 * @return false if the user cancelled (nothing was changed)
+	 */
+	static bool		ConfirmDeletion(const BObjectList<entry_ref, true>& refs);
+	/** A file that Tracker has made (new from a template, new related) is put into the sticky classifications of SEN (the server does it; asynchronous). */
+	static void		ApplySticky(const entry_ref& ref);
 	static status_t	GetSenIcon(const char* mimeType, const char* iconType,
 						void** icon, size_t* iconSize);
 	static status_t	GetInodeForRef(const entry_ref* srcRef, BString* inode);
@@ -60,6 +73,8 @@ public:
 						const char* relationType,
 						const BMessage* relationConfig,
 						entry_ref* relationDirRef);
+	/** The path of the folder of a relation type in a view (named after the relation, see CreateRelationDirectory()): where it is, or will be. */
+	static status_t	RelationDirectoryPath(const char* viewId, const char* relationType, const BMessage* relationConfig, BPath* path);
 	/** A new, unique name for the folder of a view: a TSID. */
 	static void		NewViewId(BString* viewId);
 	/**

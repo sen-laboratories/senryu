@@ -42,16 +42,6 @@ IsIdentityAttribute(const char* name)
 		|| strcmp(name, sen::attr::kTo) == 0;
 }
 
-/** the name of the folder of a relation type below the top level: the part after the supertype */
-BString
-FolderName(const char* relationType)
-{
-	BString name(relationType);
-	if (name.StartsWith(sen::mime::kRelationPrefix))
-		name.Remove(0, strlen(sen::mime::kRelationPrefix));
-	return name;
-}
-
 }	// namespace
 
 
@@ -490,9 +480,10 @@ RelationFolders::HandleDrop(const BMessage& drop, const node_ref& folderNode)
 				continue;
 			}
 
-			// the folder of the type, made when it is not there yet
-			BPath path(&folder.ref);
-			path.Append(FolderName(target.relationType));
+			// the folder of the type (it is named after the relation), made when it is not there yet
+			BPath path;
+			if (TrackerSenRelations::RelationDirectoryPath(folder.viewId, target.relationType, &target.relationConfig, &path) != B_OK)
+				continue;
 			BEntry typeFolder(path.Path());
 			if (!typeFolder.Exists()) {
 				entry_ref created;
