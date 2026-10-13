@@ -245,7 +245,7 @@ MimeTypeOfDatabaseEntry(const entry_ref& ref)
 
 /**
  * SEN: the type that a file stands for, which is what people want to see when they open it with FileTypes (not the type of the file, which is what
- * FileTypes shows for any other file): a file of the MIME database is the type that it describes, an ontology is its first type.
+ * FileTypes shows for any other file): a file of the MIME database is the type that it describes, an ontology is its main type (an entity, else a type of files).
  */
 static BString
 SenTypeOfRef(const entry_ref& ref)
@@ -262,12 +262,22 @@ SenTypeOfRef(const entry_ref& ref)
 	std::vector<entry_ref> targets;
 	if (sen::lookup::Targets(ref, &targets) != B_OK)
 		return BString();
+
+	// the main type of the ontology: an entity if it has one, else a type of files (not a relation, not a description of a type), else the first
+	BString best;
+	int bestRank = 100;
 	for (const entry_ref& target : targets) {
 		type = MimeTypeOfDatabaseEntry(target);
-		if (!type.IsEmpty())
-			return type;
+		if (type.IsEmpty())
+			continue;
+		int rank = type.StartsWith("entity/") ? 0 : type.StartsWith("classification/") ? 1
+			: type.StartsWith("relation/") ? 3 : type.StartsWith("meta/") ? 4 : 2;
+		if (rank < bestRank || (rank == bestRank && type < best)) {
+			best = type;
+			bestRank = rank;
+		}
 	}
-	return BString();
+	return best;
 }
 
 
