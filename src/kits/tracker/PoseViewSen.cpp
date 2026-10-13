@@ -186,6 +186,26 @@ BPoseView::RequestOpenRelations(uint32 what, OpenRelationsRequest* request)
 	} else
 		return B_ENTRY_NOT_FOUND;
 
+	return RequestOpenRelationsOf(what, source, request);
+}
+
+
+void
+ShowRelationsInTracker(const entry_ref& source)
+{
+	OpenRelationsRequest request;
+	if (RequestOpenRelationsOf(kOpenRelations, source, &request) != B_OK)
+		return;
+	BMessage open;
+	request.ToMessage(kOpenRelations, &open);
+	be_app->PostMessage(&open);
+}
+
+
+/** What the menus of a file keep, see RequestOpenRelations(): asked of the SEN server for the file. */
+status_t
+RequestOpenRelationsOf(uint32 what, const entry_ref& source, OpenRelationsRequest* request)
+{
 	if (TrackerSenRelations::HasNoRelations(&source))
 		return B_NOT_ALLOWED;
 

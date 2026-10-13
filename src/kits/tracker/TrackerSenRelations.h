@@ -8,6 +8,7 @@
 #include <Entry.h>
 #include <Message.h>
 #include <ObjectList.h>
+#include <functional>
 #include <Path.h>
 #include <String.h>
 #include <SupportDefs.h>
@@ -46,13 +47,16 @@ public:
 	static BString	DisplayNameOf(const entry_ref& ref);
 	/**
 	 * Before files are deleted or moved to the Trash: a file that has relations (it lists targets in SEN:TO, which is what a file that is part of a
-	 * relation has: they are bidirectional) is asked about. The user is told which files it is related to and decides; if the user agrees, the relations
+	 * relation has: they are bidirectional) is asked about. The user is told that it has relations and decides; if the user agrees, the relations
 	 * of the files are removed (by the SEN server, on both sides) so that there are no dangling links; the files are then deleted as usual.
 	 * Relations that point to files that are gone are removed without asking. Files in the Trash are not asked about (their relations went when they
 	 * were put there).
+	 * The question says that the files have relations (not which: the folder of the relations shows that); with showRelations it has a button that
+	 * shows them (it is called for each file that has some, and the question is asked again).
 	 * @return false if the user cancelled (nothing was changed)
 	 */
-	static bool		ConfirmDeletion(const BObjectList<entry_ref, true>& refs);
+	static bool		ConfirmDeletion(const BObjectList<entry_ref, true>& refs,
+						std::function<void(const entry_ref&)> showRelations = nullptr);
 	/** A file that Tracker has made (new from a template, new related) is put into the sticky classifications of SEN (the server does it; asynchronous). */
 	static void		ApplySticky(const entry_ref& ref);
 	static status_t	GetSenIcon(const char* mimeType, const char* iconType,

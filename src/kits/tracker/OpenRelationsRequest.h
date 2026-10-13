@@ -30,3 +30,10 @@ struct OpenRelationsRequest {
 	/** The message for the application: @p what is kOpenRelations or kOpenSelfRelations. */
 	void			ToMessage(uint32 what, BMessage* message) const;
 };
+
+/** Asks the SEN server for the relations of a file and keeps what the menus of the file would (the request for the application, see above);
+ *  @p what is kOpenRelations or kOpenSelfRelations. B_NAME_NOT_FOUND if the file has no relations. */
+status_t RequestOpenRelationsOf(uint32 what, const entry_ref& source, OpenRelationsRequest* request);
+
+/** Opens the folder of all relations of a file in the file manager (the same as "Open related..."): used by the question before a file is deleted. */
+void ShowRelationsInTracker(const entry_ref& source);

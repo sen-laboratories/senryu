@@ -6428,7 +6428,7 @@ BPoseView::MoveSelectionOrEntryToTrash(const entry_ref* ref, bool selectNext)
 			everything.AddItem(new entry_ref(*entriesToTrash->ItemAt(index)));
 		for (int32 index = 0; index < entriesToDeleteOnTheSpot->CountItems(); index++)
 			everything.AddItem(new entry_ref(*entriesToDeleteOnTheSpot->ItemAt(index)));
-		if (!TrackerSenRelations::ConfirmDeletion(everything)) {
+		if (!TrackerSenRelations::ConfirmDeletion(everything, ShowRelationsInTracker)) {
 			delete entriesToTrash;
 			delete entriesToDeleteOnTheSpot;
 			return;
@@ -6538,7 +6538,7 @@ BPoseView::Delete(BObjectList<entry_ref, true>* list, bool selectNext, bool conf
 	}
 
 	// SEN: files that have relations: the user is asked, and the relations are removed with the files
-	if (!TrackerSenRelations::ConfirmDeletion(*list)) {
+	if (!TrackerSenRelations::ConfirmDeletion(*list, ShowRelationsInTracker)) {
 		delete list;
 		return;
 	}

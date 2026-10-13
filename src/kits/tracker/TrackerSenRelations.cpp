@@ -741,14 +741,10 @@ TrackerSenRelations::HasNoRelations(const entry_ref* ref)
 
 
 bool
-TrackerSenRelations::ConfirmDeletion(const BObjectList<entry_ref, true>& refs)
+TrackerSenRelations::ConfirmDeletion(const BObjectList<entry_ref, true>& refs, std::function<void(const entry_ref&)> showRelations)
 {
-	struct Related {
-		entry_ref				ref;
-		std::vector<BString>	targets;		// the names of the files that it is related to (those that are there)
-	};
-	std::vector<Related> related;
-	std::vector<entry_ref> stale;
+	std::vector<entry_ref> related;		// the files that have relations to files that are there
+	std::vector<entry_ref> stale;		// those that only have relations to files that are gone
 
 	for (int32 index = 0; index < refs.CountItems(); index++) {
 		const entry_ref* ref = refs.ItemAt(index);
@@ -760,50 +756,44 @@ TrackerSenRelations::ConfirmDeletion(const BObjectList<entry_ref, true>& refs)
 		if (node.InitCheck() != B_OK || sen::lookup::TargetIds(node, &ids) != B_OK || ids.empty())
 			continue;
 
-		Related entry;
-		entry.ref = *ref;
+		bool anyThere = false;
 		for (const std::string& id : ids) {
 			entry_ref target;
-			if (sen::lookup::EntryForId(id, &target) == B_OK)
-				entry.targets.push_back(DisplayNameOf(target));
+			if (sen::lookup::EntryForId(id, &target) == B_OK) {
+				anyThere = true;
+				break;
+			}
 		}
-		if (entry.targets.empty())
-			stale.push_back(*ref);
-		else
-			related.push_back(entry);
+		(anyThere ? related : stale).push_back(*ref);
 	}
 
 	if (!related.empty()) {
-		BString text;
-		const size_t kShown = 3;
-		for (size_t i = 0; i < related.size() && i < kShown; i++) {
-			if (i > 0)
-				text << "\n";
-			text << "\xe2\x80\x9c" << related[i].ref.name << "\xe2\x80\x9d: ";
-			for (size_t t = 0; t < related[i].targets.size() && t < kShown; t++) {
-				if (t > 0)
-					text << ", ";
-				text << related[i].targets[t];
-			}
-			if (related[i].targets.size() > kShown)
-				text << " (+" << (int32)(related[i].targets.size() - kShown) << ")";
-		}
-		if (related.size() > kShown)
-			text << "\n(+" << (int32)(related.size() - kShown) << ")";
-
 		BString message;
 		if (related.size() == 1)
-			message << "This file has relations to other files:\n\n";
+			message << "This file still has relations.\n\nIf you delete it, the relations are removed, too. Do you want to delete it?";
 		else
-			message << "These files have relations to other files:\n\n";
-		message << text << "\n\nIf you delete ";
-		message << (related.size() == 1 ? "it" : "them") << ", the relations are removed, too. Do you want to delete ";
-		message << (related.size() == 1 ? "it" : "them") << "?";
+			message << "These files still have relations.\n\nIf you delete them, the relations are removed, too. Do you want to delete them?";
 
-		BAlert* alert = new BAlert("", message.String(), "Cancel", "Delete", NULL, B_WIDTH_AS_USUAL, B_WARNING_ALERT);
-		alert->SetShortcut(0, B_ESCAPE);
-		if (alert->Go() == 0)
-			return false;
+		for (;;) {
+			BAlert* alert;
+			if (showRelations) {
+				alert = new BAlert("", message.String(), "Show in Tracker", "Cancel", "Delete", B_WIDTH_AS_USUAL, B_OFFSET_SPACING, B_WARNING_ALERT);
+				alert->SetShortcut(1, B_ESCAPE);
+			} else {
+				alert = new BAlert("", message.String(), "Cancel", "Delete", NULL, B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+				alert->SetShortcut(0, B_ESCAPE);
+			}
+			int32 button = alert->Go();
+			if (showRelations && button == 0) {
+				// (the windows are opened by the file manager; the question is asked again)
+				for (size_t i = 0; i < related.size() && i < 5; i++)
+					showRelations(related[i]);
+				continue;
+			}
+			if (button != (showRelations ? 2 : 1))
+				return false;
+			break;
+		}
 	}
 
 	// the relations go (on both sides); a server that is not there is not waited for
@@ -811,8 +801,7 @@ TrackerSenRelations::ConfirmDeletion(const BObjectList<entry_ref, true>& refs)
 	if (!server.IsValid())
 		return true;
 	std::vector<entry_ref> all(stale);
-	for (const Related& entry : related)
-		all.push_back(entry.ref);
+	all.insert(all.end(), related.begin(), related.end());
 	for (const entry_ref& ref : all) {
 		BMessage remove(sen::cmd::kRelationsRemoveAll);
 		remove.AddRef(sen::key::kSourceRef, &ref);
