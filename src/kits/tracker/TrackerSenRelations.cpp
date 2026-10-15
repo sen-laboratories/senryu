@@ -463,7 +463,8 @@ TrackerSenRelations::CreateRelationDirectory(
 	const char* sourceName,
 	const char* relationType,
 	const BMessage* relationConfig,
-	entry_ref* relationDirRef)
+	entry_ref* relationDirRef,
+	const entry_ref* sourceRef)
 {
 	const char* relationName = relationConfig->GetString(sen::key::kRelationName, relationType);	// fall back
 	const char* relationLabel = relationConfig->GetString(sen::key::kRelationLabel, relationName);
@@ -513,6 +514,17 @@ TrackerSenRelations::CreateRelationDirectory(
 	// add a friendly display name
 	BString folderLabel(sourceName);
 	folderLabel << " → "  << relationLabel << " relations";
+	if (sourceRef != NULL && strcmp(relationType, sen::mime::kAssociationRelation) == 0) {
+		// the other end of an association: a classification shows what has it, "Files with Label "Homework""
+		BNode source(sourceRef);
+		char sourceType[B_MIME_TYPE_LENGTH];
+		char description[B_MIME_TYPE_LENGTH];
+		if (BNodeInfo(&source).GetType(sourceType) == B_OK && BString(sourceType).StartsWith(sen::mime::kClassificationPrefix)
+				&& BMimeType(sourceType).GetShortDescription(description) == B_OK) {
+			folderLabel.SetTo("Files with ");
+			folderLabel << description << " \"" << sourceName << "\"";
+		}
+	}
 	BNode relationNode(&relationDirEntry);
 
 	result = relationNode.InitCheck();
@@ -999,7 +1011,7 @@ TrackerSenRelations::MaterializeType(const entry_ref& sourceRef, const char* vie
 	if (sourceId.IsEmpty())
 		GetInodeForRef(&sourceRef, &sourceId);
 
-	result = CreateRelationDirectory(viewId, sourceId.String(), DisplayNameOf(sourceRef).String(), relationType, &relationConfig, typeDirRef);
+	result = CreateRelationDirectory(viewId, sourceId.String(), DisplayNameOf(sourceRef).String(), relationType, &relationConfig, typeDirRef, &sourceRef);
 	if (result != B_OK)
 		return result;
 
