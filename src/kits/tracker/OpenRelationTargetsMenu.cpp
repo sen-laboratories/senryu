@@ -303,10 +303,14 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 		senAddRelationMsg.AddMessenger("TrackerViewToken", fMessenger);
 		targetMessenger = be_app_messenger;
 
-		mimeIncludes.Add(targetTypes);
 		mimeExcludes.Add(sen::mime::kClassificationSupertype);
 
-		// here we got a list of compatible target types
+		// the server says which types the relation can end at (the templates of other types are not offered) and which it cannot
+		BStringList serverExcludes;
+		if (fRelationTargetsReply->FindStrings(sen::key::kExcludeTypes, &serverExcludes) == B_OK)
+			mimeExcludes.Add(serverExcludes);
+
+		// here we got a list of compatible target types (they are filled in before they are used as the filter)
 		result = fRelationTargetsReply->FindStrings(sen::key::kTargetType, &targetTypes);
 		if (result != B_OK) {
 			if (result != B_NAME_NOT_FOUND) {	// param is optional
@@ -314,6 +318,7 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 				return result;
 			}
 		}
+		mimeIncludes.Add(targetTypes);
 
 		int32 templatesCount = TemplateUtils::GetInstalledTemplates(NULL, &mimeIncludes, &mimeExcludes, &matchingRefs);
 
