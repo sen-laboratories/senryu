@@ -25,6 +25,7 @@
 #include <sen/Sensei.h>
 #include "Tracker.h"
 #include "TrackerSenLog.h"
+#include "OpenRelationsRequest.h"
 #include "RelationContext.h"
 #include "RelationFolders.h"
 #include "RelationLabelWindow.h"
@@ -32,12 +33,39 @@
 bool
 TTracker::HandleSenMessage(BMessage* message)
 {
+	if (message->what == sen::cmd::kOpenAllRelationsView) {
+		// "Show all Relations" in the Open related menu: all outgoing relations of the file in one folder
+		entry_ref source, folderRef;
+		status_t result = message->FindRef(sen::key::kSourceRef, &source);
+		if (result == B_OK) {
+			BString viewId;
+			TrackerSenRelations::NewViewId(&viewId);
+			result = TrackerSenRelations::MaterializeAll(source, viewId.String(), &folderRef);
+		}
+		if (result == B_OK) {
+			BMessage* open = new BMessage(B_REFS_RECEIVED);
+			open->AddRef("refs", &folderRef);
+			be_app_messenger.SendMessage(open);
+		} else {
+			PRINT(("could not show all relations: %s\n", strerror(result)));
+		}
+		return true;
+	}
+
 	if (message->what == sen::cmd::kOpenRelationsOfType) {
 		// from the SEN server (a classification was chosen in its menu): the folder of the relations of one type of a file, without a menu that
 		// made it; the answer says whether it is open
 		entry_ref source, typeDir;
 		BString relationType;
 		status_t result = message->FindRef(sen::key::kSourceRef, &source);
+		if (result == B_OK && !message->HasString(sen::key::kRelationType)) {
+			// no type: the folder of all the relation types of the file, as "Open related..." opens it
+			ShowRelationsInTracker(source);
+			BMessage reply(B_REPLY);
+			reply.AddInt32(sen::key::kResult, B_OK);
+			message->SendReply(&reply);
+			return true;
+		}
 		if (result == B_OK)
 			result = message->FindString(sen::key::kRelationType, &relationType);
 		if (result == B_OK) {
@@ -572,6 +600,14 @@ TTracker::PrepareRelationFolder(BMessage *message, entry_ref* relationDirRef)
 	result = relationDirEntry.GetParent(&rootRelationDirEntry);
 	if (result == B_OK) {
 		result = rootRelationDirEntry.GetRef(relationDirRef);
+	}
+
+	// the title of the window of all the types: what the menu shows (the folders are the relation types)
+	if (result == B_OK) {
+		BNode root(&rootRelationDirEntry);
+		BString title("Relation types of ");
+		title << TrackerSenRelations::DisplayNameOf(srcRef);
+		root.WriteAttrString(sen::attr::kFolderName, &title);
 	}
 
 	// the folder of all types takes dropped files as generic relations to them

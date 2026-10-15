@@ -89,6 +89,12 @@ public:
 	 * @param viewId       the folder of the view, see NewViewId()
 	 * @param typeDirRef   receives the folder of the type
 	 */
+	/**
+	 * The outgoing relations of a file of all (stored) types in one folder: a file for each relation, named after its target, with the properties of the
+	 * relation as attributes. The folder is a top-level folder of relations (dropped files become generic relations), the files know their relation types.
+	 * @param folderRef receives the folder
+	 */
+	static status_t	MaterializeAll(const entry_ref& sourceRef, const char* viewId, entry_ref* folderRef);
 	static status_t	MaterializeType(const entry_ref& sourceRef, const char* viewId,
 						const char* relationType, entry_ref* typeDirRef);
 	/**

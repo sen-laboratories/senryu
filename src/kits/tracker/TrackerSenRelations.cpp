@@ -15,6 +15,7 @@
 #include <Node.h>
 #include <NodeInfo.h>
 #include <Path.h>
+#include <StringList.h>
 #include <Autolock.h>
 #include <InterfaceDefs.h>
 #include <Locker.h>
@@ -1023,6 +1024,100 @@ MakeFilesWithQuery(const entry_ref& source, const char* viewId, entry_ref* query
 
 	BEntry entry(&directory, title.String());
 	return entry.GetRef(queryRef);
+}
+
+
+status_t
+TrackerSenRelations::MaterializeAll(const entry_ref& sourceRef, const char* viewId, entry_ref* folderRef)
+{
+	BMessenger server(sen::kServerSignature);
+	BMessage ask(sen::cmd::kRelationsGetAll);
+	ask.AddRef(sen::key::kSourceRef, &sourceRef);
+	BMessage all;
+	status_t result = server.IsValid() ? server.SendMessage(&ask, &all, 5000000, 5000000) : B_ERROR;
+	if (result == B_OK)
+		result = all.GetInt32(sen::key::kResult, B_ERROR);
+	if (result != B_OK)
+		return result;
+
+	BStringList types;
+	all.FindStrings(sen::key::kRelations, &types);
+	BString sourceId(all.GetString(sen::key::kSourceId, ""));
+	if (sourceId.IsEmpty())
+		GetInodeForRef(&sourceRef, &sourceId);
+
+	// the folder (in the folder of the view, like the folder of all the types)
+	BPath path;
+	result = find_directory(B_SYSTEM_TEMP_DIRECTORY, &path);
+	if (result == B_OK)
+		result = path.Append("sen");
+	if (result == B_OK)
+		result = path.Append(viewId);
+	if (result == B_OK)
+		result = path.Append("all");
+	BString title("All relations of ");
+	title << DisplayNameOf(sourceRef);
+	BString folderName(title);
+	folderName.ReplaceAll('/', '-');
+	if (result == B_OK)
+		result = path.Append(folderName.String());
+	if (result == B_OK)
+		result = create_directory(path.Path(), 0777);
+	if (result != B_OK)
+		return result;
+
+	BEntry folderEntry(path.Path());
+	result = folderEntry.GetRef(folderRef);
+	if (result != B_OK)
+		return result;
+	{
+		BNode node(&folderEntry);
+		node.WriteAttrString("META:TYPE", new BString(sen::mime::kRelationFolder));
+		node.WriteAttrString(sen::attr::kRelationSource, new BString(sourceId));
+		node.WriteAttrString(sen::attr::kFolderName, &title);
+	}
+
+	// a file for each relation of each stored type (those of plugins are resolved at run time: their menus show them)
+	for (int32 i = 0; i < types.CountStrings(); i++) {
+		const BString& relationType = types.StringAt(i);
+		BMessage askType(sen::cmd::kRelationsGet);
+		askType.AddRef(sen::key::kSourceRef, &sourceRef);
+		askType.AddString(sen::key::kRelationType, relationType);
+		askType.AddBool(sen::key::kIdToRefMap, true);
+		BMessage reply;
+		if (server.SendMessage(&askType, &reply, 5000000, 5000000) != B_OK || reply.GetInt32(sen::key::kResult, B_ERROR) != B_OK)
+			continue;
+
+		BMessage relations, idToRef, idToName, configs, relationConfig;
+		reply.FindMessage(sen::key::kRelations, &relations);
+		reply.FindMessage(sen::key::kIdToRefMap, &idToRef);
+		reply.FindMessage(sen::key::kIdToNameMap, &idToName);
+		if (reply.FindMessage(sen::key::kRelationConfigMap, &configs) != B_OK || configs.FindMessage(relationType.String(), &relationConfig) != B_OK
+				|| relationConfig.GetBool(sen::conf::kDynamic, false) || relationConfig.GetBool(sen::conf::kSelf, false))
+			continue;
+
+		BMessage list;
+		RelationsToList(relations, idToRef, idToName, &list);
+
+		BMessage config(relationConfig);
+		config.AddString(sen::key::kSourceId, sourceId);
+		config.AddRef(sen::key::kSourceRef, &sourceRef);
+		config.AddString(sen::key::kRelationType, relationType);
+
+		entry_ref workingRef(*folderRef), openRef(*folderRef);
+		WriteTargetRelations(&list, &config, &workingRef, &openRef);
+	}
+
+	// like the folder of all types: files that are dropped on it become generic relations
+	RelationFolders::FolderInfo folder;
+	if (folderEntry.GetNodeRef(&folder.node) == B_OK) {
+		folder.ref = *folderRef;
+		folder.sourceRef = sourceRef;
+		folder.sourceId = sourceId;
+		folder.viewId = viewId;
+		RelationFolders::Instance().RegisterFolder(folder);
+	}
+	return B_OK;
 }
 
 
