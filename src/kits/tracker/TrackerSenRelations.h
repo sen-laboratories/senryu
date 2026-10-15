@@ -72,13 +72,11 @@ public:
 	 * @param viewId   the folder of the view, see NewViewId()
 	 * @param sourceId the SEN:ID of the source of the relations (or its inode, where it has no ID), kept in the folder
 	 * @param sourceName the name of the source file, shown in the title of the folder ("<source> → <relation> relations")
-	 * @param sourceRef  the source, if known: the folder of the association of a classification is titled "Files with <type> \"<name>\"" (what has it)
 	 */
 	static status_t	CreateRelationDirectory(const char* viewId, const char* sourceId, const char* sourceName,
 						const char* relationType,
 						const BMessage* relationConfig,
-						entry_ref* relationDirRef,
-						const entry_ref* sourceRef = NULL);
+						entry_ref* relationDirRef);
 	/** The path of the folder of a relation type in a view (named after the relation, see CreateRelationDirectory()): where it is, or will be. */
 	static status_t	RelationDirectoryPath(const char* viewId, const char* relationType, const BMessage* relationConfig, BPath* path);
 	/** A new, unique name for the folder of a view: a TSID. */

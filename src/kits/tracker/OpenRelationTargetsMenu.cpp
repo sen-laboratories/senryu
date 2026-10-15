@@ -248,9 +248,8 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 
 		BString newAssocLabel("New" B_UTF8_ELLIPSIS);
 
-		IconMenuItem* newAssociationItem = new IconMenuItem(newAssocLabel.String(),
-											   newAssociationMsg,
-											   targetType);
+		// (no icon: it is not a classification, it makes one)
+		BMenuItem* newAssociationItem = new BMenuItem(newAssocLabel.String(), newAssociationMsg);
 
 		newAssociationItem->SetTarget(be_app_messenger);
 		AddItem(newAssociationItem);

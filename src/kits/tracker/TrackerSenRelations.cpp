@@ -23,6 +23,7 @@
 
 #include <sen/Sen.h>
 #include <sen/SenOntoCore.h>
+#include <sen/SenIdList.h>
 #include <sen/SenLookup.h>
 #include <sen/Sensei.h>
 
@@ -463,8 +464,7 @@ TrackerSenRelations::CreateRelationDirectory(
 	const char* sourceName,
 	const char* relationType,
 	const BMessage* relationConfig,
-	entry_ref* relationDirRef,
-	const entry_ref* sourceRef)
+	entry_ref* relationDirRef)
 {
 	const char* relationName = relationConfig->GetString(sen::key::kRelationName, relationType);	// fall back
 	const char* relationLabel = relationConfig->GetString(sen::key::kRelationLabel, relationName);
@@ -514,17 +514,6 @@ TrackerSenRelations::CreateRelationDirectory(
 	// add a friendly display name
 	BString folderLabel(sourceName);
 	folderLabel << " → "  << relationLabel << " relations";
-	if (sourceRef != NULL && strcmp(relationType, sen::mime::kAssociationRelation) == 0) {
-		// the other end of an association: a classification shows what has it, "Files with Label "Homework""
-		BNode source(sourceRef);
-		char sourceType[B_MIME_TYPE_LENGTH];
-		char description[B_MIME_TYPE_LENGTH];
-		if (BNodeInfo(&source).GetType(sourceType) == B_OK && BString(sourceType).StartsWith(sen::mime::kClassificationPrefix)
-				&& BMimeType(sourceType).GetShortDescription(description) == B_OK) {
-			folderLabel.SetTo("Files with ");
-			folderLabel << description << " \"" << sourceName << "\"";
-		}
-	}
 	BNode relationNode(&relationDirEntry);
 
 	result = relationNode.InitCheck();
@@ -975,10 +964,79 @@ TrackerSenRelations::RelationsToList(const BMessage& relations, const BMessage& 
 }
 
 
+/**
+ * What has a classification (a label, a topic, a context...): the files that list it as a target of an association. People expect these files themselves,
+ * as a query shows them (with their own icons and columns), not placeholders of the relations: so the "folder" of the association of a classification is a
+ * query for the ID of the classification, titled "Files with Label "Homework"". The query file is in the folder of the view, like the folders of the
+ * other relations. Opening it shows the files.
+ */
+static status_t
+MakeFilesWithQuery(const entry_ref& source, const char* viewId, entry_ref* queryRef)
+{
+	BPath folder;
+	status_t result = find_directory(B_SYSTEM_TEMP_DIRECTORY, &folder);
+	if (result == B_OK)
+		result = folder.Append("sen");
+	if (result == B_OK)
+		result = folder.Append(viewId);
+	if (result == B_OK)
+		result = folder.Append(sen::mime::kRelationSupertype);
+	if (result == B_OK)
+		result = create_directory(folder.Path(), 0777);
+	if (result != B_OK)
+		return result;
+
+	BNode node(&source);
+	char type[B_MIME_TYPE_LENGTH], description[B_MIME_TYPE_LENGTH];
+	BString title("Files with ");
+	title << (BMimeType(BNodeInfo(&node).GetType(type) == B_OK ? type : "").GetShortDescription(description) == B_OK ? description : "classification")
+		<< " \"" << TrackerSenRelations::DisplayNameOf(source) << "\"";
+	title.ReplaceAll('/', '-');
+
+	// the files that have the classification as a target (an association is in SEN:META, any other relation in SEN:TO)
+	BString id;
+	node.ReadAttrString(sen::attr::kId, &id);
+	BString predicate;
+	if (id.IsEmpty())
+		predicate = "SEN:ID==\"-\"";		// (a classification that nothing was ever related to: no file has it)
+	else
+		predicate << "(" << sen::idlist::ContainsPredicate(sen::attr::kMeta, id.String()).c_str() << ") || ("
+			<< sen::idlist::ContainsPredicate(sen::attr::kTo, id.String()).c_str() << ")";
+
+	BDirectory directory(folder.Path());
+	BFile file;
+	result = directory.CreateFile(title.String(), &file, false);
+	if (result == B_FILE_EXISTS) {
+		BEntry old(&directory, title.String());
+		old.Remove();
+		result = directory.CreateFile(title.String(), &file, false);
+	}
+	if (result != B_OK)
+		return result;
+
+	// what the query window of Tracker reads: the predicate, and how to show it again for editing (by formula)
+	file.WriteAttrString("_trk/qrystr", &predicate);
+	file.WriteAttrString("_trk/qryinitstr", &predicate);
+	int32 mode = 'Fbyq';
+	file.WriteAttr("_trk/qryinitmode", B_INT32_TYPE, 0, &mode, sizeof(int32));
+	BNodeInfo(&file).SetType("application/x-vnd.Be-query");
+
+	BEntry entry(&directory, title.String());
+	return entry.GetRef(queryRef);
+}
+
+
 status_t
 TrackerSenRelations::MaterializeType(const entry_ref& sourceRef, const char* viewId, const char* relationType,
 	entry_ref* typeDirRef)
 {
+	if (strcmp(relationType, sen::mime::kAssociationRelation) == 0) {
+		BNode source(&sourceRef);
+		char sourceType[B_MIME_TYPE_LENGTH];
+		if (BNodeInfo(&source).GetType(sourceType) == B_OK && BString(sourceType).StartsWith(sen::mime::kClassificationPrefix))
+			return MakeFilesWithQuery(sourceRef, viewId, typeDirRef);
+	}
+
 	BMessage ask(sen::cmd::kRelationsGet);
 	ask.AddRef(sen::key::kSourceRef, &sourceRef);
 	ask.AddString(sen::key::kRelationType, relationType);
@@ -1011,7 +1069,7 @@ TrackerSenRelations::MaterializeType(const entry_ref& sourceRef, const char* vie
 	if (sourceId.IsEmpty())
 		GetInodeForRef(&sourceRef, &sourceId);
 
-	result = CreateRelationDirectory(viewId, sourceId.String(), DisplayNameOf(sourceRef).String(), relationType, &relationConfig, typeDirRef, &sourceRef);
+	result = CreateRelationDirectory(viewId, sourceId.String(), DisplayNameOf(sourceRef).String(), relationType, &relationConfig, typeDirRef);
 	if (result != B_OK)
 		return result;
 

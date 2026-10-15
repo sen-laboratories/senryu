@@ -3481,6 +3481,8 @@ BPoseView::NewFileFromTemplate(const BMessage* message)
 	// the name of a template may have the "New " already (SEN templates), it is not added twice
 	char fileName[B_FILE_NAME_LENGTH] = "";
 	const char* templateName = message->FindString("name");
+	if (templateName == NULL)
+		templateName = "file";
 	if (strncmp(templateName, "New ", 4) != 0)
 		strlcpy(fileName, "New ", sizeof(fileName));
 	strlcat(fileName, templateName, sizeof(fileName));
@@ -3539,6 +3541,10 @@ BPoseView::NewFileFromTemplate(const BMessage* message)
 		message->FindRef(sen::key::kSourceRef, &relationSrcRef);
 		addRelationMsg.AddRef(sen::key::kSourceRef, &relationSrcRef);
 		addRelationMsg.AddRef(sen::key::kTargetRef, &fileRef);
+		// (the properties of the relation, e.g. the label that was asked for with Shift: see TTracker::HandleSenMessage)
+		BMessage relationProperties;
+		if (message->FindMessage(sen::key::kRelationProperties, &relationProperties) == B_OK)
+			addRelationMsg.AddMessage(sen::key::kRelationProperties, &relationProperties);
 
 		PRINT(("adding new relation to new target from template with message:\n"));
 		addRelationMsg.PrintToStream();

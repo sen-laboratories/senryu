@@ -27,6 +27,7 @@
 #include "TrackerSenLog.h"
 #include "RelationContext.h"
 #include "RelationFolders.h"
+#include "RelationLabelWindow.h"
 
 bool
 TTracker::HandleSenMessage(BMessage* message)
@@ -320,6 +321,23 @@ TTracker::HandleSenMessage(BMessage* message)
 					return true;	// abort
 				}
 			} else { // new from template with existing targetRef
+				// with Shift held the relation gets a label (as when files are dropped on others): asked for before the file is made
+				if ((modifiers() & B_SHIFT_KEY) != 0) {
+					BString relationName(relationType);
+					RelationContextRef context = RelationContexts::Find(message);
+					BMessage relationConfig;
+					if (context != NULL && context->FindConfig(relationType.String(), &relationConfig))
+						relationName = relationConfig.GetString(sen::key::kRelationName, relationType.String());
+					BString label;
+					if (!PromptForRelationLabel(relationName.String(), &label))
+						return true;	// cancelled: nothing is created
+					if (!label.IsEmpty()) {
+						BMessage properties;
+						properties.AddString(sen::attr::kRelationLabel, label);
+						message->AddMessage(sen::key::kRelationProperties, &properties);
+					}
+				}
+
 				// forward to Tracker like "New from Template"
 				message->what = kNewEntryFromTemplate;
 				message->AddRef("refs_template", &targetRef);
