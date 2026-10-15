@@ -2175,8 +2175,19 @@ BPoseView::RefreshMimeTypeList()
 			break;
 
 		Model* targetModel = pose->TargetModel();
-		if (targetModel != NULL)
+		if (targetModel != NULL) {
 			AddMimeType(targetModel->MimeType());
+
+			// SEN: the semantic type of a file (META:TYPE, set by the plugins that identify it: document/scientific-paper) has attributes, too:
+			// they are listed in the Attributes menu with those of the type of the file
+			BString semanticType;
+			if (targetModel->OpenNode() == B_OK) {
+				targetModel->Node()->ReadAttrString(sen::attr::kType, &semanticType);
+				targetModel->CloseNode();
+			}
+			if (!semanticType.IsEmpty() && semanticType != targetModel->MimeType() && BMimeType(semanticType.String()).IsInstalled())
+				AddMimeType(semanticType.String());
+		}
 	}
 }
 
@@ -6112,7 +6123,7 @@ BPoseView::AttributeChanged(const BMessage* message)
 			// update attr
 			pose->UpdateWidgetAndModel(attrName, infoStatus == B_OK ? info.type : 0,
 				index, poseLoc, this, visible);
-			if (strcmp(attrName, kAttrMIMEType) == 0)
+			if (strcmp(attrName, kAttrMIMEType) == 0 || strcmp(attrName, sen::attr::kType) == 0)
 				RefreshMimeTypeList();
 		} else {
 			// update stat
