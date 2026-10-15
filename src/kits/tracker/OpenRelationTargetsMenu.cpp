@@ -268,13 +268,17 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 		result = fSenMessenger->SendMessage(&senFindClassMsg, &senFindClassReply);
 
 		if (result == B_OK) {
-			PRINT(("got %d matching classification types from SEN:\n", senFindClassReply.CountNames(B_REF_TYPE) ));
 			senFindClassReply.PrintToStream();
 
 			entry_ref classRef;
 			BString   classType;
 
-			for (int i = 0; i < senFindClassReply.CountNames(B_REF_TYPE); i++) {
+			// (CountNames() counts the names of the fields, not the entities: the refs are one field)
+			type_code refsType;
+			int32 classCount = 0;
+			senFindClassReply.GetInfo("refs", &refsType, &classCount);
+			PRINT(("got %d matching classification entities from SEN:\n", classCount));
+			for (int i = 0; i < classCount; i++) {
 				classType = senFindClassReply.GetString("types", i, "");
 				if (! classType.IsEmpty()) {
 					result = senFindClassReply.FindRef("refs", i, &classRef);

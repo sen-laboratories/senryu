@@ -31,6 +31,30 @@
 bool
 TTracker::HandleSenMessage(BMessage* message)
 {
+	if (message->what == sen::cmd::kOpenRelationsOfType) {
+		// from the SEN server (a classification was chosen in its menu): the folder of the relations of one type of a file, without a menu that
+		// made it; the answer says whether it is open
+		entry_ref source, typeDir;
+		BString relationType;
+		status_t result = message->FindRef(sen::key::kSourceRef, &source);
+		if (result == B_OK)
+			result = message->FindString(sen::key::kRelationType, &relationType);
+		if (result == B_OK) {
+			BString viewId;
+			TrackerSenRelations::NewViewId(&viewId);
+			result = TrackerSenRelations::MaterializeType(source, viewId.String(), relationType.String(), &typeDir);
+		}
+		if (result == B_OK) {
+			BMessage* open = new BMessage(B_REFS_RECEIVED);
+			open->AddRef("refs", &typeDir);
+			be_app_messenger.SendMessage(open);
+		}
+		BMessage reply(B_REPLY);
+		reply.AddInt32(sen::key::kResult, result);
+		message->SendReply(&reply);
+		return true;
+	}
+
 	if (message->what == sen::cmd::kOpenRelationTargetView) {
 		// Note: we need to differentiate between invoking the menu (to open targets in a Tracker relation view)
 		//       vs invoking the relation from the menu itself
