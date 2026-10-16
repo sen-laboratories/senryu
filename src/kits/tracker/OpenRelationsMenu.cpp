@@ -27,6 +27,8 @@
 #include <GridView.h>
 #include <Locale.h>
 #include <Mime.h>
+#include <utility>
+#include <vector>
 #include <SeparatorItem.h>
 #include <NodeInfo.h>
 #include <Path.h>
@@ -245,6 +247,7 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 
     int32 index = 0, countRelations = 0;
 	BString typeName;
+	std::vector<std::pair<BString, BMenu*>> groups;
 
     while (fRelationsReply.FindString(propertyName.String(), index++, &typeName) == B_OK) {
 		// check if associated MIME type is installed (needed for Tracker display)
@@ -296,9 +299,33 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 		// redirect open relation targets message to Tracker app directly
 		item->SetTarget(be_app_messenger);
 
-		AddItem(item);
+		// the relations of a group (Personal, Professional...) are in a submenu of the name of the group, so that the list is short
+		BMessage typeConfig;
+		BString group;
+		if (relationConfigs.FindMessage(typeName.String(), &typeConfig) == B_OK)
+			group = typeConfig.GetString(sen::conf::kGroup, "");
+		if (group.IsEmpty()) {
+			AddItem(item);
+		} else {
+			BMenu* groupMenu = NULL;
+			for (const auto& each : groups) {
+				if (each.first == group)
+					groupMenu = each.second;
+			}
+			if (groupMenu == NULL) {
+				groupMenu = new BMenu(group.String());
+				groups.push_back({group, groupMenu});
+			}
+			groupMenu->AddItem(item);
+		}
 		countRelations++;
     }
+
+	// (after the relations that have no group, set apart)
+	if (!groups.empty() && CountItems() > 0)
+		AddSeparatorItem();
+	for (const auto& each : groups)
+		AddItem(each.second);
 
 	PRINT(("got %d compatible relation items.\n", countRelations));
 

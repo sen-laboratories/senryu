@@ -493,6 +493,7 @@ BPoseView::HandleRelationDrop(const BMessage* dragMessage, BPose* targetPose, BP
 	BMessage configs;
 	reply.FindMessage(sen::key::kRelationConfigMap, &configs);
 	BPopUpMenu menu("relations", false, false);
+	std::vector<std::pair<BString, BMenu*>> groups;
 	const char* type;
 	for (int32 index = 0; reply.FindString(sen::key::kRelations, index, &type) == B_OK; index++) {
 		BMimeType mime(type);
@@ -513,8 +514,28 @@ BPoseView::HandleRelationDrop(const BMessage* dragMessage, BPose* targetPose, BP
 		// (the ellipsis says that more is asked for, as in any menu)
 		if (withLabel)
 			label << B_UTF8_ELLIPSIS;
-		menu.AddItem(new IconMenuItem(label.String(), choice, type));
+		IconMenuItem* item = new IconMenuItem(label.String(), choice, type);
+		// the relations of a group (Personal, Professional...) are in a submenu of its name
+		BString group(config.GetString(sen::conf::kGroup, ""));
+		if (group.IsEmpty()) {
+			menu.AddItem(item);
+		} else {
+			BMenu* groupMenu = NULL;
+			for (const auto& each : groups) {
+				if (each.first == group)
+					groupMenu = each.second;
+			}
+			if (groupMenu == NULL) {
+				groupMenu = new BMenu(group.String());
+				groups.push_back({group, groupMenu});
+			}
+			groupMenu->AddItem(item);
+		}
 	}
+	if (!groups.empty() && menu.CountItems() > 0)
+		menu.AddSeparatorItem();
+	for (const auto& each : groups)
+		menu.AddItem(each.second);
 	if (menu.CountItems() == 0) {
 		BMenuItem* none = new BMenuItem(B_TRANSLATE("No relation fits these files"), NULL);
 		none->SetEnabled(false);
