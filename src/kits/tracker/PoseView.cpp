@@ -38,6 +38,8 @@ All rights reserved.
 #include "RelationFolders.h"
 #include "SenCursors.h"
 #include "TrackerSenRelations.h"
+
+#include <sen/SenTypes.h>
 #include <algorithm>
 #include <functional>
 #include <map>
@@ -2168,6 +2170,7 @@ BPoseView::RefreshMimeTypeList()
 {
 	fMimeTypeList.MakeEmpty();
 	fMimeTypeListIsDirty = false;
+	sen::types::Registry* semanticTypes = NULL;		// (made when a file has a semantic type: it reads files)
 
 	for (int32 index = 0;; index++) {
 		BPose* pose = PoseAtIndex(index);
@@ -2185,10 +2188,17 @@ BPoseView::RefreshMimeTypeList()
 				targetModel->Node()->ReadAttrString(sen::attr::kType, &semanticType);
 				targetModel->CloseNode();
 			}
-			if (!semanticType.IsEmpty() && semanticType != targetModel->MimeType() && BMimeType(semanticType.String()).IsInstalled())
-				AddMimeType(semanticType.String());
+			if (!semanticType.IsEmpty() && semanticType != targetModel->MimeType()) {
+				// (a type of the registry of SEN, org.sen-labs.paper, is not in the MIME database: the menu of the window knows it)
+				if (semanticTypes == NULL)
+					semanticTypes = new sen::types::Registry();
+				if (BMimeType(semanticType.String()).IsInstalled() || semanticTypes->Find(semanticType.String()) != NULL)
+					AddMimeType(semanticType.String());
+			}
 		}
 	}
+
+	delete semanticTypes;
 }
 
 

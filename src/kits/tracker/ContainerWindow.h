@@ -51,6 +51,12 @@ class BGroupView;
 class BPopUpMenu;
 class BMenuBar;
 
+namespace sen {
+namespace types {
+class Registry;
+}
+}
+
 namespace BPrivate {
 
 class BNavigator;
@@ -289,6 +295,8 @@ protected:
 
 	BMenu* AddMimeMenu(const BMimeType& mimeType, bool isSuperType,
 		BMenu* menu, int32 start);
+	void AddSemanticTypeMenu(const sen::types::Registry& registry,
+		const char* typeId, BMenu* menu);
 
 	BHandler* ResolveSpecifier(BMessage*, int32, BMessage*, int32,
 		const char*);

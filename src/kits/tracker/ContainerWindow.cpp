@@ -93,6 +93,7 @@ All rights reserved.
 #include "QueryContainerWindow.h"
 #include "SelectionWindow.h"
 #include <sen/Sen.h>
+#include <sen/SenTypes.h>
 #include "Shortcuts.h"
 #include "TemplatesMenu.h"
 #include "Thread.h"
@@ -3787,6 +3788,58 @@ BContainerWindow::AddMimeMenu(const BMimeType& mimeType, bool isSuperType,
 }
 
 
+// SEN: the menu of a semantic type (org.sen-labs.paper) of the registry, which is not in the MIME database: the attributes of the type and of
+// what it conforms to. The menu is added to the end of the given menu, if the type has attributes that can be shown.
+void
+BContainerWindow::AddSemanticTypeMenu(const sen::types::Registry& registry, const char* typeId, BMenu* menu)
+{
+	const sen::types::Type* type = registry.Find(typeId);
+	if (type == NULL)
+		return;
+
+	BMessage attrInfo = registry.Attributes(typeId);
+	const char* label = type->title.empty() ? typeId : type->title.c_str();
+	BMenu* typeMenu = NULL;
+	int32 index = -1;
+	const char* publicName;
+	while (attrInfo.FindString("attr:public_name", ++index, &publicName) == B_OK) {
+		if (!attrInfo.FindBool("attr:viewable", index))
+			continue;
+
+		int32 attrType;
+		int32 align;
+		int32 width;
+		bool editable;
+		const char* attrName;
+		if (attrInfo.FindString("attr:name", index, &attrName) != B_OK
+			|| attrInfo.FindInt32("attr:type", index, &attrType) != B_OK
+			|| attrInfo.FindBool("attr:editable", index, &editable) != B_OK
+			|| attrInfo.FindInt32("attr:width", index, &width) != B_OK
+			|| attrInfo.FindInt32("attr:alignment", index, &align) != B_OK)
+			continue;
+
+		BString displayAs;
+		attrInfo.FindString("attr:display_as", index, &displayAs);
+		if (typeMenu == NULL) {
+			typeMenu = new BMenu(label);
+			BFont font;
+			menu->GetFont(&font);
+			typeMenu->SetFont(&font);
+		}
+		typeMenu->AddItem(NewAttributeMenuItem(publicName, attrName, attrType, displayAs.String(), width, align, editable, false));
+	}
+	if (typeMenu == NULL)
+		return;
+
+	BMessage* message = new BMessage(kMIMETypeItem);
+	message->AddString("mimetype", typeId);
+	// (the icon is that of the first format that the type is found on)
+	BMenuItem* item = new IconMenuItem(typeMenu, message, type->formats.empty() ? "application/octet-stream" : type->formats[0].c_str());
+	item->SetTarget(PoseView());
+	menu->AddItem(item);
+}
+
+
 BMenuItem*
 BContainerWindow::NewArrangeByMenu()
 {
@@ -4137,6 +4190,18 @@ BContainerWindow::AddMimeTypesToMenu(BMenu* menu)
 			}
 		}
 	}
+
+	// SEN: the semantic types of the files (not MIME types) get a menu each
+	sen::types::Registry* registry = NULL;
+	for (int32 index = 0; index < typeCount; index++) {
+		const char* name = PoseView()->MimeTypeAt(index);
+		if (strchr(name, '/') != NULL || BMimeType(name).IsInstalled())
+			continue;
+		if (registry == NULL)
+			registry = new sen::types::Registry();
+		AddSemanticTypeMenu(*registry, name, menu);
+	}
+	delete registry;
 
 	// remove empty super menus, promote sub-types if needed
 
