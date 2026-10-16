@@ -67,6 +67,7 @@ All rights reserved.
 #include "TrackerSenRelations.h"
 #include <set>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include <sen/Sen.h>
@@ -493,7 +494,7 @@ BPoseView::HandleRelationDrop(const BMessage* dragMessage, BPose* targetPose, BP
 	BMessage configs;
 	reply.FindMessage(sen::key::kRelationConfigMap, &configs);
 	BPopUpMenu menu("relations", false, false);
-	std::vector<std::pair<BString, BMenu*>> groups;
+	std::vector<std::tuple<BString, BMenu*, BString>> groups;	// name, menu, a relation type of it (its icon is the icon of the group)
 	const char* type;
 	for (int32 index = 0; reply.FindString(sen::key::kRelations, index, &type) == B_OK; index++) {
 		BMimeType mime(type);
@@ -522,12 +523,12 @@ BPoseView::HandleRelationDrop(const BMessage* dragMessage, BPose* targetPose, BP
 		} else {
 			BMenu* groupMenu = NULL;
 			for (const auto& each : groups) {
-				if (each.first == group)
-					groupMenu = each.second;
+				if (std::get<0>(each) == group)
+					groupMenu = std::get<1>(each);
 			}
 			if (groupMenu == NULL) {
 				groupMenu = new BMenu(group.String());
-				groups.push_back({group, groupMenu});
+				groups.push_back(std::make_tuple(group, groupMenu, BString(type)));
 			}
 			groupMenu->AddItem(item);
 		}
@@ -535,7 +536,7 @@ BPoseView::HandleRelationDrop(const BMessage* dragMessage, BPose* targetPose, BP
 	if (!groups.empty() && menu.CountItems() > 0)
 		menu.AddSeparatorItem();
 	for (const auto& each : groups)
-		menu.AddItem(each.second);
+		menu.AddItem(new IconMenuItem(std::get<1>(each), NULL, std::get<2>(each).String()));
 	if (menu.CountItems() == 0) {
 		BMenuItem* none = new BMenuItem(B_TRANSLATE("No relation fits these files"), NULL);
 		none->SetEnabled(false);

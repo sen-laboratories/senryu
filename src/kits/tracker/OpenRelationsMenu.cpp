@@ -27,6 +27,7 @@
 #include <GridView.h>
 #include <Locale.h>
 #include <Mime.h>
+#include <tuple>
 #include <utility>
 #include <vector>
 #include <SeparatorItem.h>
@@ -247,7 +248,7 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 
     int32 index = 0, countRelations = 0;
 	BString typeName;
-	std::vector<std::pair<BString, BMenu*>> groups;
+	std::vector<std::tuple<BString, BMenu*, BString>> groups;	// name, menu, a relation type of it (its icon is the icon of the group)
 
     while (fRelationsReply.FindString(propertyName.String(), index++, &typeName) == B_OK) {
 		// check if associated MIME type is installed (needed for Tracker display)
@@ -309,12 +310,12 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 		} else {
 			BMenu* groupMenu = NULL;
 			for (const auto& each : groups) {
-				if (each.first == group)
-					groupMenu = each.second;
+				if (std::get<0>(each) == group)
+					groupMenu = std::get<1>(each);
 			}
 			if (groupMenu == NULL) {
 				groupMenu = new BMenu(group.String());
-				groups.push_back({group, groupMenu});
+				groups.push_back(std::make_tuple(group, groupMenu, BString(typeName.String())));
 			}
 			groupMenu->AddItem(item);
 		}
@@ -325,7 +326,7 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 	if (!groups.empty() && CountItems() > 0)
 		AddSeparatorItem();
 	for (const auto& each : groups)
-		AddItem(each.second);
+		AddItem(new IconMenuItem(std::get<1>(each), NULL, std::get<2>(each).String()));
 
 	PRINT(("got %d compatible relation items.\n", countRelations));
 
