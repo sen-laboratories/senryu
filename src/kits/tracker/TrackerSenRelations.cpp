@@ -1027,6 +1027,70 @@ MakeFilesWithQuery(const entry_ref& source, const char* viewId, entry_ref* query
 }
 
 
+bool
+TrackerSenRelations::IsInRelationView(const entry_ref* ref)
+{
+	BPath root, path;
+	if (ref == NULL || find_directory(B_SYSTEM_TEMP_DIRECTORY, &root) != B_OK || root.Append("sen") != B_OK || path.SetTo(ref) != B_OK)
+		return false;
+	size_t length = strlen(root.Path());
+	return strncmp(path.Path(), root.Path(), length) == 0 && path.Path()[length] == '/';
+}
+
+
+/** The self relations of a file in a folder: asked of the server (which lets the plugin of the type of the file extract them), written as the view of one self relation is. */
+void
+TrackerSenRelations::MaterializeSelfRelations(const entry_ref& sourceRef, const BString& sourceId, entry_ref* folderRef)
+{
+	BMessenger server(sen::kServerSignature);
+	BMessage askAll(sen::cmd::kRelationsGetAllSelf);
+	askAll.AddRef(sen::key::kSourceRef, &sourceRef);
+	BMessage all;
+	if (!server.IsValid() || server.SendMessage(&askAll, &all, 10000000, 10000000) != B_OK
+			|| all.GetInt32(sen::key::kResult, B_ERROR) != B_OK)
+		return;
+
+	BMessage pluginConfig, typesPlugins, configs, relationConfig;
+	BString defaultType;
+	if (all.FindMessage(sensei::key::kPluginConfig, &pluginConfig) != B_OK
+			|| pluginConfig.FindString(sensei::key::kDefaultType, &defaultType) != B_OK
+			|| pluginConfig.FindMessage(sensei::key::kTypesPlugins, &typesPlugins) != B_OK
+			|| all.FindMessage(sen::key::kRelationConfigMap, &configs) != B_OK
+			|| configs.FindMessage(defaultType.String(), &relationConfig) != B_OK)
+		return;
+
+	int32 count = typesPlugins.CountNames(B_STRING_TYPE);
+	for (int32 index = 0; index < count; index++) {
+		char* fileType;
+		type_code type;
+		int32 pluginCount;
+		BString plugin;
+		if (typesPlugins.GetInfo(B_STRING_TYPE, index, &fileType, &type, &pluginCount) != B_OK
+				|| typesPlugins.FindString(fileType, &plugin) != B_OK)
+			continue;
+
+		BMessage request(sen::cmd::kRelationsGetSelf);
+		request.AddRef(sen::key::kSourceRef, &sourceRef);
+		request.AddString(sen::key::kRelationType, defaultType);
+		request.AddString(sensei::key::kPlugin, plugin);
+		request.AddMessage(sensei::key::kPluginConfig, &pluginConfig);
+		BMessage tree;
+		if (server.SendMessage(&request, &tree, 10000000, 10000000) != B_OK || tree.IsEmpty())
+			continue;
+
+		// as the view of a self relation has it (see TTracker::PrepareRelationTargetFolder)
+		BMessage config(relationConfig);
+		config.AddString(sen::key::kSourceId, sourceId);
+		config.AddRef(sen::key::kSourceRef, &sourceRef);
+		config.AddRef(sen::key::kTargetRef, &sourceRef);
+		config.AddString(sen::key::kItemId, "");
+		config.AddString(sen::key::kRelationType, defaultType);
+		entry_ref workingRef(*folderRef), openRef(*folderRef);
+		WriteTargetRelations(&tree, &config, &workingRef, &openRef);
+	}
+}
+
+
 status_t
 TrackerSenRelations::MaterializeAll(const entry_ref& sourceRef, const char* viewId, entry_ref* folderRef)
 {
@@ -1107,6 +1171,9 @@ TrackerSenRelations::MaterializeAll(const entry_ref& sourceRef, const char* view
 		entry_ref workingRef(*folderRef), openRef(*folderRef);
 		WriteTargetRelations(&list, &config, &workingRef, &openRef);
 	}
+
+	// the self relations (what a document contains: the top level of the TOC of a PDF, with what is below it as folders), which a plugin extracts
+	MaterializeSelfRelations(sourceRef, sourceId, folderRef);
 
 	// like the folder of all types: files that are dropped on it become generic relations
 	RelationFolders::FolderInfo folder;

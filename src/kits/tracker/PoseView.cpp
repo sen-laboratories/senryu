@@ -5352,10 +5352,11 @@ BPoseView::MoveSelectionInto(Model* destFolder, BContainerWindow* srcWindow,
 		else
 			moveMode = kMoveSelectionTo;
 
-		// SEN: a file of a relation folder stands for the relation (a link to its target, with the properties of the relation): taken out of the
-		// folder it is copied and the relation stays. Only the Trash takes the file away (that removes the relation).
+		// SEN: a file of a relation folder (stored, or a self relation of a plugin) stands for the relation (a link to its target, with the properties of the
+		// relation, the deep link): taken out of the folder it is copied and the relation stays. Only the Trash takes the file away (that removes the relation).
 		if (moveMode == kMoveSelectionTo && !destIsTrash && srcWindow->TargetModel() != NULL
-				&& RelationFolders::Instance().IsRelationFolder(*srcWindow->TargetModel()->NodeRef())) {
+				&& (RelationFolders::Instance().IsRelationFolder(*srcWindow->TargetModel()->NodeRef())
+					|| TrackerSenRelations::IsInRelationView(srcWindow->TargetModel()->EntryRef()))) {
 			moveMode = kCopySelectionTo;
 		}
 
