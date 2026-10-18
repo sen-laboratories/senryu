@@ -36,6 +36,7 @@ All rights reserved.
 #include <Catalog.h>
 #include <Locale.h>
 #include <Menu.h>
+#include <Node.h>
 #include <MenuItem.h>
 #include <Path.h>
 #include <PopUpMenu.h>
@@ -45,6 +46,8 @@ All rights reserved.
 #include "Attributes.h"
 #include "Commands.h"
 #include "QueryContainerWindow.h"
+
+#include <sen/Sen.h>
 #include "QueryPoseView.h"
 #include "Shortcuts.h"
 
@@ -145,6 +148,13 @@ BQueryContainerWindow::SetupDefaultState()
 	WindowStateNodeOpener opener(this, true);
 		// this is our destination node, whatever it is for this window
 	if (opener.StreamNode() == NULL)
+		return;
+
+	// SEN: a query that names the type of its columns (SEN:columnsType, see BQueryPoseView::SetupDefaultColumnsIfNeeded) has no columns of the
+	// default state: they would be there already, and the ones of the type would not be set up
+	BString columnsType;
+	if (PoseView()->TargetModel() != NULL
+			&& BNode(PoseView()->TargetModel()->EntryRef()).ReadAttrString(sen::attr::kColumnsType, &columnsType) == B_OK)
 		return;
 
 	BString defaultStatePath(kQueryTemplates);
