@@ -1115,6 +1115,7 @@ TrackerSenRelations::MaterializeAll(const entry_ref& sourceRef, const char* view
 		folder.sourceRef = sourceRef;
 		folder.sourceId = sourceId;
 		folder.viewId = viewId;
+		folder.all = true;
 		RelationFolders::Instance().RegisterFolder(folder);
 	}
 	return B_OK;

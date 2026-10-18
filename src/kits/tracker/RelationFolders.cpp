@@ -182,7 +182,16 @@ RelationFolders::IsTopLevelFolder(const node_ref& node) const
 {
 	BAutolock lock(fLock);
 	auto found = fFolders.find(node);
-	return found != fFolders.end() && found->second.relationType.IsEmpty();
+	return found != fFolders.end() && found->second.relationType.IsEmpty() && !found->second.all;
+}
+
+
+bool
+RelationFolders::IsAllRelationsFolder(const node_ref& node) const
+{
+	BAutolock lock(fLock);
+	auto found = fFolders.find(node);
+	return found != fFolders.end() && found->second.all;
 }
 
 
@@ -480,22 +489,27 @@ RelationFolders::HandleDrop(const BMessage& drop, const node_ref& folderNode)
 				continue;
 			}
 
-			// the folder of the type (it is named after the relation), made when it is not there yet
-			BPath path;
-			if (TrackerSenRelations::RelationDirectoryPath(folder.viewId, target.relationType, &target.relationConfig, &path) != B_OK)
-				continue;
-			BEntry typeFolder(path.Path());
-			if (!typeFolder.Exists()) {
-				entry_ref created;
-				if (TrackerSenRelations::CreateRelationDirectory(folder.viewId, folder.sourceId, TrackerSenRelations::DisplayNameOf(folder.sourceRef).String(), target.relationType,
-						&target.relationConfig, &created) != B_OK) {
+			if (folder.all) {
+				// the folder of all relations has them all in it: the new one is shown there, not in a folder of its type (which nobody has open)
+				target.all = false;
+			} else {
+				// the folder of the type (it is named after the relation), made when it is not there yet
+				BPath path;
+				if (TrackerSenRelations::RelationDirectoryPath(folder.viewId, target.relationType, &target.relationConfig, &path) != B_OK)
 					continue;
+				BEntry typeFolder(path.Path());
+				if (!typeFolder.Exists()) {
+					entry_ref created;
+					if (TrackerSenRelations::CreateRelationDirectory(folder.viewId, folder.sourceId, TrackerSenRelations::DisplayNameOf(folder.sourceRef).String(), target.relationType,
+							&target.relationConfig, &created) != B_OK) {
+						continue;
+					}
 				}
+				typeFolder.SetTo(path.Path());
+				typeFolder.GetRef(&target.ref);
+				typeFolder.GetNodeRef(&target.node);
+				RegisterFolder(target);
 			}
-			typeFolder.SetTo(path.Path());
-			typeFolder.GetRef(&target.ref);
-			typeFolder.GetNodeRef(&target.node);
-			RegisterFolder(target);
 		}
 
 		FileInfo fileInfo;

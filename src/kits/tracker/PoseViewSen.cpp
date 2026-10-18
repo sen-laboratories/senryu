@@ -125,6 +125,30 @@ BPoseView::SetupRelationColumns()
 		return true;
 	}
 
+	// the folder of all the relations of a file: the targets of the relations of all types in one folder. The properties of the types that are in
+	// it (and of the generic reference, which a dropped file becomes), then when it changed, as in the folder of one type.
+	if (RelationFolders::Instance().IsAllRelationsFolder(*TargetModel()->NodeRef())) {
+		AddColumn(new BColumn(B_TRANSLATE("Name"), 145, B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));
+		std::set<std::string> relationTypes;
+		BDirectory all(TargetModel()->EntryRef());
+		BEntry each;
+		while (all.GetNextEntry(&each) == B_OK) {
+			BNode eachNode(&each);
+			char eachType[B_MIME_TYPE_LENGTH];
+			if (eachNode.InitCheck() == B_OK && BNodeInfo(&eachNode).GetType(eachType) == B_OK
+					&& strncmp(eachType, sen::mime::kRelationPrefix, strlen(sen::mime::kRelationPrefix)) == 0)
+				relationTypes.insert(eachType);
+		}
+		relationTypes.insert(sen::mime::kReferenceRelation);
+		for (const std::string& relationType : relationTypes) {
+			BMessage typeInfo;
+			if (TrackerSenRelations::GetRelationAttributeInfo(relationType.c_str(), &typeInfo) == B_OK)
+				addColumnsOf(typeInfo);
+		}
+		AddColumn(new BColumn(B_TRANSLATE("Modified"), 150, B_ALIGN_LEFT, kAttrStatModified, B_TIME_TYPE, true, false));
+		return true;
+	}
+
 	// the ontologies: the name, then what an ontology is about (the attributes of its type in the order of the schema: version, description,
 	// author...), and when it changed
 	if (IsOntologiesFolder(TargetModel())) {
