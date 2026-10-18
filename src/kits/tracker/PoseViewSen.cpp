@@ -133,7 +133,7 @@ BPoseView::SetupRelationColumns()
 	// the folder of all the relations of a file: the targets of the relations of all types in one folder. The properties of the types that are in
 	// it (and of the generic reference, which a dropped file becomes), then when it changed, as in the folder of one type.
 	if (RelationFolders::Instance().IsAllRelationsFolder(*TargetModel()->NodeRef())) {
-		AddColumn(new BColumn(B_TRANSLATE("Name"), 145, B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));
+		AddColumn(new BColumn(B_TRANSLATE("Name"), 240, B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));
 		std::set<std::string> relationTypes;
 		BDirectory all(TargetModel()->EntryRef());
 		BEntry each;
@@ -175,7 +175,7 @@ BPoseView::SetupRelationColumns()
 			|| TrackerSenRelations::GetRelationAttributeInfo(relationType, &attrInfo) != B_OK)
 		return false;
 
-	AddColumn(new BColumn(B_TRANSLATE("Name"), 145, B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));
+	AddColumn(new BColumn(B_TRANSLATE("Name"), 240, B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));
 
 	// what the folder contains can be of another type than the relation, e.g. what a type contains are its attributes: the
 	// properties of those come first, then the ones of the relation type (and of the relation supertype)
