@@ -5347,6 +5347,13 @@ BPoseView::MoveSelectionInto(Model* destFolder, BContainerWindow* srcWindow,
 		else
 			moveMode = kMoveSelectionTo;
 
+		// SEN: a file of a relation folder stands for the relation (a link to its target, with the properties of the relation): taken out of the
+		// folder it is copied and the relation stays. Only the Trash takes the file away (that removes the relation).
+		if (moveMode == kMoveSelectionTo && !destIsTrash && srcWindow->TargetModel() != NULL
+				&& RelationFolders::Instance().IsRelationFolder(*srcWindow->TargetModel()->NodeRef())) {
+			moveMode = kCopySelectionTo;
+		}
+
 		// move will replace current selection
 		if (moveMode == kMoveSelectionTo && destWindow != NULL && destWindow->LockLooper()) {
 			destWindow->PoseView()->ClearSelection();

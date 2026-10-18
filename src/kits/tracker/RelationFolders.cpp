@@ -12,7 +12,9 @@
 #include <Messenger.h>
 #include <NodeMonitor.h>
 #include <NodeInfo.h>
+#include <FindDirectory.h>
 #include <Path.h>
+#include <Volume.h>
 
 #include <string.h>
 
@@ -253,6 +255,22 @@ RelationFolders::EntryRemoved(const node_ref& file)
 }
 
 
+/** whether the folder is the Trash of its volume or in it */
+static bool
+IsInTrash(const node_ref& directory)
+{
+	BDirectory folder(&directory);
+	BEntry entry;
+	BPath path, trash;
+	BVolume volume(directory.device);
+	if (folder.InitCheck() != B_OK || folder.GetEntry(&entry) != B_OK || entry.GetPath(&path) != B_OK
+			|| find_directory(B_TRASH_DIRECTORY, &trash, false, &volume) != B_OK)
+		return false;
+	size_t length = strlen(trash.Path());
+	return strncmp(path.Path(), trash.Path(), length) == 0 && (path.Path()[length] == '\0' || path.Path()[length] == '/');
+}
+
+
 bool
 RelationFolders::EntryMoved(const node_ref& file, const node_ref& newDirectory)
 {
@@ -281,8 +299,14 @@ RelationFolders::EntryMoved(const node_ref& file, const node_ref& newDirectory)
 		return MoveRelation(info, target, file) == B_OK;
 	}
 
-	// out of the relation folders (Trash, any other folder): the relation is gone
-	return EntryRemoved(file);
+	// into the Trash: the relation is gone
+	if (IsInTrash(newDirectory))
+		return EntryRemoved(file);
+
+	// into any other folder: the file is a link to the target of the relation, which stays (it is not a file of the folder any more)
+	BAutolock lock(fLock);
+	fFiles.erase(file);
+	return true;
 }
 
 
