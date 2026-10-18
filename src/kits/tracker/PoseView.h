@@ -652,6 +652,7 @@ protected:
 	void HandleAttrMenuItemSelected(BMessage*);
 	/** SEN: a folder of relations shows all viewable attributes of its relation type as columns. Returns false if the folder is not one. */
 	bool SetupRelationColumns();
+	void				AddColumnsOfAttributeInfo(const BMessage& info);
 	void TryUpdatingBrokenLinks();
 		// ran a little after a volume gets mounted
 

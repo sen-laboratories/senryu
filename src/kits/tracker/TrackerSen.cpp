@@ -596,6 +596,10 @@ TTracker::PrepareRelationFolder(BMessage *message, entry_ref* relationDirRef)
 			PRINT(("could not create directory for relation %s: %s\n", relationType, strerror(result)));
 			return result;
 		}
+		// a self relation (what a document contains) is extracted by its plugin now, so that its folder has the structure to enter (it is not
+		// extracted when a folder is entered)
+		if (relationConf.GetBool(sen::conf::kSelf, false))
+			TrackerSenRelations::MaterializeSelfRelations(srcRef, srcId, relationDirRef);
 	}
 
 	// return parent dir that holds all relations

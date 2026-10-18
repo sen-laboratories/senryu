@@ -40,6 +40,8 @@ All rights reserved.
 #include <Catalog.h>
 #include <Debug.h>
 #include <Locale.h>
+#include <MimeType.h>
+#include <Node.h>
 #include <NodeMonitor.h>
 #include <Query.h>
 #include <Volume.h>
@@ -55,6 +57,8 @@ All rights reserved.
 #include "MimeTypeList.h"
 #include "MimeTypes.h"
 #include "Tracker.h"
+
+#include <sen/Sen.h>
 
 #include <fs_attr.h>
 #include <fs_query.h>
@@ -154,6 +158,19 @@ BQueryPoseView::SetupDefaultColumnsIfNeeded()
 	// in case there were errors getting some columns
 	if (CountColumns() != 0)
 		return;
+
+	// SEN: a query that names a type (the attribute SEN:columnsType of the query file: the plugins of the menu of SEN) shows the attributes of that
+	// type as columns, after the name
+	BString columnsType;
+	BMimeType columnsMime;
+	BMessage columnsInfo;
+	if (TargetModel() != NULL && BNode(TargetModel()->EntryRef()).ReadAttrString(sen::attr::kColumnsType, &columnsType) == B_OK
+			&& columnsMime.SetTo(columnsType.String()) == B_OK && columnsMime.GetAttrInfo(&columnsInfo) == B_OK) {
+		AddColumn(new BColumn(B_TRANSLATE("Name"), 145, B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));
+		AddColumnsOfAttributeInfo(columnsInfo);
+		AddColumn(new BColumn(B_TRANSLATE("Modified"), 150, B_ALIGN_LEFT, kAttrStatModified, B_TIME_TYPE, true, false));
+		return;
+	}
 
 	AddColumn(new BColumn(B_TRANSLATE("Name"), 145,
 		B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));

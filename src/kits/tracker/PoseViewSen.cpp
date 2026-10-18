@@ -89,33 +89,38 @@ IsOntologiesFolder(const Model* model)
 }
 
 
+/** the columns for the attributes of an attribute info that are meant to be displayed (and not there yet) */
+void
+BPoseView::AddColumnsOfAttributeInfo(const BMessage& info)
+{
+	const char* publicName;
+	for (int32 index = 0; info.FindString("attr:public_name", index, &publicName) == B_OK; index++) {
+		int32 type, align, width;
+		bool editable;
+		const char* attrName;
+		if (!info.FindBool("attr:viewable", index)
+				|| info.FindString("attr:name", index, &attrName) != B_OK
+				|| info.FindInt32("attr:type", index, &type) != B_OK
+				|| info.FindBool("attr:editable", index, &editable) != B_OK
+				|| info.FindInt32("attr:width", index, &width) != B_OK
+				|| info.FindInt32("attr:alignment", index, &align) != B_OK
+				|| ColumnFor(AttrHashString(attrName, (uint32)type)) != NULL)
+			continue;
+
+		const char* displayAs = NULL;
+		info.FindString("attr:display_as", index, &displayAs);
+		AddColumn(new BColumn(publicName, width, (alignment)align, attrName, type, displayAs, false, editable));
+	}
+}
+
+
 bool
 BPoseView::SetupRelationColumns()
 {
 	if (TargetModel() == NULL)
 		return false;
 
-	// the columns for the attributes of an attribute info that are meant to be displayed (and not there yet)
-	auto addColumnsOf = [this](const BMessage& info) {
-		const char* publicName;
-		for (int32 index = 0; info.FindString("attr:public_name", index, &publicName) == B_OK; index++) {
-			int32 type, align, width;
-			bool editable;
-			const char* attrName;
-			if (!info.FindBool("attr:viewable", index)
-					|| info.FindString("attr:name", index, &attrName) != B_OK
-					|| info.FindInt32("attr:type", index, &type) != B_OK
-					|| info.FindBool("attr:editable", index, &editable) != B_OK
-					|| info.FindInt32("attr:width", index, &width) != B_OK
-					|| info.FindInt32("attr:alignment", index, &align) != B_OK
-					|| ColumnFor(AttrHashString(attrName, (uint32)type)) != NULL)
-				continue;
-
-			const char* displayAs = NULL;
-			info.FindString("attr:display_as", index, &displayAs);
-			AddColumn(new BColumn(publicName, width, (alignment)align, attrName, type, displayAs, false, editable));
-		}
-	};
+	auto addColumnsOf = [this](const BMessage& info) { AddColumnsOfAttributeInfo(info); };
 
 	// the folder of all the relations of a file: its items are the folders of the relation types, named after the relation. Only the name
 	// and when it changed: the folders have no size, and none of the properties of the relations are theirs.
