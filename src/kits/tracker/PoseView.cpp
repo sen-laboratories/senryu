@@ -2169,6 +2169,11 @@ BPoseView::RefreshMimeTypeList()
 	fMimeTypeList.MakeEmpty();
 	fMimeTypeListIsDirty = false;
 
+	// SEN: a folder of all the relations of a file takes dropped files as generic references: its columns have their properties, so the Attributes
+	// menu has to have them, too
+	if (TargetModel() != NULL && RelationFolders::Instance().IsAllRelationsFolder(*TargetModel()->NodeRef()))
+		AddMimeType(sen::mime::kReferenceRelation);
+
 	for (int32 index = 0;; index++) {
 		BPose* pose = PoseAtIndex(index);
 		if (pose == NULL)

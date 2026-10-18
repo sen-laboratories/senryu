@@ -33,8 +33,13 @@
 bool
 TTracker::HandleSenMessage(BMessage* message)
 {
+	// "Open related..." itself (the menu, or its shortcut) opens all the relations of the file in one folder, as the menu of a folder opens the folder
+	// with everything in it; the menus of the types open one type
+	if (message->what == kOpenRelations && message->HasRef(sen::key::kSourceRef))
+		message->what = sen::cmd::kOpenAllRelationsView;
+
 	if (message->what == sen::cmd::kOpenAllRelationsView) {
-		// "Show all Relations" in the Open related menu: all outgoing relations of the file in one folder
+		// all outgoing relations of the file in one folder
 		entry_ref source, folderRef;
 		status_t result = message->FindRef(sen::key::kSourceRef, &source);
 		if (result == B_OK) {

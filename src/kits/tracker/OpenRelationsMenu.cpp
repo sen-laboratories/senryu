@@ -330,16 +330,6 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 
 	PRINT(("got %d compatible relation items.\n", countRelations));
 
-	// above the relation types, separated from them: all the relations of the file in one list ("Open related..." itself opens the folder of the types)
-	if (countRelations > 0 && fSenCmd == sen::cmd::kRelationsGetAll) {
-		BMessage* showAll = new BMessage(sen::cmd::kOpenAllRelationsView);
-		showAll->AddRef(sen::key::kSourceRef, sourceRef);
-		BMenuItem* showAllItem = new BMenuItem("Show all Relations", showAll);
-		showAllItem->SetTarget(be_app_messenger);
-		AddItem(showAllItem, 0);
-		AddItem(new BSeparatorItem(), 1);
-	}
-
 	// store SEN:ID and relationType also in root relation menu item message itself,
 	// so we can use it for the top-level relation-view
 	// (the item of this menu: not one that is looked up by its command in the parent menu, which may not be there, e.g. in the
