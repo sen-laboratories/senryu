@@ -46,28 +46,29 @@ int32 TemplateUtils::GetInstalledTemplates(
 
 		entry.GetName(fileName);
 		if (nodeInfo.InitCheck() == B_OK) {
+			// a template that is a directory is a submenu (of an ontology, e.g.): its templates are collected. The folder has no type of its own
+			// (the type buffer would hold garbage), so this comes before the type of the entry is asked for.
+			if (entry.IsDirectory()) {
+				BPath subdirPath;
+				if (entry.GetPath(&subdirPath) == B_OK) {
+					int32 subDirResult = GetInstalledTemplates(
+						subdirPath.Path(), mimeIncludes, mimeExcludes, templatesMsg);
+					if (subDirResult < 0)
+						return subDirResult;	// return error
+					else
+						templatesCount += subDirResult;
+				}
+				continue;
+			}
+
 			char mimeType[B_MIME_TYPE_LENGTH];
+			mimeType[0] = '\0';
 			nodeInfo.GetType(mimeType);
 
 			BMimeType mime(mimeType);
 			if (mime.IsValid()) {
 				entry_ref ref;
 				entry.GetRef(&ref);
-
-				// Check if the template is a directory
-				BDirectory dir(&entry);
-				if (dir.InitCheck() == B_OK) {
-					BPath subdirPath;
-					if (entry.GetPath(&subdirPath) == B_OK) {
-						int32 subDirResult = GetInstalledTemplates(
-							subdirPath.Path(), mimeIncludes, mimeExcludes, templatesMsg);
-						if (subDirResult < 0)
-							return subDirResult;	// return error
-						else
-							templatesCount += subDirResult;
-					}
-					continue;
-				}
 
 				// filter for included/excluded MIME types
 				// filters are optional, but IF incldue filter is given, the element MUST be included,
