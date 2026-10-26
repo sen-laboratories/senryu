@@ -47,6 +47,7 @@ public:
 		BString		relationType;	///< empty for the top level (the folder of all types)
 		BString		viewId;			///< the folder (TSID) that holds this view: the top level and the folders of the types
 		BMessage	relationConfig;
+		bool		all = false;	///< the folder of all the relations of a file (of all types, in one folder): a dropped file is a generic relation that is shown in it
 	};
 
 	/** a file that stands for a stored relation */
@@ -72,6 +73,8 @@ public:
 	bool		IsRelationFolder(const node_ref& node) const;
 	/** The folder of all the relation types of a file ("Open related..."): its items are the folders of the types. */
 	bool		IsTopLevelFolder(const node_ref& node) const;
+	/** the folder of all the relations of a file, with the relations of all types in it (not the one with a folder for each type) */
+	bool		IsAllRelationsFolder(const node_ref& node) const;
 	bool		IsRelationFile(const node_ref& node) const;
 
 	// What happens in a relation folder, reported by the pose views. All return true if the event was about a relation.

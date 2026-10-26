@@ -95,6 +95,10 @@ public:
 	 * @param folderRef receives the folder
 	 */
 	static status_t	MaterializeAll(const entry_ref& sourceRef, const char* viewId, entry_ref* folderRef);
+	/** The self relations of a file (extracted by a plugin) at the root level of a folder, with what is below them as folders. Nothing if there are none. */
+	static void		MaterializeSelfRelations(const entry_ref& sourceRef, const BString& sourceId, entry_ref* folderRef);
+	/** Whether the folder is one of the views of relations (it is below the folder where they are made), stored or self: its files stand for relations. */
+	static bool		IsInRelationView(const entry_ref* ref);
 	static status_t	MaterializeType(const entry_ref& sourceRef, const char* viewId,
 						const char* relationType, entry_ref* typeDirRef);
 	/**

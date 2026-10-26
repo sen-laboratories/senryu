@@ -12,7 +12,9 @@
 #include <Messenger.h>
 #include <NodeMonitor.h>
 #include <NodeInfo.h>
+#include <FindDirectory.h>
 #include <Path.h>
+#include <Volume.h>
 
 #include <string.h>
 
@@ -182,7 +184,16 @@ RelationFolders::IsTopLevelFolder(const node_ref& node) const
 {
 	BAutolock lock(fLock);
 	auto found = fFolders.find(node);
-	return found != fFolders.end() && found->second.relationType.IsEmpty();
+	return found != fFolders.end() && found->second.relationType.IsEmpty() && !found->second.all;
+}
+
+
+bool
+RelationFolders::IsAllRelationsFolder(const node_ref& node) const
+{
+	BAutolock lock(fLock);
+	auto found = fFolders.find(node);
+	return found != fFolders.end() && found->second.all;
 }
 
 
@@ -244,6 +255,22 @@ RelationFolders::EntryRemoved(const node_ref& file)
 }
 
 
+/** whether the folder is the Trash of its volume or in it */
+static bool
+IsInTrash(const node_ref& directory)
+{
+	BDirectory folder(&directory);
+	BEntry entry;
+	BPath path, trash;
+	BVolume volume(directory.device);
+	if (folder.InitCheck() != B_OK || folder.GetEntry(&entry) != B_OK || entry.GetPath(&path) != B_OK
+			|| find_directory(B_TRASH_DIRECTORY, &trash, false, &volume) != B_OK)
+		return false;
+	size_t length = strlen(trash.Path());
+	return strncmp(path.Path(), trash.Path(), length) == 0 && (path.Path()[length] == '\0' || path.Path()[length] == '/');
+}
+
+
 bool
 RelationFolders::EntryMoved(const node_ref& file, const node_ref& newDirectory)
 {
@@ -272,8 +299,14 @@ RelationFolders::EntryMoved(const node_ref& file, const node_ref& newDirectory)
 		return MoveRelation(info, target, file) == B_OK;
 	}
 
-	// out of the relation folders (Trash, any other folder): the relation is gone
-	return EntryRemoved(file);
+	// into the Trash: the relation is gone
+	if (IsInTrash(newDirectory))
+		return EntryRemoved(file);
+
+	// into any other folder: the file is a link to the target of the relation, which stays (it is not a file of the folder any more)
+	BAutolock lock(fLock);
+	fFiles.erase(file);
+	return true;
 }
 
 
@@ -480,22 +513,27 @@ RelationFolders::HandleDrop(const BMessage& drop, const node_ref& folderNode)
 				continue;
 			}
 
-			// the folder of the type (it is named after the relation), made when it is not there yet
-			BPath path;
-			if (TrackerSenRelations::RelationDirectoryPath(folder.viewId, target.relationType, &target.relationConfig, &path) != B_OK)
-				continue;
-			BEntry typeFolder(path.Path());
-			if (!typeFolder.Exists()) {
-				entry_ref created;
-				if (TrackerSenRelations::CreateRelationDirectory(folder.viewId, folder.sourceId, TrackerSenRelations::DisplayNameOf(folder.sourceRef).String(), target.relationType,
-						&target.relationConfig, &created) != B_OK) {
+			if (folder.all) {
+				// the folder of all relations has them all in it: the new one is shown there, not in a folder of its type (which nobody has open)
+				target.all = false;
+			} else {
+				// the folder of the type (it is named after the relation), made when it is not there yet
+				BPath path;
+				if (TrackerSenRelations::RelationDirectoryPath(folder.viewId, target.relationType, &target.relationConfig, &path) != B_OK)
 					continue;
+				BEntry typeFolder(path.Path());
+				if (!typeFolder.Exists()) {
+					entry_ref created;
+					if (TrackerSenRelations::CreateRelationDirectory(folder.viewId, folder.sourceId, TrackerSenRelations::DisplayNameOf(folder.sourceRef).String(), target.relationType,
+							&target.relationConfig, &created) != B_OK) {
+						continue;
+					}
 				}
+				typeFolder.SetTo(path.Path());
+				typeFolder.GetRef(&target.ref);
+				typeFolder.GetNodeRef(&target.node);
+				RegisterFolder(target);
 			}
-			typeFolder.SetTo(path.Path());
-			typeFolder.GetRef(&target.ref);
-			typeFolder.GetNodeRef(&target.node);
-			RegisterFolder(target);
 		}
 
 		FileInfo fileInfo;

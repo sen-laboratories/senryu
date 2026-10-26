@@ -89,38 +89,67 @@ IsOntologiesFolder(const Model* model)
 }
 
 
+/** the columns for the attributes of an attribute info that are meant to be displayed (and not there yet) */
+void
+BPoseView::AddColumnsOfAttributeInfo(const BMessage& info)
+{
+	const char* publicName;
+	for (int32 index = 0; info.FindString("attr:public_name", index, &publicName) == B_OK; index++) {
+		int32 type, align, width;
+		bool editable;
+		const char* attrName;
+		if (!info.FindBool("attr:viewable", index)
+				|| info.FindString("attr:name", index, &attrName) != B_OK
+				|| info.FindInt32("attr:type", index, &type) != B_OK
+				|| info.FindBool("attr:editable", index, &editable) != B_OK
+				|| info.FindInt32("attr:width", index, &width) != B_OK
+				|| info.FindInt32("attr:alignment", index, &align) != B_OK
+				|| ColumnFor(AttrHashString(attrName, (uint32)type)) != NULL)
+			continue;
+
+		const char* displayAs = NULL;
+		info.FindString("attr:display_as", index, &displayAs);
+		AddColumn(new BColumn(publicName, width, (alignment)align, attrName, type, displayAs, false, editable));
+	}
+}
+
+
 bool
 BPoseView::SetupRelationColumns()
 {
 	if (TargetModel() == NULL)
 		return false;
 
-	// the columns for the attributes of an attribute info that are meant to be displayed (and not there yet)
-	auto addColumnsOf = [this](const BMessage& info) {
-		const char* publicName;
-		for (int32 index = 0; info.FindString("attr:public_name", index, &publicName) == B_OK; index++) {
-			int32 type, align, width;
-			bool editable;
-			const char* attrName;
-			if (!info.FindBool("attr:viewable", index)
-					|| info.FindString("attr:name", index, &attrName) != B_OK
-					|| info.FindInt32("attr:type", index, &type) != B_OK
-					|| info.FindBool("attr:editable", index, &editable) != B_OK
-					|| info.FindInt32("attr:width", index, &width) != B_OK
-					|| info.FindInt32("attr:alignment", index, &align) != B_OK
-					|| ColumnFor(AttrHashString(attrName, (uint32)type)) != NULL)
-				continue;
-
-			const char* displayAs = NULL;
-			info.FindString("attr:display_as", index, &displayAs);
-			AddColumn(new BColumn(publicName, width, (alignment)align, attrName, type, displayAs, false, editable));
-		}
-	};
+	auto addColumnsOf = [this](const BMessage& info) { AddColumnsOfAttributeInfo(info); };
 
 	// the folder of all the relations of a file: its items are the folders of the relation types, named after the relation. Only the name
 	// and when it changed: the folders have no size, and none of the properties of the relations are theirs.
 	if (RelationFolders::Instance().IsTopLevelFolder(*TargetModel()->NodeRef())) {
 		AddColumn(new BColumn(B_TRANSLATE("Name"), 200, B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));
+		AddColumn(new BColumn(B_TRANSLATE("Modified"), 150, B_ALIGN_LEFT, kAttrStatModified, B_TIME_TYPE, true, false));
+		return true;
+	}
+
+	// the folder of all the relations of a file: the targets of the relations of all types in one folder. The properties of the types that are in
+	// it (and of the generic reference, which a dropped file becomes), then when it changed, as in the folder of one type.
+	if (RelationFolders::Instance().IsAllRelationsFolder(*TargetModel()->NodeRef())) {
+		AddColumn(new BColumn(B_TRANSLATE("Name"), 240, B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));
+		std::set<std::string> relationTypes;
+		BDirectory all(TargetModel()->EntryRef());
+		BEntry each;
+		while (all.GetNextEntry(&each) == B_OK) {
+			BNode eachNode(&each);
+			char eachType[B_MIME_TYPE_LENGTH];
+			if (eachNode.InitCheck() == B_OK && BNodeInfo(&eachNode).GetType(eachType) == B_OK
+					&& strncmp(eachType, sen::mime::kRelationPrefix, strlen(sen::mime::kRelationPrefix)) == 0)
+				relationTypes.insert(eachType);
+		}
+		relationTypes.insert(sen::mime::kReferenceRelation);
+		for (const std::string& relationType : relationTypes) {
+			BMessage typeInfo;
+			if (TrackerSenRelations::GetRelationAttributeInfo(relationType.c_str(), &typeInfo) == B_OK)
+				addColumnsOf(typeInfo);
+		}
 		AddColumn(new BColumn(B_TRANSLATE("Modified"), 150, B_ALIGN_LEFT, kAttrStatModified, B_TIME_TYPE, true, false));
 		return true;
 	}
@@ -146,7 +175,7 @@ BPoseView::SetupRelationColumns()
 			|| TrackerSenRelations::GetRelationAttributeInfo(relationType, &attrInfo) != B_OK)
 		return false;
 
-	AddColumn(new BColumn(B_TRANSLATE("Name"), 145, B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));
+	AddColumn(new BColumn(B_TRANSLATE("Name"), 240, B_ALIGN_LEFT, kAttrStatName, B_STRING_TYPE, true, true));
 
 	// what the folder contains can be of another type than the relation, e.g. what a type contains are its attributes: the
 	// properties of those come first, then the ones of the relation type (and of the relation supertype)

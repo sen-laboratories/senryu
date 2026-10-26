@@ -2172,6 +2172,11 @@ BPoseView::RefreshMimeTypeList()
 	fMimeTypeListIsDirty = false;
 	sen::types::Registry* semanticTypes = NULL;		// (made when a file has a semantic type: it reads files)
 
+	// SEN: a folder of all the relations of a file takes dropped files as generic references: its columns have their properties, so the Attributes
+	// menu has to have them, too
+	if (TargetModel() != NULL && RelationFolders::Instance().IsAllRelationsFolder(*TargetModel()->NodeRef()))
+		AddMimeType(sen::mime::kReferenceRelation);
+
 	for (int32 index = 0;; index++) {
 		BPose* pose = PoseAtIndex(index);
 		if (pose == NULL)
@@ -5356,6 +5361,14 @@ BPoseView::MoveSelectionInto(Model* destFolder, BContainerWindow* srcWindow,
 			moveMode = kCopySelectionTo;
 		else
 			moveMode = kMoveSelectionTo;
+
+		// SEN: a file of a relation folder (stored, or a self relation of a plugin) stands for the relation (a link to its target, with the properties of the
+		// relation, the deep link): taken out of the folder it is copied and the relation stays. Only the Trash takes the file away (that removes the relation).
+		if (moveMode == kMoveSelectionTo && !destIsTrash && srcWindow->TargetModel() != NULL
+				&& (RelationFolders::Instance().IsRelationFolder(*srcWindow->TargetModel()->NodeRef())
+					|| TrackerSenRelations::IsInRelationView(srcWindow->TargetModel()->EntryRef()))) {
+			moveMode = kCopySelectionTo;
+		}
 
 		// move will replace current selection
 		if (moveMode == kMoveSelectionTo && destWindow != NULL && destWindow->LockLooper()) {
