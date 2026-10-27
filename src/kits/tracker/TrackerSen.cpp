@@ -22,6 +22,7 @@
 #include "TrackerSenRelations.h"
 
 #include <sen/Sen.h>
+#include <sen/SenOntoCore.h>
 #include <sen/Sensei.h>
 #include "Tracker.h"
 #include "TrackerSenLog.h"
@@ -208,6 +209,7 @@ TTracker::HandleSenMessage(BMessage* message)
 				BString srcId, targetId;
 
 				if (TrackerSenRelations::ResolveRelation(&srcRef, &srcId, &targetId)) {
+					// the file of a relation in a relation view: it knows its target
 					PRINT(("resolved SEN Relation target %s for ref %s\n", targetId.String(), srcRef.name));
 
 					result = PrepareLaunchTarget(&srcRef, targetId.String(), &targetRef, &relationProperties);
@@ -215,22 +217,27 @@ TTracker::HandleSenMessage(BMessage* message)
 						PRINT(("failed to resolve relation target for ref %s: %s\n", srcRef.name, strerror(result)));
 						return true;
 					}
-					// the navigator of the relation type if it has one (not Tracker: that is what opens any file),
-					// else the default app of the target, which should be a SEN relation navigator
-					char navigatorSig[B_MIME_TYPE_LENGTH];
-					result = B_ERROR;
-					if (BMimeType(relationType.String()).GetPreferredApp(navigatorSig) == B_OK
-							&& strcasecmp(navigatorSig, kTrackerSignature) != 0) {
-						result = be_roster->FindApp(navigatorSig, &senHandlerRef);
-					}
-					if (result != B_OK)
-						result = be_roster->FindApp(&srcRef, &senHandlerRef);
-					if (result != B_OK) {
-						PRINT(("failed to find default app for ref %s: %s\n", srcRef.name, strerror(result)));
-						return true;
-					}
 				} else {
-					PRINT(("could not resolve relation for ref %s.\n", srcRef.name));
+					// an item of the menu of the relation: its ref is the target itself (no file of a relation), what is known of the relation
+					// is in the properties of the item
+					PRINT(("no relation file, %s is the target itself.\n", srcRef.name));
+					targetRef = srcRef;
+				}
+
+				// the navigator of the relation type if it has one (not Tracker: that is what opens any file),
+				// else the default app of the file, which should be a SEN relation navigator (for a target that is opened from a menu: the app
+				// of the target)
+				char navigatorSig[B_MIME_TYPE_LENGTH];
+				result = B_ERROR;
+				if (BMimeType(relationType.String()).GetPreferredApp(navigatorSig) == B_OK
+						&& strcasecmp(navigatorSig, kTrackerSignature) != 0) {
+					result = be_roster->FindApp(navigatorSig, &senHandlerRef);
+				}
+				if (result != B_OK)
+					result = be_roster->FindApp(&srcRef, &senHandlerRef);
+				if (result != B_OK) {
+					PRINT(("failed to find default app for ref %s: %s\n", srcRef.name, strerror(result)));
+					return true;
 				}
 			}
 
@@ -504,6 +511,38 @@ status_t TTracker::EditNewEntity(const entry_ref* ref)
 
 	return result;
 }
+
+/**
+ * An ontology (a file of its own type, in the folder of the ontologies of SEN) is shown as a folder, that of its Dependency relations: what it defines
+ * and what it needs. That is what opening it does, instead of what its type is for (FileTypes, with one of the types that it defines). For now every
+ * ontology is shown so, it is a type of our own; what a type shows when it is opened could be a setting of its own later.
+ * Returns false (nothing is done) for any other file, and when the relations cannot be shown (no SEN server): it is opened as any file then.
+ */
+bool
+TTracker::OpenOntologyAsFolder(const entry_ref* ref)
+{
+	char type[B_MIME_TYPE_LENGTH];
+	BNode node(ref);
+	if (node.InitCheck() != B_OK || BNodeInfo(&node).GetType(type) != B_OK
+			|| strcasecmp(type, sen::mime::kOntology) != 0) {
+		return false;
+	}
+
+	BString viewId;
+	TrackerSenRelations::NewViewId(&viewId);
+	entry_ref folderRef;
+	status_t result = TrackerSenRelations::MaterializeType(*ref, viewId.String(), sen::onto::core::mime::kDependency, &folderRef);
+	if (result != B_OK) {
+		PRINT(("could not show the relations of the ontology %s: %s\n", ref->name, strerror(result)));
+		return false;
+	}
+
+	BMessage* open = new BMessage(B_REFS_RECEIVED);
+	open->AddRef("refs", &folderRef);
+	be_app_messenger.SendMessage(open);
+	return true;
+}
+
 
 status_t TTracker::PrepareLaunchTarget(
 	const entry_ref* srcRef, const char* targetId, entry_ref* targetRef, BMessage* params)
