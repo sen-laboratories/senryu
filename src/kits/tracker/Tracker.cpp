@@ -867,6 +867,12 @@ TTracker::OpenRef(const entry_ref* ref, const node_ref* nodeToClose,
 		return result;
 	}
 
+	// SEN: an ontology is opened as the folder of its relations
+	if (selector != kOpenWith && !model->IsContainer() && OpenOntologyAsFolder(ref)) {
+		delete model;
+		return B_OK;
+	}
+
 	bool openAsContainer = model->IsContainer();
 
 	if (openAsContainer && selector != kOpenWith) {
