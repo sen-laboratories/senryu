@@ -193,6 +193,7 @@ extern "C" void
 os_preempt_disable()
 {
 	thread_get_current_thread()->cpu->reschedule_disabled++;
+	memory_full_barrier();
 }
 
 
@@ -200,8 +201,10 @@ extern "C" void
 os_preempt_enable()
 {
 	ASSERT(os_preempt_disabled());
-	thread_get_current_thread()->cpu->reschedule_disabled--;
-	if (os_return_needed())
+
+	Thread* thread = thread_get_current_thread();
+	thread->cpu->reschedule_disabled--;
+	if (thread->cpu->invoke_scheduler)
 		scheduler_reschedule_if_necessary();
 }
 
@@ -437,7 +440,7 @@ os_vmspace_destroy(os_vmspace_t *vm)
 		map->Unlock();
 	}
 
-	vm->address_space->Put();
+	vm->address_space->RemoveAndPut();
 	os_mem_free(vm, sizeof(os_vmspace_t));
 }
 

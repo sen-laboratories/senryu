@@ -1042,7 +1042,7 @@ CASE_CSI_EXCL,
 CASE_ESC_IGNORE,
 CASE_ESC_IGNORE,
 /*	$		%		&		'	*/
-CASE_ESC_IGNORE,
+CASE_CSI_DOL,
 CASE_ESC_IGNORE,
 CASE_ESC_IGNORE,
 CASE_ESC_IGNORE,
@@ -3604,7 +3604,7 @@ CASE_SJIS_INSTRING,
 
 /* DEC Special Graphic Character Set - mix of xterm
    definitions and ncurses extended characters (ACS_)  */
-const char* gLineDrawGraphSet[96] =
+const char* gLineDrawCharacterSet[96] =
 {
 //	SP		!		"		#
 NULL,
@@ -3695,6 +3695,7 @@ NULL,
 NULL,
 NULL,
 NULL,
+
 //	\		]		^		_
 NULL,
 NULL,
@@ -3715,7 +3716,7 @@ NULL,
 
 //	h		i		j		k
 "\xE2\x90\xA4", // xterm:symbol for newline (ACS_BOARD)
-"\xE2\x98\x83", // ACS_LANTERN (xterm:symbol for vert.tab: \xE2\x90\x8B)
+"\xE2\x90\x8B", // xterm:symbol for vert.tab (ACS_LANTERN: "\xE2\x98\x83")
 "\xE2\x94\x98", // ACS_LRCORNER
 "\xE2\x94\x90", // ACS_URCORNER
 

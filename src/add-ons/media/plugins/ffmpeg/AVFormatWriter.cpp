@@ -395,14 +395,13 @@ AVFormatWriter::~AVFormatWriter()
 	TRACE("AVFormatWriter::~AVFormatWriter\n");
 
 	// Free the streams and close the AVCodecContexts
-	for (unsigned i = 0; i < fFormatContext->nb_streams; i++) {
-		av_freep(&fFormatContext->streams[i]->codecpar);
-		av_freep(&fFormatContext->streams[i]);
+	if (fFormatContext != NULL)
+		avformat_free_context(fFormatContext);
+	if (fIOContext != NULL) {
+		// Frees the buffer pointer and sets it to NULL
+		av_freep(&fIOContext->buffer);
+		avio_context_free(&fIOContext);
 	}
-
-	avformat_free_context(fFormatContext);
-	av_free(fIOContext->buffer);
-	av_free(fIOContext);
 }
 
 
@@ -543,6 +542,9 @@ AVFormatWriter::AllocateCookie(void** _cookie, media_format* format,
 	StreamCookie* cookie = new(std::nothrow) StreamCookie(fFormatContext,
 		&fStreamLock);
 
+	if (cookie == NULL)
+		return B_NO_MEMORY;
+
 	status_t ret = cookie->Init(format, codecInfo);
 	if (ret != B_OK) {
 		delete cookie;
@@ -635,20 +637,20 @@ AVFormatWriter::_Seek(void* cookie, off_t offset, int whence)
 
 	AVFormatWriter* writer = reinterpret_cast<AVFormatWriter*>(cookie);
 
-	BMediaIO* mediaIO = dynamic_cast<BMediaIO*>(writer->fTarget);
-	if (mediaIO == NULL)
+	BPositionIO* positionIO = dynamic_cast<BPositionIO*>(writer->fTarget);
+	if (positionIO == NULL)
 		return -1;
 
 	// Support for special file size retrieval API without seeking anywhere:
 	if (whence == AVSEEK_SIZE) {
 		off_t size;
-		if (mediaIO->GetSize(&size) == B_OK)
+		if (positionIO->GetSize(&size) == B_OK)
 			return size;
 
 		return -1;
 	}
 
-	off_t position = mediaIO->Seek(offset, whence);
+	off_t position = positionIO->Seek(offset, whence);
 	TRACE_IO("  position: %lld\n", position);
 	if (position < 0)
 		return -1;

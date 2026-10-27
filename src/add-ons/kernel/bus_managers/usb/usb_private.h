@@ -13,6 +13,9 @@
 #include <device_manager.h>
 #include <bus/USB.h>
 
+#include <USB_spec.h>
+#include <usb/USB_hub.h>
+
 #include "usbspec_private.h"
 #include <lock.h>
 #include <Referenceable.h>
@@ -338,8 +341,6 @@ virtual	const char *					TypeName() const { return "pipe"; }
 		size_t							MaxPacketSize() const
 											{ return fMaxPacketSize; }
 		uint8							Interval() const { return fInterval; }
-
-		// SuperSpeed-only parameters
 		uint8							MaxBurst() const
 											{ return fMaxBurst; }
 		uint16							BytesPerInterval() const

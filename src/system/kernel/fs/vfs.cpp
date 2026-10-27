@@ -5312,6 +5312,7 @@ vfs_setrlimit(int resource, const struct rlimit* rlp)
 		case RLIMIT_NOFILE:
 			/* TODO: check getuid() */
 			if (rlp->rlim_max != RLIM_SAVED_MAX
+				&& rlp->rlim_max != UINT32_MAX
 				&& rlp->rlim_max != MAX_FD_TABLE_SIZE)
 				return B_NOT_ALLOWED;
 
@@ -5321,6 +5322,7 @@ vfs_setrlimit(int resource, const struct rlimit* rlp)
 		case RLIMIT_NOVMON:
 			/* TODO: check getuid() */
 			if (rlp->rlim_max != RLIM_SAVED_MAX
+				&& rlp->rlim_max != UINT32_MAX
 				&& rlp->rlim_max != MAX_NODE_MONITORS)
 				return B_NOT_ALLOWED;
 
@@ -8986,6 +8988,9 @@ _user_mount(const char* userPath, const char* userDevice,
 	const char* userFileSystem, uint32 flags, const char* userArgs,
 	size_t argsLength)
 {
+	if (geteuid() != 0)
+		return B_NOT_ALLOWED;
+
 	char fileSystem[B_FILE_NAME_LENGTH];
 	KPath path, device;
 	char* args = NULL;
@@ -9054,6 +9059,9 @@ _user_mount(const char* userPath, const char* userDevice,
 status_t
 _user_unmount(const char* userPath, uint32 flags)
 {
+	if (geteuid() != 0)
+		return B_NOT_ALLOWED;
+
 	if (!IS_USER_ADDRESS(userPath))
 		return B_BAD_ADDRESS;
 

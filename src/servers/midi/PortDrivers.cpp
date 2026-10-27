@@ -21,7 +21,8 @@
 #include <String.h>
 
 MidiPortConsumer::MidiPortConsumer(int fd, const char* name)
-	: BMidiLocalConsumer(name),
+	:
+	BMidiLocalConsumer(name),
 	fFileDescriptor(fd)
 {
 }
@@ -43,13 +44,14 @@ MidiPortConsumer::Data(uchar* data, size_t length,
 
 
 MidiPortProducer::MidiPortProducer(int fd, const char *name)
-	: BMidiLocalProducer(name),
-	fFileDescriptor(fd), fKeepRunning(true)
-	
+	:
+	BMidiLocalProducer(name),
+	fFileDescriptor(fd),
+	fKeepRunning(true)
 {
 	BString tmp = name;
-	tmp << " reader";
-	
+	tmp << " producer";
+
 	fReaderThread = spawn_thread(
 		_ReaderThread, tmp.String(), B_URGENT_PRIORITY, this);
 
@@ -60,74 +62,83 @@ MidiPortProducer::MidiPortProducer(int fd, const char *name)
 MidiPortProducer::~MidiPortProducer()
 {
 	fKeepRunning = false;
-	
+
 	status_t dummy;
 	wait_for_thread(fReaderThread, &dummy);
 }
 
 
-int32 
+int32
 MidiPortProducer::_ReaderThread(void* data)
 {
 	return ((MidiPortProducer*) data)->GetData();
 }
 
 
-int32 
+int32
 MidiPortProducer::GetData()
 {
-	uint8 msgBuf[3];
-	uint8* sysexBuf = NULL;
+	uint8 bytes[256];
+	ssize_t bytesCount = 0;
+	uint8* nextByte = NULL;
+	bigtime_t timestamp = 0;
 
+	uint8 msgBuf[3];
 	uint8* msgPtr = NULL;
 	size_t msgSize = 0;
 	size_t needed = 0;
 	uint8 runningStatus = 0;
 
 	bool haveSysEx = false;
-	size_t sysexAlloc = 0;
+	uint8* sysexBuffer = NULL;
+	size_t sysexBufferSize = B_PAGE_SIZE;
 	size_t sysexSize = 0;
 
-	uint8 next = 0;
-
 	while (fKeepRunning) {
-		if (read(fFileDescriptor, &next, 1) != 1) {
-			if (errno == B_CANCELED) 
-				fKeepRunning = false;
-			else 
-				perror("Error reading data from driver");
-			break;
-		}
-	
-		bigtime_t timestamp = system_time();
+		if (bytesCount == 0) {
+			bytesCount = read(fFileDescriptor, bytes, sizeof(bytes));
+			if (bytesCount < 0) {
+				if (errno == B_CANCELED)
+					fKeepRunning = false;
+				else
+					perror("Error reading data from driver");
+				break;
+			}
 
-		if (haveSysEx) { 
+			timestamp = system_time();
+			nextByte = bytes;
+		}
+
+		uint8 next = *nextByte++;
+		bytesCount--;
+
+		if (haveSysEx) {
 			// System Exclusive mode
-			if (next < 0x80) { 
+			if (next < 0x80) {
 				// System Exclusive data byte
-				sysexBuf[sysexSize++] = next;
-				if (sysexSize == sysexAlloc) {
-					sysexAlloc *= 2;
-					sysexBuf = (uint8*) realloc(sysexBuf, sysexAlloc);
+				sysexBuffer[sysexSize++] = next;
+				if (sysexSize == sysexBufferSize) {
+					sysexBufferSize *= 2;
+					sysexBuffer = (uint8*)realloc(sysexBuffer, sysexBufferSize);
 				}
 				continue;
 			} else if ((next & 0xF8) == 0xF8) {
 				// System Realtime interleaved in System Exclusive sequence
 				SpraySystemRealTime(next, timestamp);
 				continue;
-			} else {  
+			} else {
 				// Whatever byte, this one ends the running SysEx sequence
-				SpraySystemExclusive(sysexBuf, sysexSize, timestamp);
+				SpraySystemExclusive(sysexBuffer, sysexSize, timestamp);
 				haveSysEx = false;
 				if (next == B_SYS_EX_END) {
 					// swallow SysEx end byte
 					continue;
 				}
-				// any other byte, while ending the SysEx sequence, 
+				// any other byte, while ending the SysEx sequence,
 				// should be handled, not dropped
 			}
 		}
-		
+
 		if ((next & 0xF8) == 0xF8) {
 			// System Realtime
 			SpraySystemRealTime(next, timestamp);
@@ -138,8 +149,16 @@ MidiPortProducer::GetData()
 			msgPtr = msgBuf + 1;
 			switch (next) {
 				case B_SYS_EX_START:
-					sysexAlloc = 4096;
-					sysexBuf = (uint8*) malloc(sysexAlloc);
+					if (sysexBuffer == NULL) {
+						// first SysEx, we need to buffer SysEx data
+						sysexBuffer = (uint8*)malloc(sysexBufferSize);
+					} else if (sysexBufferSize > 4 * B_PAGE_SIZE) {
+						// Previous(es) SysEx was/were a bit large
+						// let's restart with a more reasonable buffer size
+						free(sysexBuffer);
+						sysexBufferSize = B_PAGE_SIZE;
+						sysexBuffer = (uint8*)malloc(sysexBufferSize);
+					}
 					sysexSize = 0;
 					haveSysEx = true;
 					break;
@@ -155,13 +174,13 @@ MidiPortProducer::GetData()
 					needed = 1;
 					msgSize = 2;
 					break;
-			
-				case B_SYS_EX_END:	
+
+				case B_SYS_EX_END:
 					// Unpaired with B_SYS_EX_START, but pass it anyway...
 				case B_TUNE_REQUEST:
 					SpraySystemCommon(next, 0, 0, timestamp);
 					break;
-			}			
+			}
 		} else if ((next & 0x80) == 0x80) {
 			// Voice message
 			runningStatus = next;
@@ -189,45 +208,37 @@ MidiPortProducer::GetData()
 			if (--needed == 0) {
 				switch (msgBuf[0] & 0xF0) {
 					case B_NOTE_OFF:
-						SprayNoteOff(msgBuf[0] & 0x0F, msgBuf[1], msgBuf[2],
-							timestamp);
+						SprayNoteOff(msgBuf[0] & 0x0F, msgBuf[1], msgBuf[2], timestamp);
 						break;
 
 					case B_NOTE_ON:
-						SprayNoteOn(msgBuf[0] & 0x0F, msgBuf[1], msgBuf[2],
-							timestamp);
+						SprayNoteOn(msgBuf[0] & 0x0F, msgBuf[1], msgBuf[2], timestamp);
 						break;
 
 					case B_KEY_PRESSURE:
-						SprayKeyPressure(msgBuf[0] & 0x0F, msgBuf[1], msgBuf[2],
-							timestamp);
+						SprayKeyPressure(msgBuf[0] & 0x0F, msgBuf[1], msgBuf[2], timestamp);
 						break;
 
 					case B_CONTROL_CHANGE:
-						SprayControlChange(msgBuf[0] & 0x0F, msgBuf[1], msgBuf[2],
-							timestamp);
+						SprayControlChange(msgBuf[0] & 0x0F, msgBuf[1], msgBuf[2], timestamp);
 						break;
 
 					case B_PROGRAM_CHANGE:
-						SprayProgramChange(msgBuf[0] & 0x0F, msgBuf[1],
-							timestamp);
+						SprayProgramChange(msgBuf[0] & 0x0F, msgBuf[1], timestamp);
 						break;
 
 					case B_CHANNEL_PRESSURE:
-						SprayChannelPressure(msgBuf[0] & 0x0F, msgBuf[1],
-							timestamp);
+						SprayChannelPressure(msgBuf[0] & 0x0F, msgBuf[1], timestamp);
 						break;
 
 					case B_PITCH_BEND:
-						SprayPitchBend(msgBuf[0] & 0x0F, msgBuf[1], msgBuf[2],
-							timestamp);
+						SprayPitchBend(msgBuf[0] & 0x0F, msgBuf[1], msgBuf[2], timestamp);
 						break;
 				}
 
 				switch (msgBuf[0]) {
 					case B_SONG_POSITION:
-						SpraySystemCommon(msgBuf[0], msgBuf[1], msgBuf[2],
-							timestamp);
+						SpraySystemCommon(msgBuf[0], msgBuf[1], msgBuf[2], timestamp);
 						break;
 
 					case B_MIDI_TIME_CODE:
@@ -244,10 +255,10 @@ MidiPortProducer::GetData()
 			msgPtr = msgBuf + 2;
 			needed = msgSize - 2;
 		}
+
 	}	// while fKeepRunning
 
-	if (haveSysEx)
-		free(sysexBuf);
+	free(sysexBuffer);
 
 	return fKeepRunning ? errno : B_OK;
 }

@@ -43,6 +43,12 @@
 #	define TRACE(x) ;
 #endif
 
+#define FMT_IPv4 "%d.%d.%d.%d"
+#define PRINTF_IPv4(addr) (addr) >> 24, ((addr) >> 16) & 0xFF, ((addr) >> 8) & 0xFF, (addr) & 0xFF
+
+#define FMT_MAC "%02x:%02x:%02x:%02x:%02x:%02x"
+#define PRINTF_MAC(addr) (addr)[0], (addr)[1], (addr)[2], (addr)[3], (addr)[4], (addr)[5]
+
 
 struct arp_header {
 	uint16		hardware_type;
@@ -152,35 +158,6 @@ struct arpHash {
 typedef BOpenHashTable<arpHash> AddressCache;
 static AddressCache* sCache;
 static mutex sCacheLock;
-
-
-#ifdef TRACE_ARP
-
-
-const char*
-mac_to_string(uint8* address)
-{
-	static char buffer[20];
-	snprintf(buffer, sizeof(buffer), "%02x:%02x:%02x:%02x:%02x:%02x",
-		address[0], address[1], address[2], address[3], address[4], address[5]);
-	return buffer;
-}
-
-
-const char*
-inet_to_string(in_addr_t address)
-{
-	static char buffer[20];
-
-	unsigned int hostAddress = ntohl(address);
-	snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d",
-		hostAddress >> 24, (hostAddress >> 16) & 0xff,
-		(hostAddress >> 8) & 0xff, hostAddress & 0xff);
-	return buffer;
-}
-
-
-#endif	// TRACE_ARP
 
 
 static net_buffer*
@@ -333,7 +310,7 @@ arp_entry::MarkFailed()
 void
 arp_entry::MarkValid()
 {
-	TRACE(("ARP entry %p Marked as VALID, have %li packets queued.\n", this,
+	TRACE(("ARP entry %p Marked as VALID, have %" B_PRIu32 " packets queued.\n", this,
 		queue.Count()));
 
 	flags = (flags & ~ARP_FLAG_REJECT) | ARP_FLAG_VALID;
@@ -378,9 +355,8 @@ arp_update_entry(in_addr_t protocolAddress, sockaddr_dl *hardwareAddress,
 	uint32 flags, arp_entry **_entry = NULL)
 {
 	ASSERT_LOCKED_MUTEX(&sCacheLock);
-	TRACE(("%s(%s, %s, flags 0x%" B_PRIx32 ")\n", __FUNCTION__,
-		inet_to_string(protocolAddress), mac_to_string(LLADDR(hardwareAddress)),
-		flags));
+	TRACE(("%s(" FMT_IPv4 ", " FMT_MAC ", flags 0x%" B_PRIx32 ")\n", __FUNCTION__,
+		PRINTF_IPv4(ntohl(protocolAddress)), PRINTF_MAC(LLADDR(hardwareAddress)), flags));
 
 	arp_entry *entry = arp_entry::Lookup(protocolAddress);
 	if (entry != NULL) {
@@ -394,9 +370,8 @@ arp_update_entry(in_addr_t protocolAddress, sockaddr_dl *hardwareAddress,
 			&& memcmp(LLADDR(&entry->hardware_address),
 				LLADDR(hardwareAddress), ETHER_ADDRESS_LENGTH)) {
 			uint8* data = LLADDR(hardwareAddress);
-			dprintf("ARP host %08x updated with different hardware address "
-				"%02x:%02x:%02x:%02x:%02x:%02x.\n", protocolAddress,
-				data[0], data[1], data[2], data[3], data[4], data[5]);
+			dprintf("ARP host " FMT_IPv4 " updated with different hardware address " FMT_MAC ".\n",
+				PRINTF_IPv4(ntohl(protocolAddress)), PRINTF_MAC(data));
 			return B_ERROR;
 		}
 
@@ -428,6 +403,58 @@ arp_update_entry(in_addr_t protocolAddress, sockaddr_dl *hardwareAddress,
 }
 
 
+static net_buffer*
+arp_prepare_request(net_device* device, in_addr_t protocolSender, in_addr_t protocolTarget)
+{
+	TRACE(("%s(): sender " FMT_IPv4 " == " FMT_MAC "\n", __FUNCTION__,
+		PRINTF_IPv4(ntohl(protocolSender)), PRINTF_MAC(LLADDR(&protocol->hardware_address))));
+
+	// prepare ARP request
+
+	net_buffer* buffer = gBufferModule->create(256);
+	if (buffer == NULL)
+		return NULL;
+
+	NetBufferPrepend<arp_header> bufferHeader(buffer);
+	if (bufferHeader.Status() != B_OK) {
+		gBufferModule->free(buffer);
+		return NULL;
+	}
+
+	// prepare ARP header
+
+	arp_header& header = bufferHeader.Data();
+
+	header.hardware_type = htons(ARP_HARDWARE_TYPE_ETHER);
+	header.protocol_type = htons(ETHER_TYPE_IP);
+	header.hardware_length = ETHER_ADDRESS_LENGTH;
+	header.protocol_length = sizeof(in_addr_t);
+	header.opcode = htons(ARP_OPCODE_REQUEST);
+
+	memcpy(header.hardware_sender, device->address.data, ETHER_ADDRESS_LENGTH);
+	memset(header.hardware_target, 0, ETHER_ADDRESS_LENGTH);
+	header.protocol_sender = protocolSender;
+	header.protocol_target = protocolTarget;
+
+	// prepare source and target addresses
+
+	struct sockaddr_dl& source = *(struct sockaddr_dl*)buffer->source;
+	source.sdl_len = sizeof(sockaddr_dl);
+	source.sdl_family = AF_LINK;
+	source.sdl_index = device->index;
+	source.sdl_type = IFT_ETHER;
+	source.sdl_e_type = htons(ETHER_TYPE_ARP);
+	source.sdl_nlen = source.sdl_slen = 0;
+	source.sdl_alen = ETHER_ADDRESS_LENGTH;
+	memcpy(source.sdl_data, device->address.data, ETHER_ADDRESS_LENGTH);
+
+	buffer->msg_flags = MSG_BCAST;
+		// this is a broadcast packet, we don't need to fill in the destination
+
+	return buffer;
+}
+
+
 static status_t
 arp_set_local_entry(arp_protocol* protocol, const sockaddr* local)
 {
@@ -442,7 +469,7 @@ arp_set_local_entry(arp_protocol* protocol, const sockaddr* local)
 	} else
 		inetAddress = ((sockaddr_in*)local)->sin_addr.s_addr;
 
-	TRACE(("%s(): address %s\n", __FUNCTION__, inet_to_string(inetAddress)));
+	TRACE(("%s(): address " FMT_IPv4 "\n", __FUNCTION__, PRINTF_IPv4(ntohl(inetAddress))));
 
 	if (protocol->local_address == 0)
 		protocol->local_address = inetAddress;
@@ -459,6 +486,14 @@ arp_set_local_entry(arp_protocol* protocol, const sockaddr* local)
 
 	memcpy(&protocol->hardware_address, &address, sizeof(sockaddr_dl));
 		// cache the address in our protocol
+
+	if (inetAddress != INADDR_ANY) {
+		// Gratuitous ARP Announcement
+		net_buffer* buffer = arp_prepare_request(protocol->interface->device,
+			inetAddress, inetAddress);
+		if (buffer != NULL)
+			protocol->next->module->send_data(protocol->next, buffer);
+	}
 
 	arp_entry* entry;
 	status_t status = arp_update_entry(inetAddress, &address,
@@ -482,7 +517,7 @@ arp_remove_local_entry(arp_protocol* protocol, const sockaddr* local,
 	} else
 		inetAddress = ((sockaddr_in*)local)->sin_addr.s_addr;
 
-	TRACE(("%s(): address %s\n", __FUNCTION__, inet_to_string(inetAddress)));
+	TRACE(("%s(): address " FMT_IPv4 "\n", __FUNCTION__, PRINTF_IPv4(ntohl(inetAddress))));
 
 	MutexLocker locker(sCacheLock);
 
@@ -639,10 +674,10 @@ arp_receive(void *cookie, net_device *device, net_buffer *buffer)
 	uint16 opcode = ntohs(header.opcode);
 
 #ifdef TRACE_ARP
-	dprintf("  hw sender: %s\n", mac_to_string(header.hardware_sender));
-	dprintf("  proto sender: %s\n", inet_to_string(header.protocol_sender));
-	dprintf("  hw target: %s\n", mac_to_string(header.hardware_target));;
-	dprintf("  proto target: %s\n", inet_to_string(header.protocol_target));
+	dprintf("  hw sender:    " FMT_MAC "\n", PRINTF_MAC(header.hardware_sender));
+	dprintf("  proto sender: " FMT_IPv4 "\n", PRINTF_IPv4(ntohl(header.protocol_sender)));
+	dprintf("  hw target:    " FMT_MAC "\n", PRINTF_MAC(header.hardware_target));
+	dprintf("  proto target: " FMT_IPv4 "\n", PRINTF_IPv4(ntohl(header.protocol_target)));
 #endif	// TRACE_ARP
 
 	if (ntohs(header.protocol_type) != ETHER_TYPE_IP
@@ -685,7 +720,7 @@ static void
 arp_timer(struct net_timer *timer, void *data)
 {
 	arp_entry *entry = (arp_entry *)data;
-	TRACE(("ARP timer %ld, entry %p!\n", entry->timer_state, entry));
+	TRACE(("ARP timer %u, entry %p!\n", entry->timer_state, entry));
 
 	switch (entry->timer_state) {
 		case ARP_NO_STATE:
@@ -778,51 +813,12 @@ arp_start_resolve(arp_protocol* protocol, in_addr_t address, arp_entry** _entry)
 		return B_NO_MEMORY;
 
 	// prepare ARP request
-
-	entry->request_buffer = gBufferModule->create(256);
+	entry->request_buffer = arp_prepare_request(protocol->interface->device,
+		protocol->local_address, address);
 	if (entry->request_buffer == NULL) {
 		entry->ScheduleRemoval();
 		return B_NO_MEMORY;
 	}
-
-	NetBufferPrepend<arp_header> bufferHeader(entry->request_buffer);
-	status_t status = bufferHeader.Status();
-	if (status < B_OK) {
-		entry->ScheduleRemoval();
-		return status;
-	}
-
-	// prepare ARP header
-
-	net_device *device = protocol->interface->device;
-	arp_header &header = bufferHeader.Data();
-
-	header.hardware_type = htons(ARP_HARDWARE_TYPE_ETHER);
-	header.protocol_type = htons(ETHER_TYPE_IP);
-	header.hardware_length = ETHER_ADDRESS_LENGTH;
-	header.protocol_length = sizeof(in_addr_t);
-	header.opcode = htons(ARP_OPCODE_REQUEST);
-
-	memcpy(header.hardware_sender, device->address.data, ETHER_ADDRESS_LENGTH);
-	memset(header.hardware_target, 0, ETHER_ADDRESS_LENGTH);
-	header.protocol_sender = protocol->local_address;
-	header.protocol_target = address;
-
-	// prepare source and target addresses
-
-	struct sockaddr_dl &source = *(struct sockaddr_dl *)
-		entry->request_buffer->source;
-	source.sdl_len = sizeof(sockaddr_dl);
-	source.sdl_family = AF_LINK;
-	source.sdl_index = device->index;
-	source.sdl_type = IFT_ETHER;
-	source.sdl_e_type = htons(ETHER_TYPE_ARP);
-	source.sdl_nlen = source.sdl_slen = 0;
-	source.sdl_alen = ETHER_ADDRESS_LENGTH;
-	memcpy(source.sdl_data, device->address.data, ETHER_ADDRESS_LENGTH);
-
-	entry->request_buffer->msg_flags = MSG_BCAST;
-		// this is a broadcast packet, we don't need to fill in the destination
 
 	entry->protocol = protocol;
 	entry->timer_state = ARP_STATE_REQUEST;
@@ -1049,8 +1045,7 @@ arp_send_data(net_datalink_protocol *_protocol, net_buffer *buffer)
 
 			if ((entry->flags & ARP_FLAG_VALID) == 0) {
 				// entry is still being resolved.
-				TRACE(("ARP Queuing packet %p, entry still being resolved.\n",
-					buffer));
+				TRACE(("ARP Queuing packet %p, entry still being resolved.\n", buffer));
 				entry->queue.Add(buffer);
 				return B_OK;
 			}
@@ -1060,10 +1055,9 @@ arp_send_data(net_datalink_protocol *_protocol, net_buffer *buffer)
 		}
 		// the broadcast address is set in the ethernet frame module
 	}
-	TRACE(("%s(%p): from %s\n", __FUNCTION__, buffer,
-		mac_to_string(LLADDR((sockaddr_dl*)buffer->source))));
-	TRACE(("  to %s\n",
-		mac_to_string(LLADDR((sockaddr_dl*)buffer->destination))));
+	TRACE(("%s(%p): from " FMT_MAC "\n", __FUNCTION__, buffer,
+		PRINTF_MAC(LLADDR((sockaddr_dl*)buffer->source))));
+	TRACE(("  to " FMT_MAC "\n", PRINTF_MAC(LLADDR((sockaddr_dl*)buffer->destination))));
 
 	return protocol->next->module->send_data(protocol->next, buffer);
 }
