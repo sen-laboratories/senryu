@@ -13,13 +13,26 @@
 
 // SEN: the field of the attribute info that says that an attribute is indexed (not in the "attr:" namespace of Haiku)
 #define kSenSearchable "SEN:searchable"
+// SEN: the value of the attribute is a list in one string ("Andy Hunt,Dave Thomas"): a program that knows it shows the values one by one. The separator is
+// one character (empty if the attribute is no list), it is "," unless the schema says otherwise (the groups of a person in People use it)
+#define kSenIsList "SEN:is_list"
+#define kSenListSeparator "SEN:list_separator"
+
+// SEN: a separator is one character that has no other meaning in a list: not a quote, a backslash, or the end of a line (sento's SenList.h has the same rule)
+inline bool
+is_valid_list_separator(char separator)
+{
+	return separator != '\0' && separator != '"' && separator != '\'' && separator != '\\'
+		&& separator != '\n' && separator != '\r';
+}
 
 
 class AttributeItem : public BStringItem {
 	public:
 		AttributeItem(const char* name, const char* publicName, type_code type,
 			const char* displayAs, int32 alignment, int32 width, bool visible,
-			bool editable, bool searchable = false);
+			bool editable, bool searchable = false, bool isList = false,
+			char listSeparator = ',');
 		AttributeItem();
 		AttributeItem(const AttributeItem& other);
 		virtual ~AttributeItem();
@@ -38,6 +51,9 @@ class AttributeItem : public BStringItem {
 		bool Editable() const { return fEditable; }
 		// SEN: the attribute is indexed, so that it can be queried (SEN:searchable)
 		bool Searchable() const { return fSearchable; }
+		// SEN: the value is a list in one string (SEN:is_list), its values are separated by ListSeparator() (SEN:list_separator)
+		bool IsList() const { return fIsList; }
+		char ListSeparator() const { return fListSeparator; }
 
 		AttributeItem& operator=(const AttributeItem& other);
 
@@ -53,6 +69,8 @@ class AttributeItem : public BStringItem {
 		bool		fVisible;
 		bool		fEditable;
 		bool		fSearchable;
+		bool		fIsList;
+		char		fListSeparator;
 };
 
 class AttributeListView : public BListView {

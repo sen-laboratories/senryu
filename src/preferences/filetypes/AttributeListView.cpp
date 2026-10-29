@@ -137,6 +137,16 @@ create_attribute_item(BMessage& attributes, int32 index)
 	bool searchable;
 	if (attributes.FindBool(kSenSearchable, index, &searchable) != B_OK)
 		searchable = false;
+	// SEN: a list has one separator character (a comma if the info has none that can be used)
+	bool isList;
+	if (attributes.FindBool(kSenIsList, index, &isList) != B_OK)
+		isList = false;
+	char listSeparator = ',';
+	const char* separator;
+	if (attributes.FindString(kSenListSeparator, index, &separator) == B_OK
+		&& separator[0] != '\0' && separator[1] == '\0'
+		&& is_valid_list_separator(separator[0]))
+		listSeparator = separator[0];
 
 	int32 alignment;
 	if (attributes.FindInt32("attr:alignment", index, &alignment) != B_OK)
@@ -147,7 +157,7 @@ create_attribute_item(BMessage& attributes, int32 index)
 		width = 50;
 
 	return new AttributeItem(name, publicName, type, displayAs, alignment,
-		width, visible, editable, searchable);
+		width, visible, editable, searchable, isList, listSeparator);
 }
 
 
@@ -156,7 +166,8 @@ create_attribute_item(BMessage& attributes, int32 index)
 
 AttributeItem::AttributeItem(const char* name, const char* publicName,
 	type_code type, const char* displayAs, int32 alignment,
-	int32 width, bool visible, bool editable, bool searchable)
+	int32 width, bool visible, bool editable, bool searchable, bool isList,
+	char listSeparator)
 	:
 	BStringItem(publicName),
 	fName(name),
@@ -166,7 +177,9 @@ AttributeItem::AttributeItem(const char* name, const char* publicName,
 	fWidth(width),
 	fVisible(visible),
 	fEditable(editable),
-	fSearchable(searchable)
+	fSearchable(searchable),
+	fIsList(isList),
+	fListSeparator(listSeparator)
 {
 }
 
@@ -179,7 +192,9 @@ AttributeItem::AttributeItem()
 	fWidth(60),
 	fVisible(true),
 	fEditable(false),
-	fSearchable(false)
+	fSearchable(false),
+	fIsList(false),
+	fListSeparator(',')
 {
 }
 
@@ -257,6 +272,8 @@ AttributeItem::operator=(const AttributeItem& other)
 	fVisible = other.Visible();
 	fEditable = other.Editable();
 	fSearchable = other.Searchable();
+	fIsList = other.IsList();
+	fListSeparator = other.ListSeparator();
 
 	return *this;
 }
@@ -273,7 +290,9 @@ AttributeItem::operator==(const AttributeItem& other) const
 		&& Width() == other.Width()
 		&& Visible() == other.Visible()
 		&& Editable() == other.Editable()
-		&& Searchable() == other.Searchable();
+		&& Searchable() == other.Searchable()
+		&& IsList() == other.IsList()
+		&& (!IsList() || ListSeparator() == other.ListSeparator());
 }
 
 
