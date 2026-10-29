@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2018, Axel Dörfler, axeld@pinc-software.de.
+ * Copyright 2015-2026, Axel Dörfler, axeld@pinc-software.de.
  * Distributed under the terms of the MIT License.
  */
 
@@ -360,6 +360,7 @@ LaunchDaemon::LaunchDaemon(bool userMode, status_t& error)
 	BServer(kLaunchDaemonSignature, NULL,
 		create_port(B_LOOPER_PORT_DEFAULT_CAPACITY,
 			userMode ? "AppPort" : B_LAUNCH_DAEMON_PORT_NAME), false, &error),
+	fJobQueue(false),
 	fInitTarget(userMode ? NULL : new Target("init")),
 #ifdef TEST_MODE
 	fUserMode(true)
@@ -1831,7 +1832,7 @@ LaunchDaemon::_LaunchJob(Job* job, uint32 options)
 
 			// job conditions not present, launch
 			while (BJob* dependantJob = job->DependantJobAt(0))
-				dependantJob->RemoveDependency(job);
+				fJobQueue.RemoveDependency(dependantJob, job);
 		}
 	}
 

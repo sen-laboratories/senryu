@@ -701,9 +701,8 @@ EHCI::EHCI(pci_info *info, pci_device_module_info* pci, pci_device* device, Stac
 
 		sitdPhysicalBase += sizeof(sitd_entry);
 		itdPhysicalBase += sizeof(itd_entry);
-		if ((sitdPhysicalBase & 0x10) != 0 || (itdPhysicalBase & 0x10) != 0)
-			panic("physical base for entry %" B_PRId32 " not aligned on 32\n",
-				i);
+		if ((sitdPhysicalBase % 32) != 0 || (itdPhysicalBase % 32) != 0)
+			panic("physical base for entry %" B_PRId32 " not aligned on 32\n", i);
 	}
 
 	// build flat interrupt tree
@@ -1281,8 +1280,7 @@ EHCI::SubmitIsochronous(Transfer *transfer)
 			| EHCI_ITD_ADDRESS(pipe->DeviceAddress());
 		itd->buffer_phy[1] |= EHCI_ITD_MAXPACKETSIZE(pipe->MaxPacketSize())
 				| EHCI_ITD_DIR(directionIn);
-		itd->buffer_phy[2]
-			|= EHCI_ITD_MUL((pipe->MaxPacketSize() >> EHCI_ITD_MAXPACKETSIZE_LENGTH) + 1);
+		itd->buffer_phy[2] |= EHCI_ITD_MUL(pipe->MaxBurst() + 1);
 
 		TRACE("isochronous filled itd buffer_phy[0,1,2] 0x%" B_PRIx32 ", 0x%"
 			B_PRIx32 " 0x%" B_PRIx32 "\n",

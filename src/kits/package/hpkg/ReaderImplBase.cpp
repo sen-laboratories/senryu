@@ -88,6 +88,13 @@ ReaderImplBase::AttributeHandlerContext::ErrorOccurred()
 // #pragma mark - AttributeHandler
 
 
+ReaderImplBase::AttributeHandler::AttributeHandler()
+	:
+	fDeleting(false)
+{
+}
+
+
 ReaderImplBase::AttributeHandler::~AttributeHandler()
 {
 }
@@ -123,10 +130,7 @@ ReaderImplBase::AttributeHandler::NotifyDone(
 void*
 ReaderImplBase::AttributeHandler::operator new(size_t size, AttributeHandlerContext* context)
 {
-	AttributeHandler* handler = (AttributeHandler*)context->handlersAllocator.Allocate(size);
-	if (handler != NULL)
-		handler->fDeleting = false;
-	return handler;
+	return context->handlersAllocator.Allocate(size);
 }
 
 
@@ -134,8 +138,11 @@ void
 ReaderImplBase::AttributeHandler::operator delete(void* pointer)
 {
 	AttributeHandler* handler = (AttributeHandler*)pointer;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wuninitialized"
 	if (!handler->fDeleting)
 		debugger("Package AttributeHandler: deleted without calling Delete()");
+#pragma GCC diagnostic pop
 
 	// Nothing else to do; memory is released by Delete().
 }
