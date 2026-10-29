@@ -223,6 +223,26 @@ AttributeWindow::AttributeWindow(FileTypesWindow* target, BMimeType& mimeType,
 		new BMessage(kMsgAttributeUpdated));
 	fSearchableCheckBox->SetValue(fAttribute.Searchable());
 
+	// SEN: the value is a list in one string; only a string can be one
+	fListCheckBox = new BCheckBox("list",
+		B_TRANSLATE_COMMENT("List of values",
+			"The value of the attribute is a list in one string, its values are separated by the separator."),
+		new BMessage(kMsgAttributeUpdated));
+	fListCheckBox->SetValue(fAttribute.IsList());
+
+	char separator[2] = {fAttribute.ListSeparator(), '\0'};
+	fSeparatorControl = new BTextControl(B_TRANSLATE_COMMENT("Separator:",
+		"The character that separates the values of a list in one string."), separator, NULL);
+	fSeparatorControl->SetModificationMessage(new BMessage(kMsgAttributeUpdated));
+	fSeparatorControl->SetAlignment(B_ALIGN_RIGHT, B_ALIGN_LEFT);
+	// one character that has no other meaning in a list: no quote, no backslash, no line end
+	textView = fSeparatorControl->TextView();
+	for (int32 i = 0; i < 256; i++) {
+		if (i != 0 && !is_valid_list_separator((char)i))
+			textView->DisallowChar(i);
+	}
+	textView->SetMaxBytes(1);
+
 	fSpecialControl = new BTextControl(B_TRANSLATE("Special:"),
 		display_as_parameter(fAttribute.DisplayAs()), NULL);
 	fSpecialControl->SetModificationMessage(
@@ -311,6 +331,12 @@ AttributeWindow::AttributeWindow(FileTypesWindow* target, BMimeType& mimeType,
 			)
 		.Add(fSearchableCheckBox)
 		.AddGroup(B_HORIZONTAL, padding)
+			.Add(fListCheckBox)
+			.Add(fSeparatorControl->CreateLabelLayoutItem())
+			.Add(fSeparatorControl->CreateTextViewLayoutItem())
+			.AddGlue()
+			.End()
+		.AddGroup(B_HORIZONTAL, padding)
 			.AddGlue()
 			.Add(cancelButton)
 			.Add(fAcceptButton);
@@ -325,6 +351,7 @@ AttributeWindow::AttributeWindow(FileTypesWindow* target, BMimeType& mimeType,
 
 	_CheckDisplayAs();
 	_CheckSearchable();
+	_CheckList();
 	_CheckAcceptable();
 }
 
@@ -394,6 +421,13 @@ AttributeWindow::_CheckAcceptable()
 		&& fPublicNameControl->Text() != NULL
 		&& fPublicNameControl->Text()[0] != '\0';
 
+	// SEN: a list needs its separator
+	if (enabled && fListCheckBox->Value() == B_CONTROL_ON) {
+		const char* separator = fSeparatorControl->Text();
+		enabled = separator != NULL && separator[0] != '\0' && separator[1] == '\0'
+			&& is_valid_list_separator(separator[0]);
+	}
+
 	if (enabled) {
 		// check for equality
 		AttributeItem* item = _NewItemFromCurrent();
@@ -445,7 +479,10 @@ AttributeWindow::_NewItemFromCurrent()
 		fPublicNameControl->Text(), type, displayAs.String(), alignment,
 		width, fVisibleCheckBox->Value() == B_CONTROL_ON,
 		fEditableCheckBox->Value() == B_CONTROL_ON,
-		fSearchableCheckBox->Value() == B_CONTROL_ON);
+		fSearchableCheckBox->Value() == B_CONTROL_ON,
+		fListCheckBox->Value() == B_CONTROL_ON,
+		fSeparatorControl->Text() != NULL && fSeparatorControl->Text()[0] != '\0'
+			? fSeparatorControl->Text()[0] : ',');
 }
 
 
@@ -468,6 +505,25 @@ AttributeWindow::_CheckSearchable()
 }
 
 
+// SEN: only a string can hold a list of values; the separator is only needed for a list
+void
+AttributeWindow::_CheckList()
+{
+	AttributeItem* current = _NewItemFromCurrent();
+	bool isString = current->Type() == B_STRING_TYPE;
+	delete current;
+
+	if (!isString)
+		fListCheckBox->SetValue(B_CONTROL_OFF);
+	fListCheckBox->SetEnabled(isString);
+	fListCheckBox->SetToolTip(isString ? NULL
+		: B_TRANSLATE("Only a string can hold a list of values in one text. Choose the type String."));
+
+	bool isList = fListCheckBox->Value() == B_CONTROL_ON;
+	fSeparatorControl->SetEnabled(isList);
+}
+
+
 void
 AttributeWindow::MessageReceived(BMessage* message)
 {
@@ -477,6 +533,7 @@ AttributeWindow::MessageReceived(BMessage* message)
 		case kMsgTypeChosen:
 			_CheckDisplayAs();
 			_CheckSearchable();
+			_CheckList();
 			_CheckAcceptable();
 			break;
 
@@ -583,6 +640,10 @@ AttributeWindow::MessageReceived(BMessage* message)
 					newAttributes.AddBool("attr:viewable", item->Visible());
 					newAttributes.AddBool("attr:editable", item->Editable());
 					newAttributes.AddBool(kSenSearchable, item->Searchable());
+					// SEN: the separator is empty for an attribute that is no list
+					newAttributes.AddBool(kSenIsList, item->IsList());
+					char separator[2] = {item->IsList() ? item->ListSeparator() : '\0', '\0'};
+					newAttributes.AddString(kSenListSeparator, separator);
 
 					delete item;
 				}

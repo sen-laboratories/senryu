@@ -14,6 +14,9 @@ catalogs are found by the signature: until the catalogs exist for the new signat
 |--------|---------|
 | Searchable | The attribute is indexed on the volumes so that it can be queried. |
 | Only numbers, times and strings can be indexed, so only these can be searchable. A boolean, a 16 bit number or a message cannot. | (tooltip of the checkbox when it is not available) |
+| List of values | The value of the attribute is a list in one string, its values are separated by the separator. |
+| Separator: | The character that separates the values of a list in one string. |
+| Only a string can hold a list of values in one text. Choose the type String. | (tooltip of the checkbox when it is not available) |
 | No index possible | |
 | The type of this attribute cannot be indexed, so it cannot be searchable. Choose a number, a string or a time. | |
 | Index | (title of the question about the index) |
