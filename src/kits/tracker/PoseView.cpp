@@ -35,6 +35,8 @@ All rights reserved.
 #define DEBUG 1
 
 #include "PoseView.h"
+
+#include <sen/Sen.h>
 #include "RelationFolders.h"
 #include "SenCursors.h"
 #include "TrackerSenRelations.h"
@@ -7647,7 +7649,15 @@ BPoseView::MouseDown(BPoint where)
 			fTextWidgetToCheck->CancelWait();
 		}
 
-		if (!extendSelection && WasDoubleClick(clickedPose, where)
+		if ((mods & B_COMMAND_KEY) != 0 && buttons == B_PRIMARY_MOUSE_BUTTON && WasDoubleClick(clickedPose, where)
+			&& fLastClickButtons == B_PRIMARY_MOUSE_BUTTON) {
+			// the SEN key and a double click: the graph of the objects and relations of SEN, centred on the file (it is not opened)
+			fTrackRightMouseUp = false;
+			fTrackMouseUp = false;
+			BMessage graph(sen::cmd::kUiOpenGraph);
+			graph.AddRef("refs", clickedPose->TargetModel()->EntryRef());
+			BMessenger(sen::kServerSignature).SendMessage(&graph);
+		} else if (!extendSelection && WasDoubleClick(clickedPose, where)
 			&& buttons == B_PRIMARY_MOUSE_BUTTON && fLastClickButtons == B_PRIMARY_MOUSE_BUTTON
 			&& (mods & B_CONTROL_KEY) == 0) {
 			fTrackRightMouseUp = false;

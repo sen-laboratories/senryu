@@ -24,6 +24,11 @@
 #include <sen/Sen.h>
 #include <sen/SenOntoCore.h>
 #include <sen/Sensei.h>
+#include "AutoLock.h"
+#include "ContainerWindow.h"
+#include "Model.h"
+#include "Pose.h"
+#include "PoseView.h"
 #include "Tracker.h"
 #include "TrackerSenLog.h"
 #include "OpenRelationsRequest.h"
@@ -34,6 +39,31 @@
 bool
 TTracker::HandleSenMessage(BMessage* message)
 {
+	if (message->what == sen::cmd::kGetSelection) {
+		// the files that are selected in the window of Tracker that is active (the graph of SEN is centred on the first)
+		BMessage reply(B_REPLY);
+		{
+			AutoLock<WindowList> lock(&fWindowList);
+			for (int32 i = 0; i < fWindowList.CountItems(); i++) {
+				BContainerWindow* window = dynamic_cast<BContainerWindow*>(fWindowList.ItemAt(i));
+				if (window == NULL || !window->IsActive())
+					continue;
+				AutoLock<BWindow> windowLock(window);
+				if (!windowLock.IsLocked() || window->PoseView() == NULL)
+					continue;
+				PoseList* selection = window->PoseView()->SelectionList();
+				for (int32 j = 0; selection != NULL && j < selection->CountItems(); j++) {
+					BPose* pose = selection->ItemAt(j);
+					if (pose != NULL && pose->TargetModel() != NULL)
+						reply.AddRef("refs", pose->TargetModel()->EntryRef());
+				}
+				break;
+			}
+		}
+		message->SendReply(&reply);
+		return true;
+	}
+
 	// "Open related..." itself (the menu, or its shortcut) opens all the relations of the file in one folder, as the menu of a folder opens the folder
 	// with everything in it; the menus of the types open one type
 	if (message->what == kOpenRelations && message->HasRef(sen::key::kSourceRef))
