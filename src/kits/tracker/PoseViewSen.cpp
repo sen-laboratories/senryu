@@ -392,52 +392,19 @@ BPoseView::EnrichRefsFromSelection(bool wipe) {
 
 status_t
 BPoseView::EnrichRefWithPlugin(const entry_ref* ref, bool wipe) {
-	// find suitable/default enrichment plugin on any mounted volume. The plugin type (META:TYPE) is indexed and has to be
-	// the first attribute of the query; the feature flag is compared on those files.
-	BString predicate;
-	predicate << sen::attr::kType << "==" << sen::mime::kPlugin << " && " << sensei::kFeatureAttrPrefix << ":"
-		<< sensei::feature::kEnrich << "==1";
-
-	std::vector<entry_ref> plugins;
-	status_t result = B_ENTRY_NOT_FOUND;
-	BVolumeRoster volumeRoster;
-	BVolume volume;
-	while (volumeRoster.GetNextVolume(&volume) == B_OK) {
-		if (!volume.KnowsQuery())
-			continue;
-
-		BQuery query;
-		query.SetVolume(&volume);
-		query.SetPredicate(predicate.String());
-		if (query.Fetch() != B_OK)
-			continue;
-
-		entry_ref pluginRef;
-		while (query.GetNextRef(&pluginRef) == B_OK)
-			plugins.push_back(pluginRef);
+	// The SEN server chooses the plugin (the enrichment plugins that declare the type of the file, wherever they are installed) and tells the user
+	// what is not possible: all clients ask it, none looks for plugins itself.
+	if (!be_roster->IsRunning(sen::kServerSignature)) {
+		PRINT(("the SEN server is not running, cannot enrich %s.\n", ref->name));
+		return B_NOT_ALLOWED;
 	}
 
-	if (plugins.empty()) {
-		PRINT(("no matching plugin found for enrichment.\n"));
-		return B_NOT_SUPPORTED;
-	}
+	BMessage request(sen::cmd::kEnrichRefs);
+	request.AddRef("refs", ref);
+	request.AddBool("wipe", wipe);
 
-	BMessage refsMsg(B_REFS_RECEIVED);
-	refsMsg.AddRef("refs", ref);
-	refsMsg.AddBool("wipe", wipe);
-
-	for (const entry_ref& pluginRef : plugins) {
-		PRINT(("handling ref %s with plugin %s\n", ref->name, pluginRef.name ));
-
-		result = TrackerLaunch(&pluginRef, &refsMsg, false);
-		if (result == B_OK) {
-			// done
-			break;
-		} else {
-			PRINT(("error launching plugin, trying next if available: %s\n", strerror(result) ));
-		}
-	}
-	return result;
+	PRINT(("asking the SEN server to enrich %s.\n", ref->name));
+	return BMessenger(sen::kServerSignature).SendMessage(&request);
 }
 
 
