@@ -1190,6 +1190,79 @@ TrackerSenRelations::MaterializeAll(const entry_ref& sourceRef, const char* view
 
 
 status_t
+TrackerSenRelations::MaterializeTypeOfSelection(const std::vector<entry_ref>& sources, const char* viewId, const char* relationType,
+	entry_ref* typeDirRef)
+{
+	if (sources.empty() || strcmp(relationType, sen::mime::kAssociationRelation) == 0)
+		return B_NOT_SUPPORTED;	// (what is associated with a label is found by query for each label)
+
+	BMessage ask(sen::cmd::kRelationsGet);
+	for (const entry_ref& source : sources)
+		ask.AddRef(sen::key::kSourceRef, &source);
+	ask.AddString(sen::key::kRelationType, relationType);
+	ask.AddBool(sen::key::kIdToRefMap, true);
+
+	BMessenger server(sen::kServerSignature);
+	BMessage reply;
+	status_t result = server.IsValid() ? server.SendMessage(&ask, &reply, 10000000, 10000000) : B_ERROR;
+	if (result == B_OK)
+		result = reply.GetInt32(sen::key::kResult, B_ERROR);
+	if (result != B_OK) {
+		ERROR("could not get the relations of type %s of the files from the SEN server: %s\n", relationType, strerror(result));
+		return result;
+	}
+
+	BMessage relations, idToRef, idToName, configs, relationConfig;
+	reply.FindMessage(sen::key::kRelations, &relations);
+	reply.FindMessage(sen::key::kIdToRefMap, &idToRef);
+	reply.FindMessage(sen::key::kIdToNameMap, &idToName);
+	if (reply.FindMessage(sen::key::kRelationConfigMap, &configs) != B_OK
+			|| configs.FindMessage(relationType, &relationConfig) != B_OK) {
+		return B_NAME_NOT_FOUND;
+	}
+	if (relationConfig.GetBool(sen::conf::kDynamic, false) || relationConfig.GetBool(sen::conf::kSelf, false))
+		return B_NOT_SUPPORTED;
+
+	BString sourceName;
+	sourceName << (int) sources.size() << " files";
+	// (a folder of the common view is named after the files and "common": it is not the folder of the relations of one of them)
+	BMessage config(relationConfig);
+	config.RemoveName(sen::key::kRelationLabel);
+	BString label(relationConfig.GetString(sen::key::kRelationName, relationType));
+	label << " (common)";
+	config.AddString(sen::key::kRelationLabel, label);
+
+	result = CreateRelationDirectory(viewId, "", sourceName.String(), relationType, &config, typeDirRef);
+	if (result != B_OK)
+		return result;
+
+	BMessage list;
+	RelationsToList(relations, idToRef, idToName, &list);
+
+	// no source in the config: the files of the relations are not registered, what is done to them is not done to a relation
+	BMessage fileConfig(relationConfig);
+	fileConfig.AddString(sen::key::kRelationType, relationType);
+	fileConfig.AddString(sen::key::kSourceId, "");
+	entry_ref workingRef(*typeDirRef), openRef(*typeDirRef);
+	result = WriteTargetRelations(&list, &fileConfig, &workingRef, &openRef);
+	if (result != B_OK)
+		return result;
+
+	RelationFolders::FolderInfo folder;
+	BEntry folderEntry(typeDirRef);
+	if (folderEntry.GetNodeRef(&folder.node) == B_OK) {
+		folder.ref = *typeDirRef;
+		folder.relationType = relationType;
+		folder.viewId = viewId;
+		folder.relationConfig = relationConfig;
+		folder.common = true;
+		RelationFolders::Instance().RegisterFolder(folder);
+	}
+	return B_OK;
+}
+
+
+status_t
 TrackerSenRelations::MaterializeType(const entry_ref& sourceRef, const char* viewId, const char* relationType,
 	entry_ref* typeDirRef)
 {

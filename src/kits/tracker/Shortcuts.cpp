@@ -673,9 +673,12 @@ TShortcuts::OpenRelationsItem(BMenu* menu)
 }
 
 
+// With Shift and several files selected the item is "Open related (common)": one folder with the relations of all of them, see TTracker::OpenRelationFoldersOfSelection().
 const char*
 TShortcuts::OpenRelationsLabel()
 {
+	if (fInWindow && (modifiers() & B_SHIFT_KEY) != 0 && PoseView() != NULL && PoseView()->CountSelected() > 1)
+		return B_TRANSLATE("Open related (common)" B_UTF8_ELLIPSIS);
 	return B_TRANSLATE("Open related" B_UTF8_ELLIPSIS);
 }
 
@@ -1437,6 +1440,8 @@ TShortcuts::UpdateOpenRelationsItem(BMenuItem* item)
 {
 	if (item == NULL)
 		return;
+
+	item->SetLabel(OpenRelationsLabel());
 
 	if (fInWindow) {
 		item->SetEnabled(HasSelection());

@@ -83,6 +83,11 @@ TLiveMixin::UpdateFileMenu(BMenu* menu)
 				case kEnrichEntry:
 					fWindow->Shortcuts()->UpdateEnrichItem(item);
 					break;
+
+				// Open related/Open related (common)
+				case kOpenRelations:
+					fWindow->Shortcuts()->UpdateOpenRelationsItem(item);
+					break;
 			}
 		}
 

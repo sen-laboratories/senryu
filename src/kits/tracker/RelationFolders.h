@@ -47,6 +47,7 @@ public:
 		BString		relationType;	///< empty for the top level (the folder of all types)
 		BString		viewId;			///< the folder (TSID) that holds this view: the top level and the folders of the types
 		BMessage	relationConfig;
+		bool		common = false;	///< the common view of several files (what they have in common): nothing is dropped into it, see "Open related (common)"
 		bool		all = false;	///< the folder of all the relations of a file (of all types, in one folder): a dropped file is a generic relation that is shown in it
 	};
 

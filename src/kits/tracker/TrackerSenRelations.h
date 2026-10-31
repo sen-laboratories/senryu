@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <vector>
 #include <Entry.h>
 #include <Message.h>
 #include <ObjectList.h>
@@ -100,6 +101,13 @@ public:
 	/** Whether the folder is one of the views of relations (it is below the folder where they are made), stored or self: its files stand for relations. */
 	static bool		IsInRelationView(const entry_ref* ref);
 	static status_t	MaterializeType(const entry_ref& sourceRef, const char* viewId,
+						const char* relationType, entry_ref* typeDirRef);
+	/**
+	 * The common view of a selection ("Open related (common)"): one folder of a relation type with the targets of all the files, each once. The SEN server
+	 * answers for several files with the targets of all of them (see kRelationsGet), and the menus offered only the types that fit all of them. The folder
+	 * belongs to none of the files: its relations cannot be changed here and nothing is dropped into it.
+	 */
+	static status_t	MaterializeTypeOfSelection(const std::vector<entry_ref>& sources, const char* viewId,
 						const char* relationType, entry_ref* typeDirRef);
 	/**
 	 * Convert the relations of the server (target ID -> properties) into the list that WriteTargetRelations() expects: one

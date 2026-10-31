@@ -486,11 +486,83 @@ HasRelationsOfType(const entry_ref& source, const char* relationType)
 
 
 /**
+ * "Open related (common)": one folder for the selection, with what the files have in common (the relation type that was chosen: the targets of all the files,
+ * each once; for all the types: a folder for each type that fits all of them). The types fit all the files by the sourceTypes and targetTypes that their
+ * definitions name: the SEN server filtered the menu with them and answers for several files with the union of the targets.
+ */
+static status_t
+PrepareCommonRelationFolder(BMessage* message, entry_ref* folderRef)
+{
+	std::vector<entry_ref> sources;
+	entry_ref source;
+	for (int32 index = 0; message->FindRef(sen::key::kSourceRef, index, &source) == B_OK; index++)
+		sources.push_back(source);
+
+	BString viewId;
+	TrackerSenRelations::NewViewId(&viewId);
+
+	if (message->what == sen::cmd::kOpenRelationTargetView) {
+		const char* relationType = NULL;
+		if (message->FindString(sen::key::kRelationType, &relationType) != B_OK)
+			return B_BAD_VALUE;
+		return TrackerSenRelations::MaterializeTypeOfSelection(sources, viewId.String(), relationType, folderRef);
+	}
+
+	// the folder of all the types: the types that the menu showed, each as a folder of its own in the folder of the view
+	RelationContextRef context = RelationContexts::Find(message);
+	if (context == NULL)
+		return B_NAME_NOT_FOUND;
+	entry_ref typeFolder;
+	bool any = false;
+	for (int32 index = 0; index < context->relations.CountStrings(); index++) {
+		if (TrackerSenRelations::MaterializeTypeOfSelection(sources, viewId.String(), context->relations.StringAt(index).String(), &typeFolder) == B_OK)
+			any = true;
+	}
+	if (!any)
+		return B_NAME_NOT_FOUND;
+
+	BEntry typeEntry(&typeFolder), root;
+	status_t result = typeEntry.GetParent(&root);
+	if (result == B_OK)
+		result = root.GetRef(folderRef);
+	if (result != B_OK)
+		return result;
+
+	BString title("Relation types of ");
+	title << (int) sources.size() << " files (common)";
+	BNode(&root).WriteAttrString(sen::attr::kFolderName, &title);
+
+	RelationFolders::FolderInfo info;
+	if (root.GetNodeRef(&info.node) == B_OK) {
+		info.ref = *folderRef;
+		info.viewId = viewId;
+		info.common = true;
+		RelationFolders::Instance().RegisterFolder(info);
+	}
+	return B_OK;
+}
+
+
+/**
  * "Open related" for a selection of several files: the folder of each of them, in a window of its own (a folder is the relations of one file, and a file can
  * be dropped into it to relate it). A file that has no relations of the chosen type gets no window.
  */
 void TTracker::OpenRelationFoldersOfSelection(BMessage* message)
 {
+	// with Shift ("Open related (common)"): one folder for all of them
+	if ((modifiers() & B_SHIFT_KEY) != 0) {
+		entry_ref folder;
+		status_t result = PrepareCommonRelationFolder(message, &folder);
+		if (result != B_OK) {
+			PRINT(("error opening the common relation view: %s\n", strerror(result)));
+			return;
+		}
+		BMessage* open = new BMessage(B_REFS_RECEIVED);
+		open->AddRef("refs", &folder);
+		be_app_messenger.SendMessage(open);
+		return;
+	}
+
 	const char* relationType = NULL;
 	bool ofType = message->what == sen::cmd::kOpenRelationTargetView && message->FindString(sen::key::kRelationType, &relationType) == B_OK;
 

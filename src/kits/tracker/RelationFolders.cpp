@@ -514,6 +514,15 @@ RelationFolders::HandleDrop(const BMessage& drop, const node_ref& folderNode)
 		folder = found->second;
 	}
 
+	// the common view of several files is a filter, it belongs to none of them: nothing is related by a drop into it
+	if (folder.common) {
+		BAlert* alert = new BAlert("", "This is what the selected files have in common: to relate a file, drop it into the relations of one of them.", "OK",
+			NULL, NULL, B_WIDTH_AS_USUAL, B_INFO_ALERT);
+		alert->SetFlags(alert->Flags() | B_CLOSE_ON_ESCAPE);
+		alert->Go(NULL);
+		return true;
+	}
+
 	// the files that do not fit the relation of the folder: they are said at the end, the others are related
 	std::vector<BString> refused;
 	BString relationName;
