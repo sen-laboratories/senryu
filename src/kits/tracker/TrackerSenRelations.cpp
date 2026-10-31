@@ -61,6 +61,35 @@ TrackerSenRelations::ResolveRelation(const entry_ref* ref, BString* srcId,
 }
 
 
+/**
+ * The file of a relation in a relation view stands for the target, so it looks like it: it gets the icon of the target (its own, else that of its type), whatever
+ * the type of the relation is. A target of no icon leaves the file with the icon of the relation.
+ */
+static void
+CopyTargetIcon(BNode& relationNode, const entry_ref& target)
+{
+	BNode targetNode(&target);
+	if (targetNode.InitCheck() != B_OK)
+		return;
+
+	uint8* data = NULL;
+	size_t size = 0;
+	type_code type = 0;
+	BNodeInfo info(&targetNode);
+	if (info.GetIcon(&data, &size, &type) != B_OK || type != B_VECTOR_ICON_TYPE) {
+		delete[] data;
+		data = NULL;
+		char mimeType[B_MIME_TYPE_LENGTH];
+		if (info.GetType(mimeType) != B_OK || BMimeType(mimeType).GetIcon(&data, &size) != B_OK) {
+			delete[] data;
+			return;
+		}
+	}
+	relationNode.WriteAttr("BEOS:ICON", B_VECTOR_ICON_TYPE, 0, data, size);
+	delete[] data;
+}
+
+
 status_t
 TrackerSenRelations::WriteTargetRelations(
 	BMessage  *relations,
@@ -362,6 +391,11 @@ TrackerSenRelations::WriteTargetRelations(
 				return result;
 			}
 		}   // properties loop
+		// (a folder is a nested relation: it keeps the icon that it got above)
+		entry_ref targetRef;
+		if (!hasRelations && properties.FindRef(sen::attr::kRelationTargetRef, &targetRef) == B_OK)
+			CopyTargetIcon(relationNode, targetRef);
+
 		// sync after finished writing attributes
 		relationNode.Sync();
 
@@ -1193,8 +1227,17 @@ status_t
 TrackerSenRelations::MaterializeTypeOfSelection(const std::vector<entry_ref>& sources, const char* viewId, const char* relationType,
 	entry_ref* typeDirRef)
 {
-	if (sources.empty() || strcmp(relationType, sen::mime::kAssociationRelation) == 0)
-		return B_NOT_SUPPORTED;	// (what is associated with a label is found by query for each label)
+	if (sources.empty())
+		return B_NOT_SUPPORTED;
+	if (strcmp(relationType, sen::mime::kAssociationRelation) == 0) {
+		// (what is associated with a label is found by query for each label, which a view of several files does not do: the labels of files are)
+		for (const entry_ref& source : sources) {
+			BNode node(&source);
+			char type[B_MIME_TYPE_LENGTH];
+			if (BNodeInfo(&node).GetType(type) == B_OK && BString(type).StartsWith(sen::mime::kClassificationPrefix))
+				return B_NOT_SUPPORTED;
+		}
+	}
 
 	BMessage ask(sen::cmd::kRelationsGet);
 	for (const entry_ref& source : sources)

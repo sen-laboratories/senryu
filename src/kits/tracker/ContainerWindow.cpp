@@ -3615,7 +3615,7 @@ BContainerWindow::NewAttributesMenu(BMenu* menu)
 	menu->AddItem(NewAttributeMenuItem(B_TRANSLATE("Created"),
 		kAttrStatCreated, B_TIME_TYPE, 150, B_ALIGN_LEFT, false, true));
 
-	menu->AddItem(NewAttributeMenuItem(B_TRANSLATE("Kind"),
+	menu->AddItem(NewAttributeMenuItem(B_TRANSLATE("Type"),
 		kAttrMIMEType, B_MIME_STRING_TYPE, 145, B_ALIGN_LEFT, false, false));
 
 	if (TargetModel()->IsTrash() || TargetModel()->InTrash()) {

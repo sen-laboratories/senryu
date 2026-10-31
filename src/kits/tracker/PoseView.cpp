@@ -6081,6 +6081,7 @@ BPoseView::AttributeChanged(const BMessage* message)
 
 	int32 index;
 	attr_info info;
+	bool typeChanged = false;
 	PoseList* posesFound = CurrentPoseList()->FindAllPoses(&itemNode);
 	int32 posesCount = posesFound->CountItems();
 	for (int i = 0; i < posesCount; i++) {
@@ -6142,8 +6143,17 @@ BPoseView::AttributeChanged(const BMessage* message)
 			// update attr
 			pose->UpdateWidgetAndModel(attrName, infoStatus == B_OK ? info.type : 0,
 				index, poseLoc, this, visible);
-			if (strcmp(attrName, kAttrMIMEType) == 0 || strcmp(attrName, sen::attr::kType) == 0)
-				RefreshMimeTypeList();
+			// SEN: a file that got another type (a PDF that a plugin identified as a scientific paper) shows it at once: the columns that depend on the type are
+			// read again, and the Attributes menu (once, below) gets the attributes of the new type
+			if (strcmp(attrName, kAttrMIMEType) == 0 || strcmp(attrName, sen::attr::kType) == 0) {
+				typeChanged = true;
+				for (int32 columnIndex = 0; ColumnAt(columnIndex) != NULL; columnIndex++) {
+					BColumn* column = ColumnAt(columnIndex);
+					BTextWidget* widget = pose->WidgetFor(column->AttrHash());
+					if (widget != NULL)
+						widget->CheckAndUpdate(poseLoc, column, this, visible);
+				}
+			}
 		} else {
 			// update stat
 			pose->UpdateWidgetAndModel(0, 0, index, poseLoc, this, visible);
@@ -6173,6 +6183,12 @@ BPoseView::AttributeChanged(const BMessage* message)
 		}
 	}
 	delete posesFound;
+	if (typeChanged) {
+		RefreshMimeTypeList();
+		BContainerWindow* window = ContainerWindow();
+		if (window != NULL && window->ShouldAddMenus())
+			window->AddMimeTypesToMenu();
+	}
 	if (posesCount == 0) {
 		// we received an attr changed notification for a zombie model, it means
 		// that although we couldn't open the node the first time, it seems
