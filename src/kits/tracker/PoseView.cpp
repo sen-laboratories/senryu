@@ -114,6 +114,8 @@ const float kDoubleClickTresh = 6;
 
 const uint32 kAddNewPoses = 'Tanp';
 const uint32 kAddPosesCompleted = 'Tapc';
+// SEN: the Attributes menu is made again, once for all the files that were removed in a row
+const uint32 kUpdateMimeTypesMenu = 'Tumm';
 const int32 kMaxAddPosesChunk = 50;
 
 const int32 kRoomForLine = 2;
@@ -268,6 +270,7 @@ BPoseView::BPoseView(Model* model, uint32 viewMode)
 	fDragEnabled(true),
 	fDropEnabled(true),
 	fMimeTypeListIsDirty(false),
+	fMimeTypeMenuUpdatePending(false),
 	fWidgetTextOutline(false),
 	fTrackRightMouseUp(false),
 	fTrackMouseUp(false),
@@ -2275,6 +2278,15 @@ BPoseView::MessageReceived(BMessage* message)
 		return;
 
 	switch (message->what) {
+		case kUpdateMimeTypesMenu:
+		{
+			fMimeTypeMenuUpdatePending = false;
+			BContainerWindow* window = ContainerWindow();
+			if (window != NULL && window->ShouldAddMenus())
+				window->AddMimeTypesToMenu();
+			break;
+		}
+
 		case kAddNewPoses:
 		{
 			AddPosesResult* currentPoses;
@@ -8355,6 +8367,12 @@ BPoseView::DeletePose(const node_ref* itemNode, BPose* pose, int32 index)
 		}
 
 		fMimeTypeListIsDirty = true;
+		// SEN: the Attributes menu has the types of the files that are in the folder: one that was of the last file of its type goes with it (done
+		// once, after the files that are deleted in a row)
+		if (!fMimeTypeMenuUpdatePending && Window() != NULL) {
+			fMimeTypeMenuUpdatePending = true;
+			Window()->PostMessage(kUpdateMimeTypesMenu, this);
+		}
 
 		if (pose->HasLocation())
 			RemoveFromVSList(pose);
