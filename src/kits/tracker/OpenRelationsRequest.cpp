@@ -19,6 +19,10 @@ OpenRelationsRequest::Parse(const BMessage& message, OpenRelationsRequest* reque
 
 	if (message.FindRef(sen::key::kSourceRef, &request->sourceRef) != B_OK)
 		return fail("no file to show the relations of");
+	request->sources.clear();
+	entry_ref each;
+	for (int32 index = 0; message.FindRef(sen::key::kSourceRef, index, &each) == B_OK; index++)
+		request->sources.push_back(each);
 	if (message.FindInt64(sen::key::kRelationContext, &request->contextId) != B_OK || request->contextId <= 0)
 		return fail("the menu did not say which relations it showed");
 
@@ -33,7 +37,12 @@ OpenRelationsRequest::ToMessage(uint32 what, BMessage* message) const
 {
 	message->MakeEmpty();
 	message->what = what;
-	message->AddRef(sen::key::kSourceRef, &sourceRef);
+	if (sources.empty()) {
+		message->AddRef(sen::key::kSourceRef, &sourceRef);
+	} else {
+		for (const entry_ref& source : sources)
+			message->AddRef(sen::key::kSourceRef, &source);
+	}
 	if (!sourceId.IsEmpty())
 		message->AddString(sen::key::kSourceId, sourceId);
 	message->AddInt64(sen::key::kRelationContext, contextId);

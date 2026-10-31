@@ -176,6 +176,8 @@ protected:
 										  BMessage* relationsNested);
 
 	status_t CreateNewAssociationEntity(const char* associationEntityType, entry_ref* targetRef);
+	/** "Open related" for several files: the folder of each of them in a window of its own */
+	void OpenRelationFoldersOfSelection(BMessage* message);
 	status_t EditNewEntity(const entry_ref* ref);
 	status_t PrepareLaunchTarget(const entry_ref* srcRef, const char* targetId, entry_ref* targetRef, BMessage* params);
 	bool OpenOntologyAsFolder(const entry_ref* ref);

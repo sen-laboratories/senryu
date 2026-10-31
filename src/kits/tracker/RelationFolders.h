@@ -99,7 +99,8 @@ private:
 				RelationFolders();
 
 	status_t	Send(BMessage* message, BMessage* reply) const;
-	status_t	AddRelation(const FolderInfo& folder, const entry_ref& target);
+	/** @param reverse the file is the source of the relation and the source of the folder its target (a book's folder of authorships takes the author) */
+	status_t	AddRelation(const FolderInfo& folder, const entry_ref& target, bool reverse = false);
 	status_t	MoveRelation(const FileInfo& info, const FolderInfo& to, const node_ref& fileNode);
 
 	void		StartWatching(const node_ref& folder);

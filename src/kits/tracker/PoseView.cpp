@@ -3555,23 +3555,27 @@ BPoseView::NewFileFromTemplate(const BMessage* message)
 		BMessage addRelationMsg(sen::cmd::kRelationAdd);
 		addRelationMsg.AddString(sen::key::kRelationType, message->GetString(sen::key::kRelationType, ""));
 		addRelationMsg.AddString(sen::key::kTargetType, message->GetString(sen::key::kTargetType, ""));
-		entry_ref relationSrcRef;
-		message->FindRef(sen::key::kSourceRef, &relationSrcRef);
-		addRelationMsg.AddRef(sen::key::kSourceRef, &relationSrcRef);
 		addRelationMsg.AddRef(sen::key::kTargetRef, &fileRef);
 		// (the properties of the relation, e.g. the label that was asked for with Shift: see TTracker::HandleSenMessage)
 		BMessage relationProperties;
 		if (message->FindMessage(sen::key::kRelationProperties, &relationProperties) == B_OK)
 			addRelationMsg.AddMessage(sen::key::kRelationProperties, &relationProperties);
 
-		PRINT(("adding new relation to new target from template with message:\n"));
-		addRelationMsg.PrintToStream();
-
+		// the new file is the target of the relation of every file that "New related" was chosen for
 		BMessenger senMsgr(sen::kServerSignature);
-		if (senMsgr.IsValid()) {
-			senMsgr.SendMessage(&addRelationMsg);
-		} else {
-			PRINT(("could not reach sen_server.\n"));
+		entry_ref relationSrcRef;
+		for (int32 sourceIndex = 0; message->FindRef(sen::key::kSourceRef, sourceIndex, &relationSrcRef) == B_OK; sourceIndex++) {
+			BMessage perSource(addRelationMsg);
+			perSource.AddRef(sen::key::kSourceRef, &relationSrcRef);
+
+			PRINT(("adding new relation to new target from template with message:\n"));
+			perSource.PrintToStream();
+
+			if (senMsgr.IsValid()) {
+				senMsgr.SendMessage(&perSource);
+			} else {
+				PRINT(("could not reach sen_server.\n"));
+			}
 		}
 	}
 

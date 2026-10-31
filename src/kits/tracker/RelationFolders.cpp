@@ -5,6 +5,7 @@
 
 #include "RelationFolders.h"
 
+#include <Alert.h>
 #include <Autolock.h>
 #include <Debug.h>
 #include <Directory.h>
@@ -42,6 +43,28 @@ IsIdentityAttribute(const char* name)
 		|| strcmp(name, sen::key::kRelationId) == 0
 		|| strcmp(name, sen::key::kTargetMissing) == 0
 		|| strcmp(name, sen::attr::kTo) == 0;
+}
+
+/**
+ * Whether the SEN server offers the relation between two files: the types of the relation name the types of the files that it starts and ends at. Without an
+ * answer (no server) it is not refused here: nothing is created then anyway.
+ */
+bool
+Offers(const entry_ref& source, const entry_ref& target, const BString& relationType)
+{
+	BMessenger server(sen::kServerSignature);
+	BMessage ask(sen::cmd::kRelationsGetCompatible), reply;
+	ask.AddRef(sen::key::kSourceRef, &source);
+	ask.AddRef(sen::key::kTargetRef, &target);
+	ask.AddBool(sen::key::kWithConfigs, false);
+	if (!server.IsValid() || server.SendMessage(&ask, &reply, 5000000, 5000000) != B_OK)
+		return true;
+	const char* type;
+	for (int32 index = 0; reply.FindString(sen::key::kRelations, index, &type) == B_OK; index++) {
+		if (relationType == type)
+			return true;
+	}
+	return false;
 }
 
 }	// namespace
@@ -380,12 +403,12 @@ RelationFolders::AttributesChanged(const node_ref& file, const char* attribute)
 
 
 status_t
-RelationFolders::AddRelation(const FolderInfo& folder, const entry_ref& target)
+RelationFolders::AddRelation(const FolderInfo& folder, const entry_ref& target, bool reverse)
 {
 	BMessage add(sen::cmd::kRelationAdd);
-	add.AddRef(sen::key::kSourceRef, &folder.sourceRef);
+	add.AddRef(sen::key::kSourceRef, reverse ? &target : &folder.sourceRef);
 	add.AddString(sen::key::kRelationType, folder.relationType);
-	add.AddRef(sen::key::kTargetRef, &target);
+	add.AddRef(sen::key::kTargetRef, reverse ? &folder.sourceRef : &target);
 
 	BMessage reply;
 	status_t status = Send(&add, &reply);
@@ -491,6 +514,10 @@ RelationFolders::HandleDrop(const BMessage& drop, const node_ref& folderNode)
 		folder = found->second;
 	}
 
+	// the files that do not fit the relation of the folder: they are said at the end, the others are related
+	std::vector<BString> refused;
+	BString relationName;
+
 	entry_ref dropped;
 	for (int32 i = 0; drop.FindRef("refs", i, &dropped) == B_OK; i++) {
 		node_ref droppedNode;
@@ -554,7 +581,35 @@ RelationFolders::HandleDrop(const BMessage& drop, const node_ref& folderNode)
 			continue;
 		}
 
-		AddRelation(target, dropped);
+		// the relation has to fit the types of the two files, as the types of the relation say (SEN:sourceTypes and SEN:targetTypes, what the SEN server
+		// answers for files that are dragged onto others): a file that does not is not related. A relation that the file can be the source of, with the
+		// source of the folder as its target (the authors dropped on the authorships of a book), is made the other way round.
+		bool reverse = false;
+		if (!Offers(target.sourceRef, dropped, target.relationType)) {
+			if (Offers(dropped, target.sourceRef, target.relationType)) {
+				reverse = true;
+			} else {
+				refused.push_back(BString(dropped.name));
+				if (relationName.IsEmpty())
+					relationName.SetTo(target.relationConfig.GetString(sen::key::kRelationName, target.relationType.String()));
+				continue;
+			}
+		}
+
+		AddRelation(target, dropped, reverse);
+	}
+
+	if (!refused.empty()) {
+		BString text("The relation \"");
+		text << relationName << "\" does not fit ";
+		for (size_t index = 0; index < refused.size() && index < 5; index++)
+			text << (index > 0 ? ", " : "") << refused[index];
+		if (refused.size() > 5)
+			text << " and " << (int) (refused.size() - 5) << " more";
+		text << ", by the types of the files that it is for.";
+		BAlert* alert = new BAlert("", text.String(), "OK", NULL, NULL, B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+		alert->SetFlags(alert->Flags() | B_CLOSE_ON_ESCAPE);
+		alert->Go(NULL);	// (not waited for: the drop is done)
 	}
 	return true;
 }
