@@ -47,6 +47,7 @@ public:
 		BString		relationType;	///< empty for the top level (the folder of all types)
 		BString		viewId;			///< the folder (TSID) that holds this view: the top level and the folders of the types
 		BMessage	relationConfig;
+		bool		common = false;	///< the common view of several files (what they have in common): nothing is dropped into it, see "Open related (common)"
 		bool		all = false;	///< the folder of all the relations of a file (of all types, in one folder): a dropped file is a generic relation that is shown in it
 	};
 
@@ -99,7 +100,8 @@ private:
 				RelationFolders();
 
 	status_t	Send(BMessage* message, BMessage* reply) const;
-	status_t	AddRelation(const FolderInfo& folder, const entry_ref& target);
+	/** @param reverse the file is the source of the relation and the source of the folder its target (a book's folder of authorships takes the author) */
+	status_t	AddRelation(const FolderInfo& folder, const entry_ref& target, bool reverse = false);
 	status_t	MoveRelation(const FileInfo& info, const FolderInfo& to, const node_ref& fileNode);
 
 	void		StartWatching(const node_ref& folder);

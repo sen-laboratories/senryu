@@ -2230,8 +2230,7 @@ BContainerWindow::SetupNewRelationMenu(BMenu* parent, const entry_ref* ref)
 	}
 	int32 menuIndex = parent->IndexOf(openItem) - 1;	// insert before Open
 
-	// build a list of all selected files to show relations for
-	// todo: support intersection of supported sources and types
+	// build a list of all selected files to show relations for: the SEN server answers with what can be created at all of them
 	BMessage message(B_REFS_RECEIVED);
 
 	for (int32 index = 0; index < count; index++) {
@@ -2294,8 +2293,7 @@ BContainerWindow::SetupNewAssociationMenu(BMenu* parent, const entry_ref* ref)
 	}
 	menuIndex++;	// insert right after "Create link"
 
-	// build a list of all selected files to show relations for
-	// todo: support intersection of supported sources and types
+	// build a list of all selected files to show relations for: the SEN server answers with what fits all of them
 	BMessage message(B_REFS_RECEIVED);
 	for (int32 index = 0; index < count; index++) {
 		BPose* pose = PoseView()->SelectionList()->ItemAt(index);
@@ -2355,8 +2353,7 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 	if (menuIndex == B_ERROR)
 		return;
 
-	// build a list of all selected files to show relations for
-	// todo: support intersection of supported sources and types
+	// build a list of all selected files to show relations for: the SEN server answers with what any of them has as far as it fits all of them
 	BMessage message(B_REFS_RECEIVED);
 
 	for (int32 index = 0; index < count; index++) {
@@ -2404,6 +2401,9 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 
 	parent->AddItem(fOpenSelfRelationsItem, menuIndex + 2);
 	Shortcuts()->UpdateOpenSelfRelationsItem(fOpenSelfRelationsItem);
+	// what a document contains is that of one document: for several files it means nothing
+	if (count > 1)
+		fOpenSelfRelationsItem->SetEnabled(false);
 }
 
 
@@ -3616,7 +3616,7 @@ BContainerWindow::NewAttributesMenu(BMenu* menu)
 	menu->AddItem(NewAttributeMenuItem(B_TRANSLATE("Created"),
 		kAttrStatCreated, B_TIME_TYPE, 150, B_ALIGN_LEFT, false, true));
 
-	menu->AddItem(NewAttributeMenuItem(B_TRANSLATE("Kind"),
+	menu->AddItem(NewAttributeMenuItem(B_TRANSLATE("Type"),
 		kAttrMIMEType, B_MIME_STRING_TYPE, 145, B_ALIGN_LEFT, false, false));
 
 	if (TargetModel()->IsTrash() || TargetModel()->InTrash()) {

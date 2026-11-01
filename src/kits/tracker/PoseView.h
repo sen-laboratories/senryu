@@ -838,6 +838,7 @@ protected:
 
 private:
 	bool fMimeTypeListIsDirty : 1;
+	bool fMimeTypeMenuUpdatePending : 1;
 	bool fWidgetTextOutline : 1;
 	bool fTrackRightMouseUp : 1;
 	bool fTrackMouseUp : 1;

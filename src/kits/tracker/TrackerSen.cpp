@@ -30,6 +30,8 @@
 #include "Pose.h"
 #include "PoseView.h"
 #include "Tracker.h"
+#include <vector>
+
 #include "TrackerSenLog.h"
 #include "OpenRelationsRequest.h"
 #include "RelationContext.h"
@@ -312,6 +314,16 @@ TTracker::HandleSenMessage(BMessage* message)
 			return false;
 	}
 
+	// a selection of several files: the folder of each of them (what the menu showed fits all of them)
+	if (message->what == sen::cmd::kOpenRelationView || message->what == sen::cmd::kOpenRelationTargetView) {
+		int32 sourceCount = 0;
+		message->GetInfo(sen::key::kSourceRef, NULL, &sourceCount);
+		if (sourceCount > 1) {
+			OpenRelationFoldersOfSelection(message);
+			return true;
+		}
+	}
+
 	// handle SEN command messages
 	status_t result = B_OK;
 	entry_ref relationDirRef;
@@ -349,6 +361,11 @@ TTracker::HandleSenMessage(BMessage* message)
 				PRINT(("could not get source ref: %s\n", strerror(result) ));
 				return true;	// abort
 			}
+			// (a selection of several files: the relation is made at each of them, to the same new target)
+			std::vector<entry_ref> allSources;
+			entry_ref eachSource;
+			for (int32 index = 0; message->FindRef(sen::key::kSourceRef, index, &eachSource) == B_OK; index++)
+				allSources.push_back(eachSource);
 
 			entry_ref targetRef;
 			result = message->FindRef(sen::key::kTargetRef, &targetRef);
@@ -369,19 +386,21 @@ TTracker::HandleSenMessage(BMessage* message)
 							relationType.String(), BPath(&targetRef).Path(), targetType.String() ));
 
 						// send as SEN scripting message to add relation of desired type
-						BMessage addRelationMsg(sen::cmd::kRelationAdd);
-						addRelationMsg.AddString(sen::key::kRelationType, relationType);
-						addRelationMsg.AddString(sen::key::kTargetType, targetType);
-						addRelationMsg.AddRef(sen::key::kSourceRef, &sourceRef);
-						addRelationMsg.AddRef(sen::key::kTargetRef, &targetRef);
-
-						addRelationMsg.PrintToStream();
-
 						BMessenger senMsgr(sen::kServerSignature);
-						if (senMsgr.IsValid()) {
-							senMsgr.SendMessage(&addRelationMsg);
-						} else {
-							PRINT(("could not reach sen_server.\n"));
+						for (const entry_ref& source : allSources) {
+							BMessage addRelationMsg(sen::cmd::kRelationAdd);
+							addRelationMsg.AddString(sen::key::kRelationType, relationType);
+							addRelationMsg.AddString(sen::key::kTargetType, targetType);
+							addRelationMsg.AddRef(sen::key::kSourceRef, &source);
+							addRelationMsg.AddRef(sen::key::kTargetRef, &targetRef);
+
+							addRelationMsg.PrintToStream();
+
+							if (senMsgr.IsValid()) {
+								senMsgr.SendMessage(&addRelationMsg);
+							} else {
+								PRINT(("could not reach sen_server.\n"));
+							}
 						}
 					} else {
 						return true;	// bail out
@@ -453,6 +472,127 @@ TTracker::HandleSenMessage(BMessage* message)
 	// just indicates we are done and no further processing by the caller is needed.
 	return true;
 }
+
+/** whether a file has relations of a type (the answer of the SEN server for that file alone) */
+static bool
+HasRelationsOfType(const entry_ref& source, const char* relationType)
+{
+	BMessenger server(sen::kServerSignature);
+	BMessage ask(sen::cmd::kRelationsGet), reply;
+	ask.AddRef(sen::key::kSourceRef, &source);
+	ask.AddString(sen::key::kRelationType, relationType);
+	return server.IsValid() && server.SendMessage(&ask, &reply, 5000000, 5000000) == B_OK && reply.GetInt32("count", 0) > 0;
+}
+
+
+/**
+ * "Open related (common)": one folder for the selection, with what the files have in common (the relation type that was chosen: the targets of all the files,
+ * each once; for all the types: a folder for each type that fits all of them). The types fit all the files by the sourceTypes and targetTypes that their
+ * definitions name: the SEN server filtered the menu with them and answers for several files with the union of the targets.
+ */
+static status_t
+PrepareCommonRelationFolder(BMessage* message, entry_ref* folderRef)
+{
+	std::vector<entry_ref> sources;
+	entry_ref source;
+	for (int32 index = 0; message->FindRef(sen::key::kSourceRef, index, &source) == B_OK; index++)
+		sources.push_back(source);
+
+	BString viewId;
+	TrackerSenRelations::NewViewId(&viewId);
+
+	if (message->what == sen::cmd::kOpenRelationTargetView) {
+		const char* relationType = NULL;
+		if (message->FindString(sen::key::kRelationType, &relationType) != B_OK)
+			return B_BAD_VALUE;
+		return TrackerSenRelations::MaterializeTypeOfSelection(sources, viewId.String(), relationType, folderRef);
+	}
+
+	// the folder of all the types: the types that the menu showed, each as a folder of its own in the folder of the view
+	RelationContextRef context = RelationContexts::Find(message);
+	if (context == NULL)
+		return B_NAME_NOT_FOUND;
+	entry_ref typeFolder;
+	bool any = false;
+	for (int32 index = 0; index < context->relations.CountStrings(); index++) {
+		if (TrackerSenRelations::MaterializeTypeOfSelection(sources, viewId.String(), context->relations.StringAt(index).String(), &typeFolder) == B_OK)
+			any = true;
+	}
+	if (!any)
+		return B_NAME_NOT_FOUND;
+
+	BEntry typeEntry(&typeFolder), root;
+	status_t result = typeEntry.GetParent(&root);
+	if (result == B_OK)
+		result = root.GetRef(folderRef);
+	if (result != B_OK)
+		return result;
+
+	BString title("Relation types of ");
+	title << (int) sources.size() << " files (common)";
+	BNode(&root).WriteAttrString(sen::attr::kFolderName, &title);
+
+	RelationFolders::FolderInfo info;
+	if (root.GetNodeRef(&info.node) == B_OK) {
+		info.ref = *folderRef;
+		info.viewId = viewId;
+		info.common = true;
+		RelationFolders::Instance().RegisterFolder(info);
+	}
+	return B_OK;
+}
+
+
+/**
+ * "Open related" for a selection of several files: the folder of each of them, in a window of its own (a folder is the relations of one file, and a file can
+ * be dropped into it to relate it). A file that has no relations of the chosen type gets no window.
+ */
+void TTracker::OpenRelationFoldersOfSelection(BMessage* message)
+{
+	// with Shift ("Open related (common)"): one folder for all of them
+	if ((modifiers() & B_SHIFT_KEY) != 0) {
+		entry_ref folder;
+		status_t result = PrepareCommonRelationFolder(message, &folder);
+		if (result != B_OK) {
+			PRINT(("error opening the common relation view: %s\n", strerror(result)));
+			return;
+		}
+		BMessage* open = new BMessage(B_REFS_RECEIVED);
+		open->AddRef("refs", &folder);
+		be_app_messenger.SendMessage(open);
+		return;
+	}
+
+	const char* relationType = NULL;
+	bool ofType = message->what == sen::cmd::kOpenRelationTargetView && message->FindString(sen::key::kRelationType, &relationType) == B_OK;
+
+	entry_ref source;
+	for (int32 index = 0; message->FindRef(sen::key::kSourceRef, index, &source) == B_OK; index++) {
+		if (ofType && !HasRelationsOfType(source, relationType))
+			continue;
+
+		BMessage single(*message);
+		single.RemoveName(sen::key::kSourceRef);
+		single.AddRef(sen::key::kSourceRef, &source);
+		// (the ID of the message is that of the first file)
+		single.RemoveName(sen::key::kSourceId);
+		BString id;
+		if (BNode(&source).ReadAttrString(sen::attr::kId, &id) == B_OK && !id.IsEmpty())
+			single.AddString(sen::key::kSourceId, id);
+
+		entry_ref folder;
+		status_t result = message->what == sen::cmd::kOpenRelationView ? PrepareRelationFolder(&single, &folder)
+			: PrepareRelationTargetFolder(&single, &folder);
+		if (result != B_OK) {
+			PRINT(("error opening the relation view of %s: %s\n", source.name, strerror(result)));
+			continue;
+		}
+		BMessage* open = new BMessage(B_REFS_RECEIVED);
+		open->AddRef("refs", &folder);
+		be_app_messenger.SendMessage(open);
+	}
+}
+
 
 status_t TTracker::CreateNewAssociationEntity(const char* associationEntityType, entry_ref* targetRef)
 {

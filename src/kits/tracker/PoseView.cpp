@@ -116,6 +116,8 @@ const float kDoubleClickTresh = 6;
 
 const uint32 kAddNewPoses = 'Tanp';
 const uint32 kAddPosesCompleted = 'Tapc';
+// SEN: the Attributes menu is made again, once for all the files that were removed in a row
+const uint32 kUpdateMimeTypesMenu = 'Tumm';
 const int32 kMaxAddPosesChunk = 50;
 
 const int32 kRoomForLine = 2;
@@ -270,6 +272,7 @@ BPoseView::BPoseView(Model* model, uint32 viewMode)
 	fDragEnabled(true),
 	fDropEnabled(true),
 	fMimeTypeListIsDirty(false),
+	fMimeTypeMenuUpdatePending(false),
 	fWidgetTextOutline(false),
 	fTrackRightMouseUp(false),
 	fTrackMouseUp(false),
@@ -2285,6 +2288,15 @@ BPoseView::MessageReceived(BMessage* message)
 		return;
 
 	switch (message->what) {
+		case kUpdateMimeTypesMenu:
+		{
+			fMimeTypeMenuUpdatePending = false;
+			BContainerWindow* window = ContainerWindow();
+			if (window != NULL && window->ShouldAddMenus())
+				window->AddMimeTypesToMenu();
+			break;
+		}
+
 		case kAddNewPoses:
 		{
 			AddPosesResult* currentPoses;
@@ -3565,23 +3577,27 @@ BPoseView::NewFileFromTemplate(const BMessage* message)
 		BMessage addRelationMsg(sen::cmd::kRelationAdd);
 		addRelationMsg.AddString(sen::key::kRelationType, message->GetString(sen::key::kRelationType, ""));
 		addRelationMsg.AddString(sen::key::kTargetType, message->GetString(sen::key::kTargetType, ""));
-		entry_ref relationSrcRef;
-		message->FindRef(sen::key::kSourceRef, &relationSrcRef);
-		addRelationMsg.AddRef(sen::key::kSourceRef, &relationSrcRef);
 		addRelationMsg.AddRef(sen::key::kTargetRef, &fileRef);
 		// (the properties of the relation, e.g. the label that was asked for with Shift: see TTracker::HandleSenMessage)
 		BMessage relationProperties;
 		if (message->FindMessage(sen::key::kRelationProperties, &relationProperties) == B_OK)
 			addRelationMsg.AddMessage(sen::key::kRelationProperties, &relationProperties);
 
-		PRINT(("adding new relation to new target from template with message:\n"));
-		addRelationMsg.PrintToStream();
-
+		// the new file is the target of the relation of every file that "New related" was chosen for
 		BMessenger senMsgr(sen::kServerSignature);
-		if (senMsgr.IsValid()) {
-			senMsgr.SendMessage(&addRelationMsg);
-		} else {
-			PRINT(("could not reach sen_server.\n"));
+		entry_ref relationSrcRef;
+		for (int32 sourceIndex = 0; message->FindRef(sen::key::kSourceRef, sourceIndex, &relationSrcRef) == B_OK; sourceIndex++) {
+			BMessage perSource(addRelationMsg);
+			perSource.AddRef(sen::key::kSourceRef, &relationSrcRef);
+
+			PRINT(("adding new relation to new target from template with message:\n"));
+			perSource.PrintToStream();
+
+			if (senMsgr.IsValid()) {
+				senMsgr.SendMessage(&perSource);
+			} else {
+				PRINT(("could not reach sen_server.\n"));
+			}
 		}
 	}
 
@@ -6087,6 +6103,7 @@ BPoseView::AttributeChanged(const BMessage* message)
 
 	int32 index;
 	attr_info info;
+	bool typeChanged = false;
 	PoseList* posesFound = CurrentPoseList()->FindAllPoses(&itemNode);
 	int32 posesCount = posesFound->CountItems();
 	for (int i = 0; i < posesCount; i++) {
@@ -6148,8 +6165,17 @@ BPoseView::AttributeChanged(const BMessage* message)
 			// update attr
 			pose->UpdateWidgetAndModel(attrName, infoStatus == B_OK ? info.type : 0,
 				index, poseLoc, this, visible);
-			if (strcmp(attrName, kAttrMIMEType) == 0 || strcmp(attrName, sen::attr::kType) == 0)
-				RefreshMimeTypeList();
+			// SEN: a file that got another type (a PDF that a plugin identified as a scientific paper) shows it at once: the columns that depend on the type are
+			// read again, and the Attributes menu (once, below) gets the attributes of the new type
+			if (strcmp(attrName, kAttrMIMEType) == 0 || strcmp(attrName, sen::attr::kType) == 0) {
+				typeChanged = true;
+				for (int32 columnIndex = 0; ColumnAt(columnIndex) != NULL; columnIndex++) {
+					BColumn* column = ColumnAt(columnIndex);
+					BTextWidget* widget = pose->WidgetFor(column->AttrHash());
+					if (widget != NULL)
+						widget->CheckAndUpdate(poseLoc, column, this, visible);
+				}
+			}
 		} else {
 			// update stat
 			pose->UpdateWidgetAndModel(0, 0, index, poseLoc, this, visible);
@@ -6179,6 +6205,12 @@ BPoseView::AttributeChanged(const BMessage* message)
 		}
 	}
 	delete posesFound;
+	if (typeChanged) {
+		RefreshMimeTypeList();
+		BContainerWindow* window = ContainerWindow();
+		if (window != NULL && window->ShouldAddMenus())
+			window->AddMimeTypesToMenu();
+	}
 	if (posesCount == 0) {
 		// we received an attr changed notification for a zombie model, it means
 		// that although we couldn't open the node the first time, it seems
@@ -8345,6 +8377,12 @@ BPoseView::DeletePose(const node_ref* itemNode, BPose* pose, int32 index)
 		}
 
 		fMimeTypeListIsDirty = true;
+		// SEN: the Attributes menu has the types of the files that are in the folder: one that was of the last file of its type goes with it (done
+		// once, after the files that are deleted in a row)
+		if (!fMimeTypeMenuUpdatePending && Window() != NULL) {
+			fMimeTypeMenuUpdatePending = true;
+			Window()->PostMessage(kUpdateMimeTypesMenu, this);
+		}
 
 		if (pose->HasLocation())
 			RemoveFromVSList(pose);

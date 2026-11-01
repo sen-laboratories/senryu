@@ -61,6 +61,35 @@ TrackerSenRelations::ResolveRelation(const entry_ref* ref, BString* srcId,
 }
 
 
+/**
+ * The file of a relation in a relation view stands for the target, so it looks like it: it gets the icon of the target (its own, else that of its type), whatever
+ * the type of the relation is. A target of no icon leaves the file with the icon of the relation.
+ */
+static void
+CopyTargetIcon(BNode& relationNode, const entry_ref& target)
+{
+	BNode targetNode(&target);
+	if (targetNode.InitCheck() != B_OK)
+		return;
+
+	uint8* data = NULL;
+	size_t size = 0;
+	type_code type = 0;
+	BNodeInfo info(&targetNode);
+	if (info.GetIcon(&data, &size, &type) != B_OK || type != B_VECTOR_ICON_TYPE) {
+		delete[] data;
+		data = NULL;
+		char mimeType[B_MIME_TYPE_LENGTH];
+		if (info.GetType(mimeType) != B_OK || BMimeType(mimeType).GetIcon(&data, &size) != B_OK) {
+			delete[] data;
+			return;
+		}
+	}
+	relationNode.WriteAttr("BEOS:ICON", B_VECTOR_ICON_TYPE, 0, data, size);
+	delete[] data;
+}
+
+
 status_t
 TrackerSenRelations::WriteTargetRelations(
 	BMessage  *relations,
@@ -362,6 +391,11 @@ TrackerSenRelations::WriteTargetRelations(
 				return result;
 			}
 		}   // properties loop
+		// (a folder is a nested relation: it keeps the icon that it got above)
+		entry_ref targetRef;
+		if (!hasRelations && properties.FindRef(sen::attr::kRelationTargetRef, &targetRef) == B_OK)
+			CopyTargetIcon(relationNode, targetRef);
+
 		// sync after finished writing attributes
 		relationNode.Sync();
 
@@ -1183,6 +1217,88 @@ TrackerSenRelations::MaterializeAll(const entry_ref& sourceRef, const char* view
 		folder.sourceId = sourceId;
 		folder.viewId = viewId;
 		folder.all = true;
+		RelationFolders::Instance().RegisterFolder(folder);
+	}
+	return B_OK;
+}
+
+
+status_t
+TrackerSenRelations::MaterializeTypeOfSelection(const std::vector<entry_ref>& sources, const char* viewId, const char* relationType,
+	entry_ref* typeDirRef)
+{
+	if (sources.empty())
+		return B_NOT_SUPPORTED;
+	if (strcmp(relationType, sen::mime::kAssociationRelation) == 0) {
+		// (what is associated with a label is found by query for each label, which a view of several files does not do: the labels of files are)
+		for (const entry_ref& source : sources) {
+			BNode node(&source);
+			char type[B_MIME_TYPE_LENGTH];
+			if (BNodeInfo(&node).GetType(type) == B_OK && BString(type).StartsWith(sen::mime::kClassificationPrefix))
+				return B_NOT_SUPPORTED;
+		}
+	}
+
+	BMessage ask(sen::cmd::kRelationsGet);
+	for (const entry_ref& source : sources)
+		ask.AddRef(sen::key::kSourceRef, &source);
+	ask.AddString(sen::key::kRelationType, relationType);
+	ask.AddBool(sen::key::kIdToRefMap, true);
+
+	BMessenger server(sen::kServerSignature);
+	BMessage reply;
+	status_t result = server.IsValid() ? server.SendMessage(&ask, &reply, 10000000, 10000000) : B_ERROR;
+	if (result == B_OK)
+		result = reply.GetInt32(sen::key::kResult, B_ERROR);
+	if (result != B_OK) {
+		ERROR("could not get the relations of type %s of the files from the SEN server: %s\n", relationType, strerror(result));
+		return result;
+	}
+
+	BMessage relations, idToRef, idToName, configs, relationConfig;
+	reply.FindMessage(sen::key::kRelations, &relations);
+	reply.FindMessage(sen::key::kIdToRefMap, &idToRef);
+	reply.FindMessage(sen::key::kIdToNameMap, &idToName);
+	if (reply.FindMessage(sen::key::kRelationConfigMap, &configs) != B_OK
+			|| configs.FindMessage(relationType, &relationConfig) != B_OK) {
+		return B_NAME_NOT_FOUND;
+	}
+	if (relationConfig.GetBool(sen::conf::kDynamic, false) || relationConfig.GetBool(sen::conf::kSelf, false))
+		return B_NOT_SUPPORTED;
+
+	BString sourceName;
+	sourceName << (int) sources.size() << " files";
+	// (a folder of the common view is named after the files and "common": it is not the folder of the relations of one of them)
+	BMessage config(relationConfig);
+	config.RemoveName(sen::key::kRelationLabel);
+	BString label(relationConfig.GetString(sen::key::kRelationName, relationType));
+	label << " (common)";
+	config.AddString(sen::key::kRelationLabel, label);
+
+	result = CreateRelationDirectory(viewId, "", sourceName.String(), relationType, &config, typeDirRef);
+	if (result != B_OK)
+		return result;
+
+	BMessage list;
+	RelationsToList(relations, idToRef, idToName, &list);
+
+	// no source in the config: the files of the relations are not registered, what is done to them is not done to a relation
+	BMessage fileConfig(relationConfig);
+	fileConfig.AddString(sen::key::kRelationType, relationType);
+	fileConfig.AddString(sen::key::kSourceId, "");
+	entry_ref workingRef(*typeDirRef), openRef(*typeDirRef);
+	result = WriteTargetRelations(&list, &fileConfig, &workingRef, &openRef);
+	if (result != B_OK)
+		return result;
+
+	RelationFolders::FolderInfo folder;
+	BEntry folderEntry(typeDirRef);
+	if (folderEntry.GetNodeRef(&folder.node) == B_OK) {
+		folder.ref = *typeDirRef;
+		folder.relationType = relationType;
+		folder.viewId = viewId;
+		folder.relationConfig = relationConfig;
+		folder.common = true;
 		RelationFolders::Instance().RegisterFolder(folder);
 	}
 	return B_OK;

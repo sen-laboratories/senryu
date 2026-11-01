@@ -58,7 +58,7 @@ OpenRelationsMenu::OpenRelationsMenu(const char* label, const BMessage* entriesT
 	// too long to have triggers
 	SetTriggersEnabled(false);
 
-	//TODO: support multi-selection - when SEN is adapted
+	// (the first of the selected files; the items of the menu carry all of them, see AddRelationItems)
 	fEntriesToOpen.FindRef("refs", &fSourceRef);
 }
 
@@ -200,6 +200,14 @@ OpenRelationsMenu::ResolveRelationLabel(const BMessage& relationConfigs, const B
 }
 
 uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
+	// all the selected files: the SEN server answered with what fits all of them (the relations that they have, or can be created at them), and what
+	// an item does it does for each of them
+	auto addSources = [this](BMessage* message) {
+		entry_ref each;
+		for (int32 index = 0; fEntriesToOpen.FindRef(sen::key::kSourceRef, index, &each) == B_OK; index++)
+			message->AddRef(sen::key::kSourceRef, &each);
+	};
+
 	BString srcId;
 	if (fRelationsReply.FindString(sen::key::kSourceId, &srcId) != B_OK) {
 		srcId.SetTo("");
@@ -265,7 +273,7 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 		}
 		// message for relation menu items
         BMessage* message = new BMessage(msgCmd);
-        message->AddRef(sen::key::kSourceRef, sourceRef);
+		addSources(message);
 		RelationContexts::Tag(message, contextId);
 
 		// add relevant message properties for compatible or ALL relations
@@ -279,7 +287,7 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 		}
 
 		BMessage *openRelationTargetsMsg = new BMessage(sen::cmd::kOpenRelationTargetView);
-        openRelationTargetsMsg->AddRef(sen::key::kSourceRef, sourceRef);
+		addSources(openRelationTargetsMsg);
 		openRelationTargetsMsg->AddString(sen::key::kSourceId, srcId);
 		RelationContexts::Tag(openRelationTargetsMsg, contextId);
 
@@ -341,7 +349,7 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 		openRelationsItemMsg->RemoveData(sen::key::kSourceRef);
 		openRelationsItemMsg->RemoveData(sen::key::kSourceId);
 
-		openRelationsItemMsg->AddRef(sen::key::kSourceRef, sourceRef);
+		addSources(openRelationsItemMsg);
 		openRelationsItemMsg->AddString(sen::key::kSourceId, srcId);
 		RelationContexts::Tag(openRelationsItemMsg, contextId);
 	}

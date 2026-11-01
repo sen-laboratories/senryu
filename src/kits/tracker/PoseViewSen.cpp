@@ -206,17 +206,19 @@ BPoseView::SetupRelationColumns()
 status_t
 BPoseView::RequestOpenRelations(uint32 what, OpenRelationsRequest* request)
 {
-	// the first selected file (a file in a view of relations stands for its target), or else the folder that the window shows
-	entry_ref source;
+	// the selected files (a file in a view of relations stands for its target), or else the folder that the window shows
+	std::vector<entry_ref> sources;
 	if (CountSelected() > 0) {
-		BPose* pose = fSelectionList->ItemAt(0);
-		source = TrackerSenRelations::RelationTargetOrSelf(pose->TargetModel()->ResolveIfLink()->EntryRef());
+		for (int32 index = 0; index < CountSelected(); index++) {
+			BPose* pose = fSelectionList->ItemAt(index);
+			sources.push_back(TrackerSenRelations::RelationTargetOrSelf(pose->TargetModel()->ResolveIfLink()->EntryRef()));
+		}
 	} else if (TargetModel() != NULL) {
-		source = *TargetModel()->EntryRef();
+		sources.push_back(*TargetModel()->EntryRef());
 	} else
 		return B_ENTRY_NOT_FOUND;
 
-	return RequestOpenRelationsOf(what, source, request);
+	return RequestOpenRelationsOf(what, sources, request);
 }
 
 
@@ -232,20 +234,39 @@ ShowRelationsInTracker(const entry_ref& source)
 }
 
 
-/** What the menus of a file keep, see RequestOpenRelations(): asked of the SEN server for the file. */
 status_t
 RequestOpenRelationsOf(uint32 what, const entry_ref& source, OpenRelationsRequest* request)
 {
-	if (TrackerSenRelations::HasNoRelations(&source))
+	return RequestOpenRelationsOf(what, std::vector<entry_ref>(1, source), request);
+}
+
+
+/** What the menus of the files keep, see RequestOpenRelations(): asked of the SEN server for the files (for several: what fits all of them). */
+status_t
+RequestOpenRelationsOf(uint32 what, const std::vector<entry_ref>& allSources, OpenRelationsRequest* request)
+{
+	// (a file that cannot have relations is no source: the others are)
+	std::vector<entry_ref> sources;
+	for (const entry_ref& each : allSources) {
+		if (!TrackerSenRelations::HasNoRelations(&each))
+			sources.push_back(each);
+	}
+	if (sources.empty())
+		return B_NOT_ALLOWED;
+	const entry_ref& source = sources[0];
+
+	bool self = what == kOpenSelfRelations;
+	// what a document contains is that of one document
+	if (self && sources.size() > 1)
 		return B_NOT_ALLOWED;
 
 	BMessenger server(sen::kServerSignature);
 	if (!server.IsValid())
 		return B_NOT_INITIALIZED;
 
-	bool self = what == kOpenSelfRelations;
 	BMessage ask(self ? sen::cmd::kRelationsGetAllSelf : sen::cmd::kRelationsGetAll);
-	ask.AddRef(sen::key::kSourceRef, &source);
+	for (const entry_ref& each : sources)
+		ask.AddRef(sen::key::kSourceRef, &each);
 	BMessage reply;
 	status_t result = server.SendMessage(&ask, &reply, 5000000, 5000000);
 	if (result != B_OK)
@@ -262,6 +283,7 @@ RequestOpenRelationsOf(uint32 what, const entry_ref& source, OpenRelationsReques
 		return B_NAME_NOT_FOUND;
 
 	request->sourceRef = source;
+	request->sources = sources;
 	request->sourceId = sourceId;
 	request->contextId = RelationContexts::Add(context);
 	return B_OK;
@@ -368,25 +390,26 @@ BPoseView::ExtractRefsFromSelection(BMessage* refs) {
 
 status_t
 BPoseView::EnrichRefsFromSelection(bool wipe) {
-	status_t    result;
-
 	BMessage refs;
-	result = ExtractRefsFromSelection(&refs);
-
+	status_t result = ExtractRefsFromSelection(&refs);
 	if (result != B_OK)
 		return result;
 
-	entry_ref ref;
-	for (int32 index = 0; index < refs.CountNames(B_REF_TYPE); index++) {
-		refs.FindRef(sen::key::kSourceRef, index, &ref);
-
-		// call plugin
-		result = EnrichRefWithPlugin(&ref, wipe);
-		if (result != B_OK) {
-			PRINT(("problem enriching ref %s, skipping: %s\n", ref.name, strerror(result)));
-		}
+	if (!be_roster->IsRunning(sen::kServerSignature)) {
+		PRINT(("the SEN server is not running, cannot enrich the selection.\n"));
+		return B_NOT_ALLOWED;
 	}
-	return B_OK;	// in any case, concerning the caller, we've done our best.
+
+	// One request for all the files: the SEN server chooses the plugin for each of them and runs them one after the other (a plugin that asks the user
+	// must not be asked for several files at once).
+	BMessage request(sen::cmd::kEnrichRefs);
+	entry_ref ref;
+	for (int32 index = 0; refs.FindRef(sen::key::kSourceRef, index, &ref) == B_OK; index++)
+		request.AddRef("refs", &ref);
+	request.AddBool("wipe", wipe);
+
+	PRINT(("asking the SEN server to enrich %d file(s).\n", (int) CountSelected()));
+	return BMessenger(sen::kServerSignature).SendMessage(&request);
 }
 
 
