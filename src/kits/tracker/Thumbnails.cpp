@@ -359,21 +359,28 @@ GetThumbnailFromAttr(Model* model, BBitmap* icon, BSize size)
 				webpData.SetSize(attrInfo.size);
 				if (node->ReadAttr(kAttrThumbnail, attrInfo.type, 0,
 						(void*)webpData.Buffer(), attrInfo.size) == attrInfo.size) {
-					BBitmap thumb(BTranslationUtils::GetBitmap(&webpData));
+					BBitmap* decoded = BTranslationUtils::GetBitmap(&webpData);
+					if (decoded != NULL && decoded->InitCheck() == B_OK) {
+						// convert thumb to icon size
+						if (decoded->Bounds() == icon->Bounds()) {
+							// the thumbnail has the size of the icon (the 128 x 128 that Tracker
+							// writes, for the largest icons): import it without resizing
+							result = icon->ImportBits(decoded);
+						} else {
+							// scale thumb to icon size. A thumbnail that another program wrote
+							// (the cover of a book, the poster of a movie) can have any size,
+							// also at the largest icons: ImportBits() fails for another size, and
+							// the file got the icon of its type at exactly that size.
+							// TODO don't make a copy, allow icon to accept views?
+							BBitmap tmp(NULL, false);
+							ScaleBitmap(decoded, tmp, icon->Bounds(), icon->ColorSpace());
 
-					// convert thumb to icon size
-					if ((size.IntegerWidth() + 1) == B_XXL_ICON) {
-						// import icon data from attribute without resizing
-						result = icon->ImportBits(&thumb);
-					} else {
-						// down-scale thumb to icon size
-						// TODO don't make a copy, allow icon to accept views?
-						BBitmap tmp(NULL, false);
-						ScaleBitmap(&thumb, tmp, icon->Bounds(), icon->ColorSpace());
-
-						// copy tmp bitmap into icon
-						result = icon->ImportBits(&tmp);
-					}
+							// copy tmp bitmap into icon
+							result = icon->ImportBits(&tmp);
+						}
+					} else
+						result = B_ERROR;
+					delete decoded;
 					// we found a thumbnail
 					if (result == B_OK)
 						return result;
