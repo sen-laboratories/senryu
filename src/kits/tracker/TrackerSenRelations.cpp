@@ -33,6 +33,7 @@
 #include <Messenger.h>
 #include <vector>
 
+#include "MimeTypes.h"
 #include "TrackerSenRelations.h"
 #include "RelationFolders.h"
 #include "TrackerSenLog.h"
@@ -65,6 +66,21 @@ TrackerSenRelations::ResolveRelation(const entry_ref* ref, BString* srcId,
  * The file of a relation in a relation view stands for the target, so it looks like it: it gets the icon of the target (its own, else that of its type), whatever
  * the type of the relation is. A target of no icon leaves the file with the icon of the relation.
  */
+/**
+ * The icon of a relation to a file that is gone: the one of a broken symbolic link, which Tracker keeps as the icon of that type (and uses
+ * for links that lead nowhere).
+ */
+static void
+WriteBrokenLinkIcon(BNode& relationNode)
+{
+	uint8* data = NULL;
+	size_t size = 0;
+	if (BMimeType(B_LINK_MIMETYPE).GetIcon(&data, &size) == B_OK && data != NULL)
+		relationNode.WriteAttr("BEOS:ICON", B_VECTOR_ICON_TYPE, 0, data, size);
+	delete[] data;
+}
+
+
 static void
 CopyTargetIcon(BNode& relationNode, const entry_ref& target)
 {
@@ -426,6 +442,8 @@ TrackerSenRelations::WriteTargetRelations(
 		entry_ref targetRef;
 		if (!hasRelations && properties.FindRef(sen::attr::kRelationTargetRef, &targetRef) == B_OK)
 			CopyTargetIcon(relationNode, targetRef);
+		else if (!hasRelations && properties.GetBool(sen::key::kTargetMissing, false))
+			WriteBrokenLinkIcon(relationNode);
 
 		// sync after finished writing attributes
 		relationNode.Sync();
@@ -1024,6 +1042,8 @@ TrackerSenRelations::RelationsToList(const BMessage& relations, const BMessage& 
 					name = "Missing file";
 				else
 					name << " (missing)";
+				properties.RemoveName(sen::key::kTargetMissing);
+				properties.AddBool(sen::key::kTargetMissing, true);
 			}
 			properties.RemoveName(sensei::key::kName);
 			properties.AddString(sensei::key::kName, name);
