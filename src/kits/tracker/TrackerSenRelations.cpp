@@ -1018,8 +1018,12 @@ TrackerSenRelations::RelationsToList(const BMessage& relations, const BMessage& 
 				properties.AddRef(sen::attr::kRelationTargetRef, &target);
 			} else {
 				// a relation to a file that does not exist (any more)
-				name = properties.GetString(sen::attr::kRelationLabel, targetId);
-				name << " (missing)";
+				// (named by its label, else as what it is: the ID of the target is nothing a user knows it by)
+				name = properties.GetString(sen::attr::kRelationLabel, "");
+				if (name.IsEmpty())
+					name = "Missing file";
+				else
+					name << " (missing)";
 			}
 			properties.RemoveName(sensei::key::kName);
 			properties.AddString(sensei::key::kName, name);
