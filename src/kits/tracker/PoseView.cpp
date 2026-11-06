@@ -5141,7 +5141,7 @@ BPoseView::MoveSelectionInto(Model* destFolder, BContainerWindow* srcWindow,
 	BContainerWindow* destWindow = NULL;
 	TTracker* tracker = dynamic_cast<TTracker*>(be_app);
 	if (tracker != NULL) {
-		destWindow = tracker->FindContainerWindow(destFolder->NodeRef());
+		destWindow = tracker->FindContainerWindowLocking(destFolder->NodeRef());
 		if (destWindow != NULL && destWindow->LockLooper()) {
 			BPoseView* destPoseView = destWindow->PoseView();
 			if (destPoseView != NULL && destPoseView->ViewMode() != kListMode) {

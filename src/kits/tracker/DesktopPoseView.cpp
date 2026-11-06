@@ -274,7 +274,7 @@ DesktopPoseView::AdaptToVolumeChange(BMessage* message)
 			entryMessage.AddInt32("opcode", B_ENTRY_REMOVED);
 			entry_ref ref;
 			if (entry.GetRef(&ref) == B_OK) {
-				BContainerWindow* disksWindow = tracker->FindContainerWindow(&ref);
+				BContainerWindow* disksWindow = tracker->FindContainerWindowLocking(&ref);
 				if (disksWindow != NULL) {
 					disksWindow->Lock();
 					disksWindow->Close();
