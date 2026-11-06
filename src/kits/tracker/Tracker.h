@@ -141,6 +141,9 @@ public:
 		int32 number = 0) const;
 	BContainerWindow* FindContainerWindow(const entry_ref*,
 		int32 number = 0) const;
+	BContainerWindow* FindContainerWindowLocking(const node_ref*, int32 number = 0);
+	BContainerWindow* FindContainerWindowLocking(const entry_ref*, int32 number = 0);
+		// for callers that do not hold the lock of the window list (FindContainerWindow() asserts it)
 	BContainerWindow* FindParentContainerWindow(const entry_ref*) const;
 		// right now works just on plain windows, not on query windows
 

@@ -1282,6 +1282,22 @@ TTracker::FindContainerWindow(const node_ref* node, int32 number) const
 
 
 BContainerWindow*
+TTracker::FindContainerWindowLocking(const node_ref* node, int32 number)
+{
+	AutoLock<WindowList> lock(&fWindowList);
+	return FindContainerWindow(node, number);
+}
+
+
+BContainerWindow*
+TTracker::FindContainerWindowLocking(const entry_ref* entry, int32 number)
+{
+	AutoLock<WindowList> lock(&fWindowList);
+	return FindContainerWindow(entry, number);
+}
+
+
+BContainerWindow*
 TTracker::FindContainerWindow(const entry_ref* entry, int32 number) const
 {
 	ASSERT(fWindowList.IsLocked());
