@@ -33,6 +33,7 @@
 #include <Messenger.h>
 #include <vector>
 
+#include "MimeTypes.h"
 #include "TrackerSenRelations.h"
 #include "RelationFolders.h"
 #include "TrackerSenLog.h"
@@ -65,6 +66,21 @@ TrackerSenRelations::ResolveRelation(const entry_ref* ref, BString* srcId,
  * The file of a relation in a relation view stands for the target, so it looks like it: it gets the icon of the target (its own, else that of its type), whatever
  * the type of the relation is. A target of no icon leaves the file with the icon of the relation.
  */
+/**
+ * The icon of a relation to a file that is gone: the one of a broken symbolic link, which Tracker keeps as the icon of that type (and uses
+ * for links that lead nowhere).
+ */
+static void
+WriteBrokenLinkIcon(BNode& relationNode)
+{
+	uint8* data = NULL;
+	size_t size = 0;
+	if (BMimeType(B_LINK_MIMETYPE).GetIcon(&data, &size) == B_OK && data != NULL)
+		relationNode.WriteAttr("BEOS:ICON", B_VECTOR_ICON_TYPE, 0, data, size);
+	delete[] data;
+}
+
+
 static void
 CopyTargetIcon(BNode& relationNode, const entry_ref& target)
 {
@@ -140,6 +156,24 @@ TrackerSenRelations::WriteTargetRelations(
 
 	PRINT(("  o processing relation dir '%s' with %d relations...\n", relationDirPath.Path(), countRelations ));
 
+	// A target that has several relations here (a director who is also the writer) would get the same name for each: all of
+	// them are told apart by their role, "Ang Lee (Director)" and "Ang Lee (Writer)". Only what has the same name as another
+	// gets the role, so most entries are named after their target alone.
+	std::vector<BString> baseNames;
+	for (int32 relationIndex = 0; relationIndex < countRelations; relationIndex++) {
+		BMessage properties;
+		BString name;
+		if (relations->FindMessage(sen::key::kRelations, relationIndex, &properties) == B_OK) {
+			name = properties.GetString(sensei::key::kName, "");
+			if (name.IsEmpty())
+				name = properties.GetString(sen::attr::kRelationLabel, "");
+		}
+		if (name.IsEmpty())
+			name = shortName;
+		name.ReplaceAll('/', '\\');
+		baseNames.push_back(name);
+	}
+
 	// iterate through all target relations and get relation properties for each, then populate relation targets dir
     // with matching target refs, creating files with relation properties in file attributes.
 	// Note: there can be multiple relations for the same target with different properties
@@ -184,7 +218,20 @@ TrackerSenRelations::WriteTargetRelations(
 		// file/dir name must be valid
 		entryName.ReplaceAll('/', '\\');
 
-		// ensure file/dir name is unique
+		// the same name as another relation of the list: the role tells them apart (all of them have it, not only the later ones)
+		int32 sameName = 0;
+		for (const BString& other : baseNames) {
+			if (other == entryName)
+				sameName++;
+		}
+		const char* role = properties.GetString(sen::onto::core::attr::kRelRole, "");
+		if (sameName > 1 && role[0] != '\0') {
+			BString roleText(role);
+			roleText.ReplaceAll('/', '\\');
+			entryName << " (" << roleText << ")";
+		}
+
+		// ensure file/dir name is unique (two relations with the same role: the second one is numbered)
 		if (BEntry(&relationDir, entryName.String()).Exists()) {
 			// human readable 1-based index, following the first relation #0 (without index)
 			entryName << " #" << relationIndex + 1;
@@ -395,6 +442,8 @@ TrackerSenRelations::WriteTargetRelations(
 		entry_ref targetRef;
 		if (!hasRelations && properties.FindRef(sen::attr::kRelationTargetRef, &targetRef) == B_OK)
 			CopyTargetIcon(relationNode, targetRef);
+		else if (!hasRelations && properties.GetBool(sen::key::kTargetMissing, false))
+			WriteBrokenLinkIcon(relationNode);
 
 		// sync after finished writing attributes
 		relationNode.Sync();
@@ -987,8 +1036,14 @@ TrackerSenRelations::RelationsToList(const BMessage& relations, const BMessage& 
 				properties.AddRef(sen::attr::kRelationTargetRef, &target);
 			} else {
 				// a relation to a file that does not exist (any more)
-				name = properties.GetString(sen::attr::kRelationLabel, targetId);
-				name << " (missing)";
+				// (named by its label, else as what it is: the ID of the target is nothing a user knows it by)
+				name = properties.GetString(sen::attr::kRelationLabel, "");
+				if (name.IsEmpty())
+					name = "Missing file";
+				else
+					name << " (missing)";
+				properties.RemoveName(sen::key::kTargetMissing);
+				properties.AddBool(sen::key::kTargetMissing, true);
 			}
 			properties.RemoveName(sensei::key::kName);
 			properties.AddString(sensei::key::kName, name);

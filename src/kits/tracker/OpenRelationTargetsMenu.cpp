@@ -468,6 +468,31 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 		}
 	}	// for id_ref ...
 
+	// the targets that have no file (any more) are in the menu as well, with the icon of a broken link: they are in the folder of the relation
+	// (where they can be deleted), so the menu does not leave them out. There is nothing to open, so the items are disabled.
+	char* missingId;
+	type_code missingCode;
+	int32 missingSets;
+	for (int32 i = 0; relations.GetInfo(B_MESSAGE_TYPE, i, &missingId, &missingCode, &missingSets) == B_OK; i++) {
+		if (idToRef.HasRef(missingId))
+			continue;
+		for (int32 set = 0; set < missingSets; set++) {
+			BMessage properties;
+			if (relations.FindMessage(missingId, set, &properties) != B_OK)
+				continue;
+			BString name(properties.GetString(sen::attr::kRelationLabel, ""));
+			if (name.IsEmpty())
+				name = "Missing file";
+			const char* role = properties.GetString("SEN:REL:Role", "");
+			if (role[0] != '\0')
+				name << " (" << role << ")";
+			IconMenuItem* item = new IconMenuItem(name.String(), new BMessage(), B_LINK_MIMETYPE);
+			item->SetEnabled(false);
+			AddItem(item);
+			(*targetCount)++;
+		}
+	}
+
 	// cache relations in parent open relations menu item message itself,
 	// so we can reuse it for the relation target view
 	// (the item of this menu: FindItem() by the command would find the first of all relation types)
