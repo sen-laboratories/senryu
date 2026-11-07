@@ -251,7 +251,18 @@ TrackerSenRelations::WriteTargetRelations(
 			entryName << " (" << roleText << ")";
 		}
 
-		// ensure file/dir name is unique (two relations with the same role: the second one is numbered)
+		// ensure file/dir name is unique. Two targets with the same name (two schools called alike): the second is named like its file, which is unique in its folder and tells
+		// them apart the way the Library does ("Volksschule X (Speisinger Straße 20)", else the number at OpenStreetMap)
+		if (BEntry(&relationDir, entryName.String()).Exists()) {
+			entry_ref targetRef;
+			if (properties.FindRef(sen::attr::kRelationTargetRef, &targetRef) == B_OK) {
+				BString fileName(targetRef.name);
+				fileName.ReplaceAll('/', '\\');
+				if (fileName != entryName && !BEntry(&relationDir, fileName.String()).Exists())
+					entryName = fileName;
+			}
+		}
+		// (two relations with the same role, or a target without a file: the second one is numbered)
 		if (BEntry(&relationDir, entryName.String()).Exists()) {
 			// human readable 1-based index, following the first relation #0 (without index)
 			entryName << " #" << relationIndex + 1;
