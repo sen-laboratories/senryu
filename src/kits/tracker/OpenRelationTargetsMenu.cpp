@@ -13,6 +13,7 @@
 #include "IconMenuItem.h"
 #include "OpenRelationTargetsMenu.h"
 #include "RelationContext.h"
+#include "SpinnerMenuItem.h"
 #include <sen/Sen.h>
 #include <sen/Sensei.h>
 #include "MimeTypes.h"
@@ -51,7 +52,6 @@ OpenRelationTargetsMenu::OpenRelationTargetsMenu(const char* label, const BMessa
 	fParentWindow(parentWindow),
 	fRelationTargetsReply(&fOwnReply),
 	fFetchingItem(NULL),
-	fSpinner(0),
 	fFetchFailed(false)
 {
 	InitIconPreloader();
@@ -135,9 +135,10 @@ OpenRelationTargetsMenu::StartBuildingItemList()
 		return !fFetchFailed;
 	}
 
-	fFetchingItem = new BMenuItem("Fetching relations... |", NULL);
+	fFetchingItem = new SpinnerMenuItem("Fetching relations" B_UTF8_ELLIPSIS);
 	fFetchingItem->SetEnabled(false);
 	AddItem(fFetchingItem);
+	fFetchingItem->StartSpinning();
 	return true;
 }
 
@@ -169,14 +170,13 @@ bool OpenRelationTargetsMenu::AddNextItem()
 		return false;
 
 	if (!fFetch->done) {
-		// still waiting for the navigator: the spinner turns, and the menu is asked again
-		static const char* const kFrames[] = {"|", "/", "-", "\\"};
-		fFetchingItem->SetLabel((BString("Fetching relations... ") << kFrames[fSpinner++ % 4]).String());
-		Invalidate();
+		// still waiting for the navigator: the spinner takes a step (the menu is asked again and again while this returns true), about twelve times a second
+		fFetchingItem->NextFrame();
 		snooze(80000);
 		return true;
 	}
 
+	fFetchingItem->StopSpinning();
 	RemoveItem(fFetchingItem);
 	delete fFetchingItem;
 	fFetchingItem = NULL;

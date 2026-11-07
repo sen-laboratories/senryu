@@ -12,6 +12,8 @@
 #include <sen/Sen.h>
 #include "SlowMenu.h"
 
+class SpinnerMenuItem;
+
 class OpenRelationTargetsMenu : public BSlowMenu {
 public:
 	OpenRelationTargetsMenu(const char* label, const BMessage* entriesToOpen,
@@ -53,8 +55,7 @@ private:
 	BString 	fDefaultType;
 
 	std::shared_ptr<Fetch>	fFetch;			///< the question that is being asked, if the answer is not in yet
-	BMenuItem*	fFetchingItem;				///< "Fetching relations..." with a spinner, while it is
-	int32		fSpinner;
+	SpinnerMenuItem*	fFetchingItem;		///< "Fetching relations..." with a spinner, while it is
 	bool		fFetchFailed;
 
 	typedef BSlowMenu _inherited;
