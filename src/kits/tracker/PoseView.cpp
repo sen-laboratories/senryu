@@ -3554,6 +3554,8 @@ BPoseView::NewFileFromTemplate(const BMessage* message)
 	BNode templateNode(&templateRef);
 	BNode destNode(&destDir, fileName);
 	FSCopyAttributesAndStats(&templateNode, &destNode, false);
+	// SEN: the mark of the ontology installer says that the template is its own (it removes it with the ontology); the file that is made from it is not
+	destNode.RemoveAttr("SEN:onto:template");
 
 	BEntry fileEntry(&destDir, fileName);
 	fileEntry.GetRef(&fileRef);
