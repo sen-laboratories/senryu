@@ -12,6 +12,7 @@
 #include <sen/Sen.h>
 #include "SlowMenu.h"
 
+class BMessageRunner;
 class SpinnerMenuItem;
 
 class OpenRelationTargetsMenu : public BSlowMenu {
@@ -19,6 +20,13 @@ public:
 	OpenRelationTargetsMenu(const char* label, const BMessage* entriesToOpen,
 							BWindow* parentWindow, const BMessenger &target);
 	~OpenRelationTargetsMenu();
+
+	/** the answer of the server is in (from the thread that asked): the menu has the items now */
+	static const uint32		kFetched = 'sfdn';
+	/** one step of the spinner (from a BMessageRunner) */
+	static const uint32		kSpinnerTick = 'sptk';
+
+	virtual void MessageReceived(BMessage* message);
 
 private:
 	virtual bool StartBuildingItemList();
@@ -39,6 +47,10 @@ private:
 	};
 	/** the answer of the server is in: the part of the work that belongs to the context of the view (the tree of a document) */
 	void		 FinishFetch();
+	/** takes the placeholder, its spinner and the question that is waited for away */
+	void		 StopPending();
+	/** the answer came while the menu is open: the items take the place of the placeholder */
+	void		 PopulateAfterFetch();
 
 	status_t	 AddRelationTargetItems(uint32* targetCount);
 	status_t	 AddCompatibleRelationTargetItems(uint32* targetCount);
@@ -57,6 +69,8 @@ private:
 	std::shared_ptr<Fetch>	fFetch;			///< the question that is being asked, if the answer is not in yet
 	SpinnerMenuItem*	fFetchingItem;		///< "Fetching relations..." with a spinner, while it is
 	bool		fFetchFailed;
+	bool		fPending;				///< the menu is open with the placeholder, and the items come when the answer is in
+	BMessageRunner*	fSpinnerRunner;		///< turns the spinner while it is
 
 	typedef BSlowMenu _inherited;
 };

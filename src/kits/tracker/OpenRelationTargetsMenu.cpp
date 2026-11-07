@@ -28,6 +28,7 @@
 #include <GroupView.h>
 #include <GridView.h>
 #include <Locale.h>
+#include <MessageRunner.h>
 #include <Mime.h>
 #include <NodeInfo.h>
 #include <Path.h>
@@ -52,7 +53,9 @@ OpenRelationTargetsMenu::OpenRelationTargetsMenu(const char* label, const BMessa
 	fParentWindow(parentWindow),
 	fRelationTargetsReply(&fOwnReply),
 	fFetchingItem(NULL),
-	fFetchFailed(false)
+	fFetchFailed(false),
+	fPending(false),
+	fSpinnerRunner(NULL)
 {
 	InitIconPreloader();
 
@@ -70,6 +73,7 @@ OpenRelationTargetsMenu::OpenRelationTargetsMenu(const char* label, const BMessa
 
 OpenRelationTargetsMenu::~OpenRelationTargetsMenu()
 {
+	delete fSpinnerRunner;
 	if (fSenMessenger)
 		delete fSenMessenger;
 }
@@ -117,14 +121,20 @@ OpenRelationTargetsMenu::StartBuildingItemList()
 		// the server need not look for the plugins again
 		request.AddMessage(sensei::key::kPluginConfig, &context->pluginConfig);
 	}
-	// asked in a thread of its own: if the answer is not there soon (a navigator that asks a web service), the menu says that it is fetching, with a spinner
+	// A menu that is made by BSlowMenu does not show before its items are there (BMenu::_AddDynamicItems waits for them), and a navigator can take half a minute (a web service).
+	// So the question is asked in a thread of its own; if the answer is there soon the menu is made as usual, else it opens with a placeholder, "Fetching relations..." and a
+	// spinner, and the items take its place when the thread says that the answer is in (kFetched). Meanwhile the menu can be left, and its item can be chosen.
+	StopPending();
+	fFetchFailed = false;
 	fFetch = std::make_shared<Fetch>();
 	fFetch->server = *fSenMessenger;
 	fFetch->request = request;
 	std::shared_ptr<Fetch> fetch = fFetch;
-	std::thread([fetch]() {
+	BMessenger self(this);
+	std::thread([fetch, self]() mutable {
 		fetch->result = fetch->server.SendMessage(&fetch->request, &fetch->reply);
 		fetch->done = true;
+		self.SendMessage(kFetched);
 	}).detach();
 
 	for (int32 i = 0; i < 25 && !fFetch->done; i++)
@@ -135,11 +145,64 @@ OpenRelationTargetsMenu::StartBuildingItemList()
 		return !fFetchFailed;
 	}
 
+	fPending = true;
 	fFetchingItem = new SpinnerMenuItem("Fetching relations" B_UTF8_ELLIPSIS);
 	fFetchingItem->SetEnabled(false);
 	AddItem(fFetchingItem);
 	fFetchingItem->StartSpinning();
+	BMessage tick(kSpinnerTick);
+	fSpinnerRunner = new BMessageRunner(self, &tick, 80000);
 	return true;
+}
+
+void
+OpenRelationTargetsMenu::StopPending()
+{
+	delete fSpinnerRunner;
+	fSpinnerRunner = NULL;
+	if (fFetchingItem != NULL) {
+		fFetchingItem->StopSpinning();
+		RemoveItem(fFetchingItem);
+		delete fFetchingItem;
+		fFetchingItem = NULL;
+	}
+	fPending = false;
+	fFetch.reset();
+}
+
+void
+OpenRelationTargetsMenu::MessageReceived(BMessage* message)
+{
+	switch (message->what) {
+		case kSpinnerTick:
+			if (fPending && fFetchingItem != NULL)
+				fFetchingItem->NextFrame();
+			return;
+		case kFetched:
+			// (not for the answer of an earlier question, or when the answer was there in time and the menu was made at once)
+			if (fPending && fFetch != NULL && fFetch->done)
+				PopulateAfterFetch();
+			return;
+	}
+	_inherited::MessageReceived(message);
+}
+
+void
+OpenRelationTargetsMenu::PopulateAfterFetch()
+{
+	std::shared_ptr<Fetch> fetch = fFetch;
+	StopPending();
+	fFetch = fetch;
+	FinishFetch();
+	fFetch.reset();
+	if (fFetchFailed) {
+		BMenuItem* item = new BMenuItem("The relations could not be fetched.", NULL);
+		item->SetEnabled(false);
+		AddItem(item);
+	} else {
+		DoneBuildingItemList();
+	}
+	InvalidateLayout();
 }
 
 void
@@ -166,41 +229,19 @@ OpenRelationTargetsMenu::FinishFetch()
 
 bool OpenRelationTargetsMenu::AddNextItem()
 {
-	if (fFetch == NULL)
-		return false;
-
-	if (!fFetch->done) {
-		// still waiting for the navigator: the spinner takes a step (the menu is asked again and again while this returns true), about twelve times a second
-		fFetchingItem->NextFrame();
-		snooze(80000);
-		return true;
-	}
-
-	fFetchingItem->StopSpinning();
-	RemoveItem(fFetchingItem);
-	delete fFetchingItem;
-	fFetchingItem = NULL;
-	FinishFetch();
-	fFetch.reset();
-	if (fFetchFailed) {
-		BMenuItem* item = new BMenuItem("The relations could not be fetched.", NULL);
-		item->SetEnabled(false);
-		AddItem(item);
-	}
+	// the items are all added in DoneBuildingItemList(), or later, when the answer of a slow navigator is in (PopulateAfterFetch)
 	return false;
 }
 
 void OpenRelationTargetsMenu::ClearMenuBuildingState()
 {
-	// (the menu is closed before the answer came: the thread has its own copies and ends by itself)
-	fFetch.reset();
-	fFetchingItem = NULL;
+	// (nothing: a menu that waits for the answer stays as it is; it is made again when it is attached again)
 }
 
 void
 OpenRelationTargetsMenu::DoneBuildingItemList()
 {
-	if (fFetchFailed)
+	if (fFetchFailed || fPending)
 		return;
 	// target the menu
 	SetTargetForItems(fMessenger);
