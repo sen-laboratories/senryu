@@ -100,8 +100,13 @@ public:
 	static void		MaterializeSelfRelations(const entry_ref& sourceRef, const BString& sourceId, entry_ref* folderRef);
 	/** Whether the folder is one of the views of relations (it is below the folder where they are made), stored or self: its files stand for relations. */
 	static bool		IsInRelationView(const entry_ref* ref);
+	/**
+	 * The folder of the relations of one type of a file, a file for each relation. @param answer what the server said for the type (kRelationsGet with kIdToRefMap: the relations,
+	 * the refs and names of the targets and the config of the type), which a menu has already: a relation that asks a service on the internet (remote) is not asked a second time
+	 * when its folder is opened. Without it the server is asked. Not for a self relation (B_NOT_SUPPORTED: its tree is the one of its menu).
+	 */
 	static status_t	MaterializeType(const entry_ref& sourceRef, const char* viewId,
-						const char* relationType, entry_ref* typeDirRef);
+						const char* relationType, entry_ref* typeDirRef, const BMessage* answer = NULL);
 	/**
 	 * The common view of a selection ("Open related (common)"): one folder of a relation type with the targets of all the files, each once. The SEN server
 	 * answers for several files with the targets of all of them (see kRelationsGet), and the menus offered only the types that fit all of them. The folder

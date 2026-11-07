@@ -21,6 +21,7 @@
 #include <Locker.h>
 #include <Volume.h>
 #include <fs_attr.h>
+#include <time.h>
 
 #include <sen/Sen.h>
 #include <sen/SenOntoCore.h>
@@ -33,6 +34,7 @@
 #include <Messenger.h>
 #include <vector>
 
+#include "Attributes.h"
 #include "MimeTypes.h"
 #include "TrackerSenRelations.h"
 #include "RelationFolders.h"
@@ -103,6 +105,23 @@ CopyTargetIcon(BNode& relationNode, const entry_ref& target)
 	}
 	relationNode.WriteAttr("BEOS:ICON", B_VECTOR_ICON_TYPE, 0, data, size);
 	delete[] data;
+
+	// and its thumbnail (the picture of a place, the cover of a book), as the menus show it: Tracker shows the one of a file only while it is newer than the file, so it is made
+	// newer than the file of the relation that was just made
+	time_t modified;
+	int64_t created;
+	attr_info thumbnailInfo;
+	if (targetNode.GetModificationTime(&modified) != B_OK
+			|| targetNode.ReadAttr(kAttrThumbnailCreationTime, B_TIME_TYPE, 0, &created, sizeof(int64_t)) != sizeof(int64_t) || created <= modified
+			|| targetNode.GetAttrInfo(kAttrThumbnail, &thumbnailInfo) != B_OK || thumbnailInfo.size <= 0)
+		return;
+	char* thumbnail = new char[thumbnailInfo.size];
+	if (targetNode.ReadAttr(kAttrThumbnail, thumbnailInfo.type, 0, thumbnail, thumbnailInfo.size) == thumbnailInfo.size
+			&& relationNode.WriteAttr(kAttrThumbnail, thumbnailInfo.type, 0, thumbnail, thumbnailInfo.size) == thumbnailInfo.size) {
+		int64_t now = (int64_t)time(NULL) + 1;
+		relationNode.WriteAttr(kAttrThumbnailCreationTime, B_TIME_TYPE, 0, &now, sizeof(int64_t));
+	}
+	delete[] thumbnail;
 }
 
 
@@ -1127,7 +1146,10 @@ TrackerSenRelations::IsInRelationView(const entry_ref* ref)
 }
 
 
-/** The self relations of a file in a folder: asked of the server (which lets the plugin of the type of the file extract them), written as the view of one self relation is. */
+/**
+ * The self relations of a file in a folder: asked of the server (which lets the plugin of the type of the file extract them), written as the view of one self relation is.
+ * Not those that ask a service on the internet (kRemote): the folder of the relation itself does.
+ */
 void
 TrackerSenRelations::MaterializeSelfRelations(const entry_ref& sourceRef, const BString& sourceId, entry_ref* folderRef)
 {
@@ -1145,7 +1167,8 @@ TrackerSenRelations::MaterializeSelfRelations(const entry_ref& sourceRef, const 
 			|| pluginConfig.FindString(sensei::key::kDefaultType, &defaultType) != B_OK
 			|| pluginConfig.FindMessage(sensei::key::kTypesPlugins, &typesPlugins) != B_OK
 			|| all.FindMessage(sen::key::kRelationConfigMap, &configs) != B_OK
-			|| configs.FindMessage(defaultType.String(), &relationConfig) != B_OK)
+			|| configs.FindMessage(defaultType.String(), &relationConfig) != B_OK
+			|| relationConfig.GetBool(sen::conf::kRemote, false))
 		return;
 
 	int32 count = typesPlugins.CountNames(B_STRING_TYPE);
@@ -1230,9 +1253,17 @@ TrackerSenRelations::MaterializeAll(const entry_ref& sourceRef, const char* view
 		node.WriteAttrString(sen::attr::kFolderName, &title);
 	}
 
-	// a file for each relation of each stored type (those of plugins are resolved at run time: their menus show them)
+	// a file for each relation of each type. Dynamic ones (a plugin or a query works them out) are not different: they are asked for as the stored ones. Not asked for are the self
+	// relations (what a document contains: below) and the remote ones, which ask a service on the internet (slow, may need a permission): each would be asked of every file whose
+	// "all relations" is opened; the folder of the relation itself asks for it.
+	BMessage typeConfigs;
+	all.FindMessage(sen::key::kRelationConfigMap, &typeConfigs);
 	for (int32 i = 0; i < types.CountStrings(); i++) {
 		const BString& relationType = types.StringAt(i);
+		BMessage listedConfig;
+		if (typeConfigs.FindMessage(relationType.String(), &listedConfig) == B_OK
+				&& (listedConfig.GetBool(sen::conf::kRemote, false) || listedConfig.GetBool(sen::conf::kSelf, false)))
+			continue;
 		BMessage askType(sen::cmd::kRelationsGet);
 		askType.AddRef(sen::key::kSourceRef, &sourceRef);
 		askType.AddString(sen::key::kRelationType, relationType);
@@ -1246,7 +1277,7 @@ TrackerSenRelations::MaterializeAll(const entry_ref& sourceRef, const char* view
 		reply.FindMessage(sen::key::kIdToRefMap, &idToRef);
 		reply.FindMessage(sen::key::kIdToNameMap, &idToName);
 		if (reply.FindMessage(sen::key::kRelationConfigMap, &configs) != B_OK || configs.FindMessage(relationType.String(), &relationConfig) != B_OK
-				|| relationConfig.GetBool(sen::conf::kDynamic, false) || relationConfig.GetBool(sen::conf::kSelf, false))
+				|| relationConfig.GetBool(sen::conf::kRemote, false) || relationConfig.GetBool(sen::conf::kSelf, false))
 			continue;
 
 		BMessage list;
@@ -1302,7 +1333,7 @@ TrackerSenRelations::MaterializeTypeOfSelection(const std::vector<entry_ref>& so
 
 	BMessenger server(sen::kServerSignature);
 	BMessage reply;
-	status_t result = server.IsValid() ? server.SendMessage(&ask, &reply, 10000000, 10000000) : B_ERROR;
+	status_t result = server.IsValid() ? server.SendMessage(&ask, &reply, 100000000, 100000000) : B_ERROR;
 	if (result == B_OK)
 		result = reply.GetInt32(sen::key::kResult, B_ERROR);
 	if (result != B_OK) {
@@ -1318,7 +1349,8 @@ TrackerSenRelations::MaterializeTypeOfSelection(const std::vector<entry_ref>& so
 			|| configs.FindMessage(relationType, &relationConfig) != B_OK) {
 		return B_NAME_NOT_FOUND;
 	}
-	if (relationConfig.GetBool(sen::conf::kDynamic, false) || relationConfig.GetBool(sen::conf::kSelf, false))
+	// (a self relation, dynamic or not, is a tree that its menu hands over: see MaterializeSelfRelations. Any other is a folder of what the server answers now, stored or worked out)
+	if (relationConfig.GetBool(sen::conf::kSelf, false))
 		return B_NOT_SUPPORTED;
 
 	BString sourceName;
@@ -1362,7 +1394,7 @@ TrackerSenRelations::MaterializeTypeOfSelection(const std::vector<entry_ref>& so
 
 status_t
 TrackerSenRelations::MaterializeType(const entry_ref& sourceRef, const char* viewId, const char* relationType,
-	entry_ref* typeDirRef)
+	entry_ref* typeDirRef, const BMessage* answer)
 {
 	if (strcmp(relationType, sen::mime::kAssociationRelation) == 0) {
 		BNode source(&sourceRef);
@@ -1371,16 +1403,23 @@ TrackerSenRelations::MaterializeType(const entry_ref& sourceRef, const char* vie
 			return MakeFilesWithQuery(sourceRef, viewId, typeDirRef);
 	}
 
-	BMessage ask(sen::cmd::kRelationsGet);
-	ask.AddRef(sen::key::kSourceRef, &sourceRef);
-	ask.AddString(sen::key::kRelationType, relationType);
-	ask.AddBool(sen::key::kIdToRefMap, true);
-
-	BMessenger server(sen::kServerSignature);
+	// the answer that the menu got is the one that the folder shows (asking again would ask a service on the internet again, for a remote relation)
 	BMessage reply;
-	status_t result = server.IsValid() ? server.SendMessage(&ask, &reply, 5000000, 5000000) : B_ERROR;
-	if (result == B_OK)
-		result = reply.GetInt32(sen::key::kResult, B_ERROR);
+	status_t result = B_OK;
+	if (answer != NULL) {
+		reply = *answer;
+	} else {
+		BMessage ask(sen::cmd::kRelationsGet);
+		ask.AddRef(sen::key::kSourceRef, &sourceRef);
+		ask.AddString(sen::key::kRelationType, relationType);
+		ask.AddBool(sen::key::kIdToRefMap, true);
+
+		BMessenger server(sen::kServerSignature);
+		// (a stored relation is answered at once; one that a plugin works out may ask a web service: the server gives up on it after 90 s)
+		result = server.IsValid() ? server.SendMessage(&ask, &reply, 100000000, 100000000) : B_ERROR;
+		if (result == B_OK)
+			result = reply.GetInt32(sen::key::kResult, B_ERROR);
+	}
 	if (result != B_OK) {
 		ERROR("could not get the relations of type %s from the SEN server: %s\n", relationType, strerror(result));
 		return result;
@@ -1395,8 +1434,10 @@ TrackerSenRelations::MaterializeType(const entry_ref& sourceRef, const char* vie
 		return B_NAME_NOT_FOUND;
 	}
 
-	// relations of plugins are resolved at run time, not stored: they cannot be edited and are shown by their menus
-	if (relationConfig.GetBool(sen::conf::kDynamic, false) || relationConfig.GetBool(sen::conf::kSelf, false))
+	// a self relation (what a document contains), dynamic or not, is a tree that its menu hands over (PrepareRelationTargetFolder, MaterializeSelfRelations). Any other relation is made
+	// into a folder of what the server answers now: if it is dynamic (worked out by a plugin or a query, whether remote or not) its files cannot be changed, and asked again later the
+	// folder is made again.
+	if (relationConfig.GetBool(sen::conf::kSelf, false))
 		return B_NOT_SUPPORTED;
 
 	BString sourceId(reply.GetString(sen::key::kSourceId, ""));

@@ -499,8 +499,13 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 	BMenuItem* openRelationTargetsItem = Superitem();
 	BMessage* openRelationTargetsItemMsg = openRelationTargetsItem != NULL ? openRelationTargetsItem->Message() : NULL;
 	if (openRelationTargetsItemMsg != NULL) {
+		// (the whole answer, as for the self relations, whose tree the context keeps: the folder of a relation that asks a service on the internet is made of it, not of another question)
 		openRelationTargetsItemMsg->RemoveName(sen::key::kRelations);	// the menu is reused
+		openRelationTargetsItemMsg->RemoveName(sen::key::kIdToRefMap);
+		openRelationTargetsItemMsg->RemoveName(sen::key::kIdToNameMap);
 		openRelationTargetsItemMsg->AddMessage(sen::key::kRelations, &relations);
+		openRelationTargetsItemMsg->AddMessage(sen::key::kIdToRefMap, &idToRef);
+		openRelationTargetsItemMsg->AddMessage(sen::key::kIdToNameMap, &idToName);
 
 		PRINT(("openRelationTargetsItemMsg is:\n"));
 		openRelationTargetsItemMsg->PrintToStream();
