@@ -108,6 +108,18 @@ public:
 	static status_t	MaterializeType(const entry_ref& sourceRef, const char* viewId,
 						const char* relationType, entry_ref* typeDirRef, const BMessage* answer = NULL);
 	/**
+	 * The folder of a relation that a plugin works out (dynamic) and that is not known yet: made and registered at once, with a file "Fetching relations..." in it; the relations
+	 * are asked of the server in a thread, which adds their files as the answer comes (and takes the placeholder away, or says that they could not be fetched).
+	 */
+	static status_t	MaterializeLater(const entry_ref& sourceRef, const char* viewId, const char* relationType, const BMessage& relationConfig,
+						const char* sourceId, entry_ref* typeDirRef);
+	/** the files of the relations of an answer of the server, in the folder of the type */
+	static status_t	FillTypeFolder(const BMessage& reply, const entry_ref& sourceRef, const char* viewId, const char* relationType,
+						const BMessage& relationConfig, const char* sourceId, entry_ref* typeDirRef);
+	/** lets the views of relations know the folder of a type */
+	static void		RegisterTypeFolder(const entry_ref& sourceRef, const char* viewId, const char* relationType, const BMessage& relationConfig,
+						const char* sourceId, const entry_ref& typeDirRef);
+	/**
 	 * The common view of a selection ("Open related (common)"): one folder of a relation type with the targets of all the files, each once. The SEN server
 	 * answers for several files with the targets of all of them (see kRelationsGet), and the menus offered only the types that fit all of them. The folder
 	 * belongs to none of the files: its relations cannot be changed here and nothing is dropped into it.

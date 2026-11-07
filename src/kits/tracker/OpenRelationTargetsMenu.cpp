@@ -37,6 +37,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <thread>
 #include <strings.h>
 #include <vector>
 
@@ -48,7 +49,10 @@ OpenRelationTargetsMenu::OpenRelationTargetsMenu(const char* label, const BMessa
 	fMessenger(messenger),
 	fSenMessenger(NULL),
 	fParentWindow(parentWindow),
-	fRelationTargetsReply(&fOwnReply)
+	fRelationTargetsReply(&fOwnReply),
+	fFetchingItem(NULL),
+	fSpinner(0),
+	fFetchFailed(false)
 {
 	InitIconPreloader();
 
@@ -113,11 +117,40 @@ OpenRelationTargetsMenu::StartBuildingItemList()
 		// the server need not look for the plugins again
 		request.AddMessage(sensei::key::kPluginConfig, &context->pluginConfig);
 	}
-	status_t result = fSenMessenger->SendMessage(&request, fRelationTargetsReply);
-	if (result != B_OK) {
-		PRINT(("failed to communicate with SEN server: %s\n", strerror(result)));
-		return false;
+	// asked in a thread of its own: if the answer is not there soon (a navigator that asks a web service), the menu says that it is fetching, with a spinner
+	fFetch = std::make_shared<Fetch>();
+	fFetch->server = *fSenMessenger;
+	fFetch->request = request;
+	std::shared_ptr<Fetch> fetch = fFetch;
+	std::thread([fetch]() {
+		fetch->result = fetch->server.SendMessage(&fetch->request, &fetch->reply);
+		fetch->done = true;
+	}).detach();
+
+	for (int32 i = 0; i < 25 && !fFetch->done; i++)
+		snooze(10000);
+	if (fFetch->done) {
+		FinishFetch();
+		fFetch.reset();
+		return !fFetchFailed;
 	}
+
+	fFetchingItem = new BMenuItem("Fetching relations... |", NULL);
+	fFetchingItem->SetEnabled(false);
+	AddItem(fFetchingItem);
+	return true;
+}
+
+void
+OpenRelationTargetsMenu::FinishFetch()
+{
+	RelationContextRef context = RelationContexts::Find(&fEntriesToOpen);
+	if (fFetch->result != B_OK) {
+		PRINT(("failed to communicate with SEN server: %s\n", strerror(fFetch->result)));
+		fFetchFailed = true;
+		return;
+	}
+	fOwnReply = fFetch->reply;
 	if (context != NULL && fEntriesToOpen.what == sen::cmd::kRelationsGetSelf) {
 		// (the children of a node of a view, not the whole tree of the document)
 		context->RestrictToNode(fRelationTargetsReply);
@@ -128,25 +161,47 @@ OpenRelationTargetsMenu::StartBuildingItemList()
 		PRINT(("< got relation targets reply:\n"));
 		fRelationTargetsReply->PrintToStream();
 	#endif
-
-	return true;
 }
 
 bool OpenRelationTargetsMenu::AddNextItem()
 {
-    // nothing to do here
-    return false;
+	if (fFetch == NULL)
+		return false;
+
+	if (!fFetch->done) {
+		// still waiting for the navigator: the spinner turns, and the menu is asked again
+		static const char* const kFrames[] = {"|", "/", "-", "\\"};
+		fFetchingItem->SetLabel((BString("Fetching relations... ") << kFrames[fSpinner++ % 4]).String());
+		Invalidate();
+		snooze(80000);
+		return true;
+	}
+
+	RemoveItem(fFetchingItem);
+	delete fFetchingItem;
+	fFetchingItem = NULL;
+	FinishFetch();
+	fFetch.reset();
+	if (fFetchFailed) {
+		BMenuItem* item = new BMenuItem("The relations could not be fetched.", NULL);
+		item->SetEnabled(false);
+		AddItem(item);
+	}
+	return false;
 }
 
 void OpenRelationTargetsMenu::ClearMenuBuildingState()
 {
-    //  empty;
-    return;
+	// (the menu is closed before the answer came: the thread has its own copies and ends by itself)
+	fFetch.reset();
+	fFetchingItem = NULL;
 }
 
 void
 OpenRelationTargetsMenu::DoneBuildingItemList()
 {
+	if (fFetchFailed)
+		return;
 	// target the menu
 	SetTargetForItems(fMessenger);
 
