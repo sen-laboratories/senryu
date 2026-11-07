@@ -1251,7 +1251,7 @@ TrackerSenRelations::CreateLazyTypeFolderIn(const entry_ref& parentRef, const en
 
 
 status_t
-TrackerSenRelations::MaterializeAll(const entry_ref& sourceRef, const char* viewId, entry_ref* folderRef)
+TrackerSenRelations::MaterializeAll(const entry_ref& sourceRef, const char* viewId, entry_ref* folderRef, const char* group)
 {
 	BMessenger server(sen::kServerSignature);
 	BMessage ask(sen::cmd::kRelationsGetAll);
@@ -1278,8 +1278,9 @@ TrackerSenRelations::MaterializeAll(const entry_ref& sourceRef, const char* view
 		result = path.Append(viewId);
 	if (result == B_OK)
 		result = path.Append("all");
-	BString title("All relations of ");
-	title << DisplayNameOf(sourceRef);
+	const bool ofGroup = group != NULL && group[0] != '\0';
+	BString title(ofGroup ? group : "All");
+	title << " relations of " << DisplayNameOf(sourceRef);
 	BString folderName(title);
 	folderName.ReplaceAll('/', '-');
 	if (result == B_OK)
@@ -1309,6 +1310,11 @@ TrackerSenRelations::MaterializeAll(const entry_ref& sourceRef, const char* view
 	for (int32 i = 0; i < types.CountStrings(); i++) {
 		const BString& relationType = types.StringAt(i);
 		BMessage listedConfig;
+		if (ofGroup) {
+			// (the relations of the group of a submenu: what has no config has no group)
+			if (typeConfigs.FindMessage(relationType.String(), &listedConfig) != B_OK || strcmp(listedConfig.GetString(sen::conf::kGroup, ""), group) != 0)
+				continue;
+		}
 		if (typeConfigs.FindMessage(relationType.String(), &listedConfig) == B_OK) {
 			if (listedConfig.GetBool(sen::conf::kSelf, false))
 				continue;
@@ -1347,12 +1353,13 @@ TrackerSenRelations::MaterializeAll(const entry_ref& sourceRef, const char* view
 		WriteTargetRelations(&list, &config, &workingRef, &openRef);
 	}
 
-	// the self relations (what a document contains: the top level of the TOC of a PDF, with what is below it as folders), which a plugin extracts
-	MaterializeSelfRelations(sourceRef, sourceId, folderRef);
+	// the self relations (what a document contains: the top level of the TOC of a PDF, with what is below it as folders), which a plugin extracts (not those of a group)
+	if (!ofGroup)
+		MaterializeSelfRelations(sourceRef, sourceId, folderRef);
 
-	// like the folder of all types: files that are dropped on it become generic relations
+	// like the folder of all types: files that are dropped on it become generic relations (not in the folder of a group: they would not belong to it)
 	RelationFolders::FolderInfo folder;
-	if (folderEntry.GetNodeRef(&folder.node) == B_OK) {
+	if (!ofGroup && folderEntry.GetNodeRef(&folder.node) == B_OK) {
 		folder.ref = *folderRef;
 		folder.sourceRef = sourceRef;
 		folder.sourceId = sourceId;
@@ -1508,6 +1515,16 @@ TrackerSenRelations::RegisterTypeFolder(const entry_ref& sourceRef, const char* 
 	RelationFolders::FolderInfo folder;
 	folder.lazy = lazy;
 	BEntry folderEntry(&typeDirRef);
+	if (lazy) {
+		// a folder that a person keeps (copied to the Desktop or the home folder) must know where its relations come from when it is opened later, in another session: the SEN:ID
+		// of the source (written when the folder is made; an inode if it has none) and its ref
+		BNode node(&folderEntry);
+		BMessage holder;
+		const void* flat;
+		ssize_t flatSize;
+		if (node.InitCheck() == B_OK && holder.AddRef("ref", &sourceRef) == B_OK && holder.FindData("ref", B_REF_TYPE, &flat, &flatSize) == B_OK)
+			node.WriteAttr(sen::attr::kRelationSourceRef, B_REF_TYPE, 0, flat, flatSize);
+	}
 	if (folderEntry.GetNodeRef(&folder.node) == B_OK) {
 		folder.ref = typeDirRef;
 		folder.sourceRef = sourceRef;
@@ -1517,6 +1534,67 @@ TrackerSenRelations::RegisterTypeFolder(const entry_ref& sourceRef, const char* 
 		folder.relationConfig = relationConfig;
 		RelationFolders::Instance().RegisterFolder(folder);
 	}
+}
+
+
+bool
+TrackerSenRelations::LooksLikeKeptFolder(const entry_ref& folderRef)
+{
+	BNode node(&folderRef);
+	if (node.InitCheck() != B_OK)
+		return false;
+	BString kind, sourceId;
+	char type[B_MIME_TYPE_LENGTH];
+	return node.ReadAttrString("META:TYPE", &kind) == B_OK && kind == sen::mime::kRelationFolder
+		&& node.ReadAttrString(sen::attr::kRelationSource, &sourceId) == B_OK && !sourceId.IsEmpty()
+		&& BNodeInfo(&node).GetType(type) == B_OK && BString(type).StartsWith(sen::mime::kRelationPrefix);
+}
+
+
+bool
+TrackerSenRelations::AdoptKeptFolder(const entry_ref& folderRef)
+{
+	BNode node(&folderRef);
+	BString sourceId;
+	char type[B_MIME_TYPE_LENGTH];
+	if (node.InitCheck() != B_OK || node.ReadAttrString(sen::attr::kRelationSource, &sourceId) != B_OK || sourceId.IsEmpty()
+			|| BNodeInfo(&node).GetType(type) != B_OK)
+		return false;
+
+	// the source: by its SEN:ID (the file may have moved, the ref of the folder's attribute is then out of date), else the ref that the folder keeps
+	entry_ref sourceRef;
+	bool found = false;
+	BMessenger server(sen::kServerSignature);
+	if (!server.IsValid())
+		return false;
+	{
+		BMessage ask(sen::cmd::kQueryRefForId), reply;
+		ask.AddString(sen::attr::kId, sourceId);
+		found = server.SendMessage(&ask, &reply, 5000000, 5000000) == B_OK && reply.FindRef("ref", &sourceRef) == B_OK;
+	}
+	if (!found) {
+		attr_info info;
+		if (node.GetAttrInfo(sen::attr::kRelationSourceRef, &info) == B_OK && info.type == B_REF_TYPE && info.size > 0 && info.size < 4096) {
+			char buffer[4096];
+			BMessage holder;
+			if (node.ReadAttr(sen::attr::kRelationSourceRef, B_REF_TYPE, 0, buffer, info.size) == info.size
+					&& holder.AddData("ref", B_REF_TYPE, buffer, info.size) == B_OK && holder.FindRef("ref", &sourceRef) == B_OK)
+				found = BEntry(&sourceRef).Exists();
+		}
+	}
+	if (!found)
+		return false;
+
+	// the config of the relation: only the relations that a plugin works out are kept like this (the folder of a stored relation is an editor of it, which a copy is not)
+	BMessage configReply, configs, config;
+	if (AskServerForType(sourceRef, type, true, &configReply) != B_OK || configReply.FindMessage(sen::key::kRelationConfigMap, &configs) != B_OK
+			|| configs.FindMessage(type, &config) != B_OK)
+		return false;
+	if (config.GetBool(sen::conf::kSelf, false) || !(config.GetBool(sen::conf::kDynamic, false) || config.GetBool(sen::conf::kRemote, false)))
+		return false;
+
+	RegisterTypeFolder(sourceRef, "", type, config, sourceId.String(), folderRef, true);
+	return true;
 }
 
 

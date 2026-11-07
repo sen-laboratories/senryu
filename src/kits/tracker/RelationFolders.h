@@ -12,6 +12,7 @@
 #include <String.h>
 
 #include <map>
+#include <set>
 
 /**
  * @file RelationFolders.h
@@ -87,8 +88,11 @@ public:
 	 * A window opens the folder. If it is the folder of a relation that a plugin works out (lazy: a spatial relation), the relations are asked for now, in a thread, with a file
 	 * "Fetching relations..." meanwhile; what was there before is replaced when the answer is in. At every opening, but not while a fetch is going on and not within the cache time
 	 * (kFetchAgainAfter) of the last one: a folder that is kept (a shortcut on the Desktop to "near my home") shows what the plugin finds now. Nothing for any other folder.
+	 * @param ref where the folder is now: it may have been moved since it was made (the Desktop), then the registered ref is replaced.
+	 * A folder of a relation of a plugin that is not registered (copied to a place that stays, from before Akita was started) registers itself from its attributes, see
+	 * TrackerSenRelations::AdoptKeptFolder(), and is fetched at once.
 	 */
-	void		FolderOpened(const node_ref& folder);
+	void		FolderOpened(const node_ref& folder, const entry_ref& ref);
 	/** A fetch of the folder was started (by FetchInto): it is not started a second time. */
 	void		FetchStarted(const node_ref& folder);
 	/** The fetch of the folder ended (whether it worked or not): the cache time runs from now. */
@@ -126,4 +130,5 @@ private:
 	std::map<node_ref, FolderInfo>	fFolders;
 	std::map<node_ref, FileInfo>	fFiles;
 	std::map<node_ref, bool>		fWatched;
+	std::set<node_ref>				fAdopting;	///< kept folders whose registration is on its way (a second opening does not start it again)
 };

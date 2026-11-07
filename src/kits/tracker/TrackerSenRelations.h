@@ -95,7 +95,16 @@ public:
 	 * relation as attributes. The folder is a top-level folder of relations (dropped files become generic relations), the files know their relation types.
 	 * @param folderRef receives the folder
 	 */
-	static status_t	MaterializeAll(const entry_ref& sourceRef, const char* viewId, entry_ref* folderRef);
+	static status_t	MaterializeAll(const entry_ref& sourceRef, const char* viewId, entry_ref* folderRef, const char* group = NULL);
+	/**
+	 * A folder of a relation that a plugin works out which is not registered (yet): it was copied or moved to a place that stays (the Desktop, the home folder), or Akita was
+	 * started again since it was made. It has what is needed in its attributes (the relation type is its type, the source of the relations its SEN:ID and a ref, see RegisterTypeFolder()):
+	 * the source and the config of the relation are asked of the server, and the folder is registered as a lazy one, so that it is fetched now and at every opening later on.
+	 * Runs the server's calls: not in the thread of a window. @return whether the folder was one and is registered.
+	 */
+	static bool		AdoptKeptFolder(const entry_ref& folderRef);
+	/** Whether the attributes of the folder say that it is a folder of the relations of a source (cheap: for the thread of a window). */
+	static bool		LooksLikeKeptFolder(const entry_ref& folderRef);
 	/** The empty folder of a relation type in another folder (the folder of all the relations of a file), for a relation that is fetched when the folder is opened. */
 	static status_t	CreateLazyTypeFolderIn(const entry_ref& parentRef, const entry_ref& sourceRef, const BString& sourceId, const char* viewId, const char* relationType,
 						const BMessage& relationConfig, entry_ref* typeRef);

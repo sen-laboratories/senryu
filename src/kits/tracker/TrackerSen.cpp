@@ -78,7 +78,8 @@ TTracker::HandleSenMessage(BMessage* message)
 		if (result == B_OK) {
 			BString viewId;
 			TrackerSenRelations::NewViewId(&viewId);
-			result = TrackerSenRelations::MaterializeAll(source, viewId.String(), &folderRef);
+			// (with a group: only the relations of that group, the ones of the submenu of the same name)
+			result = TrackerSenRelations::MaterializeAll(source, viewId.String(), &folderRef, message->GetString(sen::conf::kGroup, NULL));
 		}
 		if (result == B_OK) {
 			BMessage* open = new BMessage(B_REFS_RECEIVED);

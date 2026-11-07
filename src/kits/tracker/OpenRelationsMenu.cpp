@@ -333,8 +333,18 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 	// (after the relations that have no group, set apart)
 	if (!groups.empty() && CountItems() > 0)
 		AddSeparatorItem();
-	for (const auto& each : groups)
-		AddItem(new IconMenuItem(std::get<1>(each), NULL, std::get<2>(each).String()));
+	for (const auto& each : groups) {
+		// the item of a group opens the folder of its relations (all empty folders, those that a plugin works out are asked for when they are opened), as "Open related..." does
+		// for all of them
+		BMessage* openGroup = new BMessage(sen::cmd::kOpenAllRelationsView);
+		addSources(openGroup);
+		openGroup->AddString(sen::key::kSourceId, srcId);
+		openGroup->AddString(sen::conf::kGroup, std::get<0>(each));
+		RelationContexts::Tag(openGroup, contextId);
+		BMenuItem* groupItem = new IconMenuItem(std::get<1>(each), openGroup, std::get<2>(each).String());
+		groupItem->SetTarget(be_app_messenger);
+		AddItem(groupItem);
+	}
 
 	PRINT(("got %d compatible relation items.\n", countRelations));
 
