@@ -30,6 +30,8 @@ namespace {
 
 /** the server answers within this time, a Tracker window must not hang for longer */
 const bigtime_t kServerTimeout = 5000000;
+/** a folder of a relation that a plugin works out asks again when it is opened later than this after its last fetch (the plugin keeps the answers of the web services for its own time) */
+const bigtime_t kFetchAgainAfter = 5 * 60 * 1000000LL;
 /** the attributes that our own writing of a new file causes are ignored for this time */
 const bigtime_t kSettleTime = 1500000;
 
@@ -155,12 +157,36 @@ RelationFolders::FolderOpened(const node_ref& folder)
 	{
 		BAutolock lock(fLock);
 		auto found = fFolders.find(folder);
-		if (found == fFolders.end() || !found->second.lazy)
+		if (found == fFolders.end() || !found->second.lazy || found->second.fetching)
 			return;
-		found->second.lazy = false;		// (once: the files that were fetched stay)
+		if (found->second.fetchedAt != 0 && system_time() - found->second.fetchedAt < kFetchAgainAfter)
+			return;		// (what was fetched a short while ago is still good)
+		found->second.fetching = true;
 		info = found->second;
 	}
 	TrackerSenRelations::FetchInto(info.sourceRef, info.viewId.String(), info.relationType.String(), info.relationConfig, info.sourceId.String(), info.ref);
+}
+
+
+void
+RelationFolders::FetchStarted(const node_ref& folder)
+{
+	BAutolock lock(fLock);
+	auto found = fFolders.find(folder);
+	if (found != fFolders.end())
+		found->second.fetching = true;
+}
+
+
+void
+RelationFolders::FetchFinished(const node_ref& folder)
+{
+	BAutolock lock(fLock);
+	auto found = fFolders.find(folder);
+	if (found != fFolders.end()) {
+		found->second.fetching = false;
+		found->second.fetchedAt = system_time();
+	}
 }
 
 

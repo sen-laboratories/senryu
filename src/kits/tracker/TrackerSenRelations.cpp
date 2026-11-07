@@ -1204,6 +1204,52 @@ TrackerSenRelations::MaterializeSelfRelations(const entry_ref& sourceRef, const 
 }
 
 
+/**
+ * The empty folder of a relation type inside the folder of all the relations of a file: named after the relation, of the type of the relation (so it has its icon), a relation folder
+ * of the source, with the title that the other folders of relations have.
+ */
+status_t
+TrackerSenRelations::CreateLazyTypeFolderIn(const entry_ref& parentRef, const entry_ref& sourceRef, const BString& sourceId, const char* viewId, const char* relationType,
+	const BMessage& relationConfig, entry_ref* typeRef)
+{
+	BDirectory parent(&parentRef);
+	status_t result = parent.InitCheck();
+	if (result != B_OK)
+		return result;
+
+	const char* relationName = relationConfig.GetString(sen::key::kRelationName, relationType);
+	const char* relationLabel = relationConfig.GetString(sen::key::kRelationLabel, relationName);
+	BString folderName(relationName);
+	folderName.ReplaceAll('/', '\\');
+	if (folderName.IsEmpty() || folderName[0] == '.')
+		folderName.Prepend("_");
+
+	BDirectory folder;
+	result = parent.CreateDirectory(folderName.String(), &folder);
+	if (result == B_FILE_EXISTS) {
+		// (a file of a relation has this name: the folder is named after its type, too)
+		const char* shortType = strrchr(relationType, '/');
+		folderName << " (" << (shortType != NULL ? shortType + 1 : relationType) << ")";
+		result = parent.CreateDirectory(folderName.String(), &folder);
+	}
+	if (result != B_OK)
+		return result;
+
+	BEntry entry;
+	folder.GetEntry(&entry);
+	BNode node(&entry);
+	BString title(DisplayNameOf(sourceRef));
+	title << " → " << relationLabel << " relations";
+	BNodeInfo info(&node);
+	if (info.InitCheck() == B_OK)
+		info.SetType(relationType);
+	node.WriteAttrString("META:TYPE", new BString(sen::mime::kRelationFolder));
+	node.WriteAttrString(sen::attr::kRelationSource, new BString(sourceId));
+	node.WriteAttrString(sen::attr::kFolderName, &title);
+	return entry.GetRef(typeRef);
+}
+
+
 status_t
 TrackerSenRelations::MaterializeAll(const entry_ref& sourceRef, const char* viewId, entry_ref* folderRef)
 {
@@ -1256,15 +1302,23 @@ TrackerSenRelations::MaterializeAll(const entry_ref& sourceRef, const char* view
 
 	// a file for each relation of each type. Dynamic ones (a plugin or a query works them out) are not different: they are asked for as the stored ones. Not asked for are the self
 	// relations (what a document contains: below) and the remote ones, which ask a service on the internet (slow, may need a permission): each would be asked of every file whose
-	// "all relations" is opened; the folder of the relation itself asks for it.
+	// "all relations" is opened. A remote relation gets its folder, empty: it is asked for when that is opened (and again at every opening after the cache time, see
+	// RelationFolders::FolderOpened), whatever the plugin makes of it.
 	BMessage typeConfigs;
 	all.FindMessage(sen::key::kRelationConfigMap, &typeConfigs);
 	for (int32 i = 0; i < types.CountStrings(); i++) {
 		const BString& relationType = types.StringAt(i);
 		BMessage listedConfig;
-		if (typeConfigs.FindMessage(relationType.String(), &listedConfig) == B_OK
-				&& (listedConfig.GetBool(sen::conf::kRemote, false) || listedConfig.GetBool(sen::conf::kSelf, false)))
-			continue;
+		if (typeConfigs.FindMessage(relationType.String(), &listedConfig) == B_OK) {
+			if (listedConfig.GetBool(sen::conf::kSelf, false))
+				continue;
+			if (listedConfig.GetBool(sen::conf::kRemote, false)) {
+				entry_ref typeRef;
+				if (CreateLazyTypeFolderIn(*folderRef, sourceRef, sourceId, viewId, relationType.String(), listedConfig, &typeRef) == B_OK)
+					RegisterTypeFolder(sourceRef, viewId, relationType.String(), listedConfig, sourceId.String(), typeRef, true);
+				continue;
+			}
+		}
 		BMessage askType(sen::cmd::kRelationsGet);
 		askType.AddRef(sen::key::kSourceRef, &sourceRef);
 		askType.AddString(sen::key::kRelationType, relationType);
@@ -1416,6 +1470,8 @@ AskServerForType(const entry_ref& sourceRef, const char* relationType, bool conf
 
 /** the name of the file that tells that the relations are being fetched, in the folder that is already open */
 const char* const kFetchingName = "Fetching relations" B_UTF8_ELLIPSIS;
+/** the name of the file that says that they could not be fetched starts with this */
+const char* const kFailedPrefix = "The relations could not be fetched";
 
 }	// namespace
 
@@ -1475,9 +1531,9 @@ TrackerSenRelations::MaterializeLater(const entry_ref& sourceRef, const char* vi
 	status_t result = CreateRelationDirectory(viewId, sourceId.String(), DisplayNameOf(sourceRef).String(), relationType, &relationConfig, typeDirRef);
 	if (result != B_OK)
 		return result;
-	RegisterTypeFolder(sourceRef, viewId, relationType, relationConfig, sourceId.String(), *typeDirRef);
+	RegisterTypeFolder(sourceRef, viewId, relationType, relationConfig, sourceId.String(), *typeDirRef, true);
 
-	// the folder opens at once and says that the relations are on their way; they appear in it as the answer comes
+	// the folder opens at once and says that the relations are on their way; they appear in it as the answer comes (and it asks again when it is opened later, after the cache time)
 	FetchInto(sourceRef, viewId, relationType, relationConfig, sourceId.String(), *typeDirRef);
 	return B_OK;
 }
@@ -1487,26 +1543,55 @@ void
 TrackerSenRelations::FetchInto(const entry_ref& sourceRef, const char* viewId, const char* relationType, const BMessage& relationConfig,
 	const char* sourceId, const entry_ref& folderRef)
 {
+	node_ref folderNode;
+	BEntry(&folderRef).GetNodeRef(&folderNode);
+	RelationFolders::Instance().FetchStarted(folderNode);
+
 	BDirectory folder(&folderRef);
+	// (what an earlier fetch said about its failure is out of date now)
+	{
+		BEntry old;
+		char name[B_FILE_NAME_LENGTH];
+		std::vector<BString> stale;
+		while (folder.GetNextEntry(&old) == B_OK) {
+			if (old.GetName(name) == B_OK && strncmp(name, kFailedPrefix, strlen(kFailedPrefix)) == 0)
+				stale.push_back(name);
+		}
+		for (const BString& name : stale)
+			BEntry(&folder, name.String()).Remove();
+	}
 	BFile placeholder;
 	folder.CreateFile(kFetchingName, &placeholder, true);
 
 	const BString viewIdCopy(viewId), typeCopy(relationType), sourceIdCopy(sourceId);
-	std::thread([sourceRef, viewIdCopy, typeCopy, relationConfig, sourceIdCopy, folderRef]() {
+	std::thread([sourceRef, viewIdCopy, typeCopy, relationConfig, sourceIdCopy, folderRef, folderNode]() {
 		BMessage reply;
 		status_t result = AskServerForType(sourceRef, typeCopy.String(), false, &reply);
 
 		BDirectory folder(&folderRef);
 		BEntry(&folder, kFetchingName).Remove();
 		if (result == B_OK) {
+			// the folder shows what the plugin finds now: what an earlier fetch left goes when the new answer is in (the files of a dynamic relation are not registered as
+			// stored ones, so taking them away removes no relation)
+			std::vector<BString> older;
+			BEntry entry;
+			BPath path;
+			while (folder.GetNextEntry(&entry) == B_OK) {
+				if (entry.GetPath(&path) == B_OK)
+					older.push_back(path.Path());
+			}
+			for (const BString& each : older)
+				std::filesystem::remove_all(std::filesystem::path(each.String()));
+
 			entry_ref typeDir(folderRef);
 			result = FillTypeFolder(reply, sourceRef, viewIdCopy.String(), typeCopy.String(), relationConfig, sourceIdCopy.String(), &typeDir);
 		}
 		if (result != B_OK) {
 			ERROR("could not get the relations of type %s from the SEN server: %s\n", typeCopy.String(), strerror(result));
 			BFile failed;
-			folder.CreateFile((BString("The relations could not be fetched (") << strerror(result) << ")").String(), &failed, true);
+			folder.CreateFile((BString(kFailedPrefix) << " (" << strerror(result) << ")").String(), &failed, true);
 		}
+		RelationFolders::Instance().FetchFinished(folderNode);
 	}).detach();
 }
 

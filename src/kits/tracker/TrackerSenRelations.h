@@ -96,6 +96,9 @@ public:
 	 * @param folderRef receives the folder
 	 */
 	static status_t	MaterializeAll(const entry_ref& sourceRef, const char* viewId, entry_ref* folderRef);
+	/** The empty folder of a relation type in another folder (the folder of all the relations of a file), for a relation that is fetched when the folder is opened. */
+	static status_t	CreateLazyTypeFolderIn(const entry_ref& parentRef, const entry_ref& sourceRef, const BString& sourceId, const char* viewId, const char* relationType,
+						const BMessage& relationConfig, entry_ref* typeRef);
 	/** The self relations of a file (extracted by a plugin) at the root level of a folder, with what is below them as folders. Nothing if there are none. */
 	static void		MaterializeSelfRelations(const entry_ref& sourceRef, const BString& sourceId, entry_ref* folderRef);
 	/** Whether the folder is one of the views of relations (it is below the folder where they are made), stored or self: its files stand for relations. */
@@ -121,7 +124,8 @@ public:
 						const char* sourceId, const entry_ref& typeDirRef, bool lazy = false);
 	/**
 	 * Asks the server for the relations of a type in a thread, and adds their files to the folder as the answer comes (a file "Fetching relations..." is there meanwhile, and
-	 * says that they could not be fetched if that is so). For a folder that is made already, empty: the one of MaterializeLater(), or a lazy one that was opened.
+	 * says that they could not be fetched if that is so). For a folder that is made already: the one of MaterializeLater(), or a lazy one that was opened (what an earlier fetch put into
+	 * it goes when the new answer is in).
 	 */
 	static void		FetchInto(const entry_ref& sourceRef, const char* viewId, const char* relationType, const BMessage& relationConfig,
 						const char* sourceId, const entry_ref& folderRef);
