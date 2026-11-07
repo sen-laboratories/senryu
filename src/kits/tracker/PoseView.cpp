@@ -1230,6 +1230,9 @@ BPoseView::InitDirentIterator(const entry_ref* ref)
 	TTracker::WatchNode(sourceModel.NodeRef(), B_WATCH_DIRECTORY | B_WATCH_CHILDREN
 		| B_WATCH_NAME | B_WATCH_STAT | B_WATCH_INTERIM_STAT | B_WATCH_ATTR, this);
 
+	// the folder of a relation that is fetched when it is opened: now (the files that are made are seen by the watch above)
+	RelationFolders::Instance().FolderOpened(*sourceModel.NodeRef());
+
 	return entryList;
 }
 

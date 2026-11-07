@@ -805,6 +805,10 @@ TTracker::PrepareRelationFolder(BMessage *message, entry_ref* relationDirRef)
 		if (result == B_NOT_SUPPORTED) {
 			result = TrackerSenRelations::CreateRelationDirectory(viewId.String(), srcId.String(), TrackerSenRelations::DisplayNameOf(srcRef).String(), relationType,
 				&relationConf, relationDirRef);
+			// the folder of a relation that asks a service on the internet (remote: a spatial one) is empty until it is entered: it is fetched then, as the relations of a document
+			// are extracted when its folder is made, but later
+			if (result == B_OK && relationConf.GetBool(sen::conf::kRemote, false) && !relationConf.GetBool(sen::conf::kSelf, false))
+				TrackerSenRelations::RegisterTypeFolder(srcRef, viewId.String(), relationType, relationConf, srcId.String(), *relationDirRef, true);
 		}
 		if ((result != B_OK)) {
 			PRINT(("could not create directory for relation %s: %s\n", relationType, strerror(result)));

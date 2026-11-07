@@ -49,6 +49,7 @@ public:
 		BMessage	relationConfig;
 		bool		common = false;	///< the common view of several files (what they have in common): nothing is dropped into it, see "Open related (common)"
 		bool		all = false;	///< the folder of all the relations of a file (of all types, in one folder): a dropped file is a generic relation that is shown in it
+		bool		lazy = false;	///< the folder of a relation that a plugin works out and that asks a service on the internet (remote): it is empty until it is opened, see FolderOpened()
 	};
 
 	/** a file that stands for a stored relation */
@@ -79,6 +80,12 @@ public:
 	bool		IsRelationFile(const node_ref& node) const;
 
 	// What happens in a relation folder, reported by the pose views. All return true if the event was about a relation.
+
+	/**
+	 * A window opens the folder. If it is the folder of a relation that is fetched when it is opened (lazy: a spatial relation in the folder of all the relation types of a file), the
+	 * relations are asked for now, in a thread, and added to the folder as they come, with a file "Fetching relations..." meanwhile; once. Nothing for any other folder.
+	 */
+	void		FolderOpened(const node_ref& folder);
 
 	/** The file is gone: the relation is removed. */
 	bool		EntryRemoved(const node_ref& file);

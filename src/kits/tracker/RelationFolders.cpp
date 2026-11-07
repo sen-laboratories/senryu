@@ -149,6 +149,22 @@ RelationFolders::RegisterFolder(const FolderInfo& folder)
 
 
 void
+RelationFolders::FolderOpened(const node_ref& folder)
+{
+	FolderInfo info;
+	{
+		BAutolock lock(fLock);
+		auto found = fFolders.find(folder);
+		if (found == fFolders.end() || !found->second.lazy)
+			return;
+		found->second.lazy = false;		// (once: the files that were fetched stay)
+		info = found->second;
+	}
+	TrackerSenRelations::FetchInto(info.sourceRef, info.viewId.String(), info.relationType.String(), info.relationConfig, info.sourceId.String(), info.ref);
+}
+
+
+void
 RelationFolders::StartWatching(const node_ref& folder)
 {
 	BAutolock lock(fLock);

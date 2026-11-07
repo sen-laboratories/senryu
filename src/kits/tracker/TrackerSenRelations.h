@@ -118,7 +118,13 @@ public:
 						const BMessage& relationConfig, const char* sourceId, entry_ref* typeDirRef);
 	/** lets the views of relations know the folder of a type */
 	static void		RegisterTypeFolder(const entry_ref& sourceRef, const char* viewId, const char* relationType, const BMessage& relationConfig,
-						const char* sourceId, const entry_ref& typeDirRef);
+						const char* sourceId, const entry_ref& typeDirRef, bool lazy = false);
+	/**
+	 * Asks the server for the relations of a type in a thread, and adds their files to the folder as the answer comes (a file "Fetching relations..." is there meanwhile, and
+	 * says that they could not be fetched if that is so). For a folder that is made already, empty: the one of MaterializeLater(), or a lazy one that was opened.
+	 */
+	static void		FetchInto(const entry_ref& sourceRef, const char* viewId, const char* relationType, const BMessage& relationConfig,
+						const char* sourceId, const entry_ref& folderRef);
 	/**
 	 * The common view of a selection ("Open related (common)"): one folder of a relation type with the targets of all the files, each once. The SEN server
 	 * answers for several files with the targets of all of them (see kRelationsGet), and the menus offered only the types that fit all of them. The folder

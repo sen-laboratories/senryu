@@ -1447,9 +1447,10 @@ TrackerSenRelations::FillTypeFolder(const BMessage& reply, const entry_ref& sour
 
 void
 TrackerSenRelations::RegisterTypeFolder(const entry_ref& sourceRef, const char* viewId, const char* relationType, const BMessage& relationConfig,
-	const char* sourceId, const entry_ref& typeDirRef)
+	const char* sourceId, const entry_ref& typeDirRef, bool lazy)
 {
 	RelationFolders::FolderInfo folder;
+	folder.lazy = lazy;
 	BEntry folderEntry(&typeDirRef);
 	if (folderEntry.GetNodeRef(&folder.node) == B_OK) {
 		folder.ref = typeDirRef;
@@ -1477,13 +1478,21 @@ TrackerSenRelations::MaterializeLater(const entry_ref& sourceRef, const char* vi
 	RegisterTypeFolder(sourceRef, viewId, relationType, relationConfig, sourceId.String(), *typeDirRef);
 
 	// the folder opens at once and says that the relations are on their way; they appear in it as the answer comes
-	BDirectory folder(typeDirRef);
+	FetchInto(sourceRef, viewId, relationType, relationConfig, sourceId.String(), *typeDirRef);
+	return B_OK;
+}
+
+
+void
+TrackerSenRelations::FetchInto(const entry_ref& sourceRef, const char* viewId, const char* relationType, const BMessage& relationConfig,
+	const char* sourceId, const entry_ref& folderRef)
+{
+	BDirectory folder(&folderRef);
 	BFile placeholder;
 	folder.CreateFile(kFetchingName, &placeholder, true);
 
-	const entry_ref folderRef(*typeDirRef);
-	const BString viewIdCopy(viewId), typeCopy(relationType);
-	std::thread([sourceRef, viewIdCopy, typeCopy, relationConfig, sourceId, folderRef]() {
+	const BString viewIdCopy(viewId), typeCopy(relationType), sourceIdCopy(sourceId);
+	std::thread([sourceRef, viewIdCopy, typeCopy, relationConfig, sourceIdCopy, folderRef]() {
 		BMessage reply;
 		status_t result = AskServerForType(sourceRef, typeCopy.String(), false, &reply);
 
@@ -1491,7 +1500,7 @@ TrackerSenRelations::MaterializeLater(const entry_ref& sourceRef, const char* vi
 		BEntry(&folder, kFetchingName).Remove();
 		if (result == B_OK) {
 			entry_ref typeDir(folderRef);
-			result = FillTypeFolder(reply, sourceRef, viewIdCopy.String(), typeCopy.String(), relationConfig, sourceId.String(), &typeDir);
+			result = FillTypeFolder(reply, sourceRef, viewIdCopy.String(), typeCopy.String(), relationConfig, sourceIdCopy.String(), &typeDir);
 		}
 		if (result != B_OK) {
 			ERROR("could not get the relations of type %s from the SEN server: %s\n", typeCopy.String(), strerror(result));
@@ -1499,7 +1508,6 @@ TrackerSenRelations::MaterializeLater(const entry_ref& sourceRef, const char* vi
 			folder.CreateFile((BString("The relations could not be fetched (") << strerror(result) << ")").String(), &failed, true);
 		}
 	}).detach();
-	return B_OK;
 }
 
 
