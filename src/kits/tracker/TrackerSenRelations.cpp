@@ -572,6 +572,28 @@ TrackerSenRelations::RelationDirectoryPath(const char* viewId, const char* relat
 }
 
 
+/**
+ * The folder of the relations of a type shows the icon that the type has for it (SEN:ICON:FOLDER in its MIME type: a globe in a folder for the spatial relations), if it has one; else
+ * it shows the icon of the type. Nothing is said if there is none (most types have none). @return whether an icon was set.
+ */
+static bool
+ApplyFolderIcon(BNode& folder, const char* relationType)
+{
+	BPath path;
+	if (find_directory(B_USER_SETTINGS_DIRECTORY, &path) != B_OK || path.Append("mime_db") != B_OK || path.Append(relationType) != B_OK)
+		return false;
+	BNode mimeNode(path.Path());
+	attr_info info;
+	if (mimeNode.InitCheck() != B_OK || mimeNode.GetAttrInfo(sen::attr::kRelationFolderIcon, &info) != B_OK || info.type != B_VECTOR_ICON_TYPE || info.size <= 0
+			|| info.size > 64 * 1024)
+		return false;
+	std::vector<char> icon(info.size);
+	if (mimeNode.ReadAttr(sen::attr::kRelationFolderIcon, B_VECTOR_ICON_TYPE, 0, icon.data(), info.size) != info.size)
+		return false;
+	return folder.WriteAttr("BEOS:ICON", B_VECTOR_ICON_TYPE, 0, icon.data(), info.size) == info.size;
+}
+
+
 status_t
 TrackerSenRelations::CreateRelationDirectory(
 	const char* viewId,
@@ -646,6 +668,7 @@ TrackerSenRelations::CreateRelationDirectory(
 		if (result == B_OK) result = relationNode.WriteAttrString(sen::attr::kRelationSource, new BString(sourceId));
 		// TODO: also attach relation message for self relations
 		if (result == B_OK) result = relationNode.WriteAttrString(sen::attr::kFolderName, &folderLabel);
+		if (result == B_OK) ApplyFolderIcon(relationNode, relationType);
 	}
 
 	// return ref
@@ -1257,6 +1280,7 @@ TrackerSenRelations::CreateLazyTypeFolderIn(const entry_ref& parentRef, const en
 	node.WriteAttrString("META:TYPE", new BString(sen::mime::kRelationFolder));
 	node.WriteAttrString(sen::attr::kRelationSource, new BString(sourceId));
 	node.WriteAttrString(sen::attr::kFolderName, &title);
+	ApplyFolderIcon(node, relationType);
 	return entry.GetRef(typeRef);
 }
 
@@ -1362,6 +1386,17 @@ TrackerSenRelations::MaterializeAll(const entry_ref& sourceRef, const char* view
 
 		entry_ref workingRef(*folderRef), openRef(*folderRef);
 		WriteTargetRelations(&list, &config, &workingRef, &openRef);
+	}
+
+	// the folder of a group has the icon that its relations have for their folders (the same for all of a group: the globe in a folder of the spatial ones)
+	if (ofGroup) {
+		BNode node(&folderEntry);
+		for (int32 i = 0; i < types.CountStrings(); i++) {
+			BMessage groupConfig;
+			if (typeConfigs.FindMessage(types.StringAt(i).String(), &groupConfig) == B_OK && strcmp(groupConfig.GetString(sen::conf::kGroup, ""), group) == 0
+					&& ApplyFolderIcon(node, types.StringAt(i).String()))
+				break;
+		}
 	}
 
 	// the self relations (what a document contains: the top level of the TOC of a PDF, with what is below it as folders), which a plugin extracts (not those of a group)
