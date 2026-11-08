@@ -2037,7 +2037,17 @@ BPoseView::CreatePoses(Model** models, PoseInfo* poseInfoArray, int32 count,
 		}
 
 		model->OpenNode();
-		ASSERT(model->IsNodeOpen());
+		if (!model->IsNodeOpen()) {
+			// SEN: the file went between the listing of the folder and now (a folder of relations replaces its files when the plugin has answered, which can be at once if
+			// the answer was kept): it has no pose, and is not an error
+			fInsertedNodes.Remove(*(model->NodeRef()));
+			StopWatchingNode(model->NodeRef());
+			delete model;
+			if (resultingPoses)
+				resultingPoses[modelIndex] = NULL;
+
+			continue;
+		}
 		PoseInfo* poseInfo = &poseInfoArray[modelIndex];
 		BPose* pose = new BPose(model, this, clipboardMode);
 
