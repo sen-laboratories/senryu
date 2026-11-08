@@ -1232,6 +1232,9 @@ BPoseView::InitDirentIterator(const entry_ref* ref)
 	TTracker::WatchNode(sourceModel.NodeRef(), B_WATCH_DIRECTORY | B_WATCH_CHILDREN
 		| B_WATCH_NAME | B_WATCH_STAT | B_WATCH_INTERIM_STAT | B_WATCH_ATTR, this);
 
+	// the folder of a relation that is fetched when it is opened: now (the files that are made are seen by the watch above)
+	RelationFolders::Instance().FolderOpened(*sourceModel.NodeRef(), *sourceModel.EntryRef());
+
 	return entryList;
 }
 
@@ -2036,7 +2039,17 @@ BPoseView::CreatePoses(Model** models, PoseInfo* poseInfoArray, int32 count,
 		}
 
 		model->OpenNode();
-		ASSERT(model->IsNodeOpen());
+		if (!model->IsNodeOpen()) {
+			// SEN: the file went between the listing of the folder and now (a folder of relations replaces its files when the plugin has answered, which can be at once if
+			// the answer was kept): it has no pose, and is not an error
+			fInsertedNodes.Remove(*(model->NodeRef()));
+			StopWatchingNode(model->NodeRef());
+			delete model;
+			if (resultingPoses)
+				resultingPoses[modelIndex] = NULL;
+
+			continue;
+		}
 		PoseInfo* poseInfo = &poseInfoArray[modelIndex];
 		BPose* pose = new BPose(model, this, clipboardMode);
 
@@ -3561,6 +3574,8 @@ BPoseView::NewFileFromTemplate(const BMessage* message)
 	BNode templateNode(&templateRef);
 	BNode destNode(&destDir, fileName);
 	FSCopyAttributesAndStats(&templateNode, &destNode, false);
+	// SEN: the mark of the ontology installer says that the template is its own (it removes it with the ontology); the file that is made from it is not
+	destNode.RemoveAttr("SEN:onto:template");
 
 	BEntry fileEntry(&destDir, fileName);
 	fileEntry.GetRef(&fileRef);

@@ -19,6 +19,7 @@
 
 #include <string.h>
 
+#include <thread>
 #include <vector>
 
 #include <sen/Sen.h>
@@ -30,6 +31,8 @@ namespace {
 
 /** the server answers within this time, a Tracker window must not hang for longer */
 const bigtime_t kServerTimeout = 5000000;
+/** a folder of a relation that a plugin works out asks again when it is opened later than this after its last fetch (the plugin keeps the answers of the web services for its own time) */
+const bigtime_t kFetchAgainAfter = 5 * 60 * 1000000LL;
 /** the attributes that our own writing of a new file causes are ignored for this time */
 const bigtime_t kSettleTime = 1500000;
 
@@ -145,6 +148,82 @@ RelationFolders::RegisterFolder(const FolderInfo& folder)
 		fFolders[folder.node] = folder;
 	}
 	StartWatching(folder.node);
+}
+
+
+void
+RelationFolders::FolderOpened(const node_ref& folder, const entry_ref& ref)
+{
+	FolderInfo info;
+	bool adopt = false;
+	{
+		BAutolock lock(fLock);
+		auto found = fFolders.find(folder);
+		if (found == fFolders.end()) {
+			// not ours (yet): a kept folder of a relation (copied from the folders of Akita to the Desktop) says in its attributes what it is
+			if (fAdopting.find(folder) != fAdopting.end() || !TrackerSenRelations::LooksLikeKeptFolder(ref))
+				return;
+			fAdopting.insert(folder);
+			adopt = true;
+		} else {
+			if (!found->second.lazy)
+				return;
+			found->second.ref = ref;	// (it may have been moved)
+			if (found->second.fetching)
+				return;
+			if (found->second.fetchedAt != 0 && system_time() - found->second.fetchedAt < kFetchAgainAfter)
+				return;		// (what was fetched a short while ago is still good)
+			found->second.fetching = true;
+			info = found->second;
+		}
+	}
+
+	if (adopt) {
+		// (the server is asked: not in the thread of the window)
+		std::thread([this, folder, ref]() {
+			bool adopted = TrackerSenRelations::AdoptKeptFolder(ref);
+			FolderInfo adoptedInfo;
+			bool known = false;
+			{
+				BAutolock lock(fLock);
+				fAdopting.erase(folder);
+				auto found = fFolders.find(folder);
+				if (adopted && found != fFolders.end() && !found->second.fetching) {
+					found->second.fetching = true;
+					adoptedInfo = found->second;
+					known = true;
+				}
+			}
+			if (known) {
+				TrackerSenRelations::FetchInto(adoptedInfo.sourceRef, adoptedInfo.viewId.String(), adoptedInfo.relationType.String(), adoptedInfo.relationConfig,
+					adoptedInfo.sourceId.String(), adoptedInfo.ref);
+			}
+		}).detach();
+		return;
+	}
+	TrackerSenRelations::FetchInto(info.sourceRef, info.viewId.String(), info.relationType.String(), info.relationConfig, info.sourceId.String(), info.ref);
+}
+
+
+void
+RelationFolders::FetchStarted(const node_ref& folder)
+{
+	BAutolock lock(fLock);
+	auto found = fFolders.find(folder);
+	if (found != fFolders.end())
+		found->second.fetching = true;
+}
+
+
+void
+RelationFolders::FetchFinished(const node_ref& folder)
+{
+	BAutolock lock(fLock);
+	auto found = fFolders.find(folder);
+	if (found != fFolders.end()) {
+		found->second.fetching = false;
+		found->second.fetchedAt = system_time();
+	}
 }
 
 

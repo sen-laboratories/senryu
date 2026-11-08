@@ -95,13 +95,49 @@ public:
 	 * relation as attributes. The folder is a top-level folder of relations (dropped files become generic relations), the files know their relation types.
 	 * @param folderRef receives the folder
 	 */
-	static status_t	MaterializeAll(const entry_ref& sourceRef, const char* viewId, entry_ref* folderRef);
+	static status_t	MaterializeAll(const entry_ref& sourceRef, const char* viewId, entry_ref* folderRef, const char* group = NULL);
+	/**
+	 * A folder of a relation that a plugin works out which is not registered (yet): it was copied or moved to a place that stays (the Desktop, the home folder), or Akita was
+	 * started again since it was made. It has what is needed in its attributes (the relation type is its type, the source of the relations its SEN:ID and a ref, see RegisterTypeFolder()):
+	 * the source and the config of the relation are asked of the server, and the folder is registered as a lazy one, so that it is fetched now and at every opening later on.
+	 * Runs the server's calls: not in the thread of a window. @return whether the folder was one and is registered.
+	 */
+	static bool		AdoptKeptFolder(const entry_ref& folderRef);
+	/** Whether the attributes of the folder say that it is a folder of the relations of a source (cheap: for the thread of a window). */
+	static bool		LooksLikeKeptFolder(const entry_ref& folderRef);
+	/** The empty folder of a relation type in another folder (the folder of all the relations of a file), for a relation that is fetched when the folder is opened. */
+	static status_t	CreateLazyTypeFolderIn(const entry_ref& parentRef, const entry_ref& sourceRef, const BString& sourceId, const char* viewId, const char* relationType,
+						const BMessage& relationConfig, entry_ref* typeRef);
 	/** The self relations of a file (extracted by a plugin) at the root level of a folder, with what is below them as folders. Nothing if there are none. */
 	static void		MaterializeSelfRelations(const entry_ref& sourceRef, const BString& sourceId, entry_ref* folderRef);
 	/** Whether the folder is one of the views of relations (it is below the folder where they are made), stored or self: its files stand for relations. */
 	static bool		IsInRelationView(const entry_ref* ref);
+	/**
+	 * The folder of the relations of one type of a file, a file for each relation. @param answer what the server said for the type (kRelationsGet with kIdToRefMap: the relations,
+	 * the refs and names of the targets and the config of the type), which a menu has already: a relation that asks a service on the internet (remote) is not asked a second time
+	 * when its folder is opened. Without it the server is asked. Not for a self relation (B_NOT_SUPPORTED: its tree is the one of its menu).
+	 */
 	static status_t	MaterializeType(const entry_ref& sourceRef, const char* viewId,
-						const char* relationType, entry_ref* typeDirRef);
+						const char* relationType, entry_ref* typeDirRef, const BMessage* answer = NULL);
+	/**
+	 * The folder of a relation that a plugin works out (dynamic) and that is not known yet: made and registered at once, with a file "Fetching relations..." in it; the relations
+	 * are asked of the server in a thread, which adds their files as the answer comes (and takes the placeholder away, or says that they could not be fetched).
+	 */
+	static status_t	MaterializeLater(const entry_ref& sourceRef, const char* viewId, const char* relationType, const BMessage& relationConfig,
+						const char* sourceId, entry_ref* typeDirRef);
+	/** the files of the relations of an answer of the server, in the folder of the type */
+	static status_t	FillTypeFolder(const BMessage& reply, const entry_ref& sourceRef, const char* viewId, const char* relationType,
+						const BMessage& relationConfig, const char* sourceId, entry_ref* typeDirRef);
+	/** lets the views of relations know the folder of a type */
+	static void		RegisterTypeFolder(const entry_ref& sourceRef, const char* viewId, const char* relationType, const BMessage& relationConfig,
+						const char* sourceId, const entry_ref& typeDirRef, bool lazy = false);
+	/**
+	 * Asks the server for the relations of a type in a thread, and adds their files to the folder as the answer comes (a file "Fetching relations..." is there meanwhile, and
+	 * says that they could not be fetched if that is so). For a folder that is made already: the one of MaterializeLater(), or a lazy one that was opened (what an earlier fetch put into
+	 * it goes when the new answer is in).
+	 */
+	static void		FetchInto(const entry_ref& sourceRef, const char* viewId, const char* relationType, const BMessage& relationConfig,
+						const char* sourceId, const entry_ref& folderRef);
 	/**
 	 * The common view of a selection ("Open related (common)"): one folder of a relation type with the targets of all the files, each once. The SEN server
 	 * answers for several files with the targets of all of them (see kRelationsGet), and the menus offered only the types that fit all of them. The folder

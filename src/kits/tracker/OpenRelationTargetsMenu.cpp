@@ -13,6 +13,7 @@
 #include "IconMenuItem.h"
 #include "OpenRelationTargetsMenu.h"
 #include "RelationContext.h"
+#include "SpinnerMenuItem.h"
 #include <sen/Sen.h>
 #include <sen/Sensei.h>
 #include "MimeTypes.h"
@@ -27,6 +28,7 @@
 #include <GroupView.h>
 #include <GridView.h>
 #include <Locale.h>
+#include <MessageRunner.h>
 #include <Mime.h>
 #include <NodeInfo.h>
 #include <Path.h>
@@ -37,6 +39,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <thread>
 #include <strings.h>
 #include <vector>
 
@@ -48,7 +51,11 @@ OpenRelationTargetsMenu::OpenRelationTargetsMenu(const char* label, const BMessa
 	fMessenger(messenger),
 	fSenMessenger(NULL),
 	fParentWindow(parentWindow),
-	fRelationTargetsReply(&fOwnReply)
+	fRelationTargetsReply(&fOwnReply),
+	fFetchingItem(NULL),
+	fFetchFailed(false),
+	fPending(false),
+	fSpinnerRunner(NULL)
 {
 	InitIconPreloader();
 
@@ -66,6 +73,7 @@ OpenRelationTargetsMenu::OpenRelationTargetsMenu(const char* label, const BMessa
 
 OpenRelationTargetsMenu::~OpenRelationTargetsMenu()
 {
+	delete fSpinnerRunner;
 	if (fSenMessenger)
 		delete fSenMessenger;
 }
@@ -113,11 +121,100 @@ OpenRelationTargetsMenu::StartBuildingItemList()
 		// the server need not look for the plugins again
 		request.AddMessage(sensei::key::kPluginConfig, &context->pluginConfig);
 	}
-	status_t result = fSenMessenger->SendMessage(&request, fRelationTargetsReply);
-	if (result != B_OK) {
-		PRINT(("failed to communicate with SEN server: %s\n", strerror(result)));
-		return false;
+	// A menu that is made by BSlowMenu does not show before its items are there (BMenu::_AddDynamicItems waits for them), and a navigator can take half a minute (a web service).
+	// So the question is asked in a thread of its own; if the answer is there soon the menu is made as usual, else it opens with a placeholder, "Fetching relations..." and a
+	// spinner, and the items take its place when the thread says that the answer is in (kFetched). Meanwhile the menu can be left, and its item can be chosen.
+	StopPending();
+	fFetchFailed = false;
+	fFetch = std::make_shared<Fetch>();
+	fFetch->server = *fSenMessenger;
+	fFetch->request = request;
+	std::shared_ptr<Fetch> fetch = fFetch;
+	BMessenger self(this);
+	std::thread([fetch, self]() mutable {
+		fetch->result = fetch->server.SendMessage(&fetch->request, &fetch->reply);
+		fetch->done = true;
+		self.SendMessage(kFetched);
+	}).detach();
+
+	for (int32 i = 0; i < 25 && !fFetch->done; i++)
+		snooze(10000);
+	if (fFetch->done) {
+		FinishFetch();
+		fFetch.reset();
+		return !fFetchFailed;
 	}
+
+	fPending = true;
+	fFetchingItem = new SpinnerMenuItem("Fetching relations" B_UTF8_ELLIPSIS);
+	fFetchingItem->SetEnabled(false);
+	AddItem(fFetchingItem);
+	fFetchingItem->StartSpinning();
+	BMessage tick(kSpinnerTick);
+	fSpinnerRunner = new BMessageRunner(self, &tick, 80000);
+	return true;
+}
+
+void
+OpenRelationTargetsMenu::StopPending()
+{
+	delete fSpinnerRunner;
+	fSpinnerRunner = NULL;
+	if (fFetchingItem != NULL) {
+		fFetchingItem->StopSpinning();
+		RemoveItem(fFetchingItem);
+		delete fFetchingItem;
+		fFetchingItem = NULL;
+	}
+	fPending = false;
+	fFetch.reset();
+}
+
+void
+OpenRelationTargetsMenu::MessageReceived(BMessage* message)
+{
+	switch (message->what) {
+		case kSpinnerTick:
+			if (fPending && fFetchingItem != NULL)
+				fFetchingItem->NextFrame();
+			return;
+		case kFetched:
+			// (not for the answer of an earlier question, or when the answer was there in time and the menu was made at once)
+			if (fPending && fFetch != NULL && fFetch->done)
+				PopulateAfterFetch();
+			return;
+	}
+	_inherited::MessageReceived(message);
+}
+
+void
+OpenRelationTargetsMenu::PopulateAfterFetch()
+{
+	std::shared_ptr<Fetch> fetch = fFetch;
+	StopPending();
+	fFetch = fetch;
+	FinishFetch();
+	fFetch.reset();
+	if (fFetchFailed) {
+		BMenuItem* item = new BMenuItem("The relations could not be fetched.", NULL);
+		item->SetEnabled(false);
+		AddItem(item);
+	} else {
+		DoneBuildingItemList();
+	}
+	InvalidateLayout();
+}
+
+void
+OpenRelationTargetsMenu::FinishFetch()
+{
+	RelationContextRef context = RelationContexts::Find(&fEntriesToOpen);
+	if (fFetch->result != B_OK) {
+		PRINT(("failed to communicate with SEN server: %s\n", strerror(fFetch->result)));
+		fFetchFailed = true;
+		return;
+	}
+	fOwnReply = fFetch->reply;
 	if (context != NULL && fEntriesToOpen.what == sen::cmd::kRelationsGetSelf) {
 		// (the children of a node of a view, not the whole tree of the document)
 		context->RestrictToNode(fRelationTargetsReply);
@@ -128,25 +225,24 @@ OpenRelationTargetsMenu::StartBuildingItemList()
 		PRINT(("< got relation targets reply:\n"));
 		fRelationTargetsReply->PrintToStream();
 	#endif
-
-	return true;
 }
 
 bool OpenRelationTargetsMenu::AddNextItem()
 {
-    // nothing to do here
-    return false;
+	// the items are all added in DoneBuildingItemList(), or later, when the answer of a slow navigator is in (PopulateAfterFetch)
+	return false;
 }
 
 void OpenRelationTargetsMenu::ClearMenuBuildingState()
 {
-    //  empty;
-    return;
+	// (nothing: a menu that waits for the answer stays as it is; it is made again when it is attached again)
 }
 
 void
 OpenRelationTargetsMenu::DoneBuildingItemList()
 {
+	if (fFetchFailed || fPending)
+		return;
 	// target the menu
 	SetTargetForItems(fMessenger);
 
@@ -499,8 +595,13 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 	BMenuItem* openRelationTargetsItem = Superitem();
 	BMessage* openRelationTargetsItemMsg = openRelationTargetsItem != NULL ? openRelationTargetsItem->Message() : NULL;
 	if (openRelationTargetsItemMsg != NULL) {
+		// (the whole answer, as for the self relations, whose tree the context keeps: the folder of a relation that asks a service on the internet is made of it, not of another question)
 		openRelationTargetsItemMsg->RemoveName(sen::key::kRelations);	// the menu is reused
+		openRelationTargetsItemMsg->RemoveName(sen::key::kIdToRefMap);
+		openRelationTargetsItemMsg->RemoveName(sen::key::kIdToNameMap);
 		openRelationTargetsItemMsg->AddMessage(sen::key::kRelations, &relations);
+		openRelationTargetsItemMsg->AddMessage(sen::key::kIdToRefMap, &idToRef);
+		openRelationTargetsItemMsg->AddMessage(sen::key::kIdToNameMap, &idToName);
 
 		PRINT(("openRelationTargetsItemMsg is:\n"));
 		openRelationTargetsItemMsg->PrintToStream();

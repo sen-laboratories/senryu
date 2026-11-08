@@ -12,6 +12,7 @@
 #include <String.h>
 
 #include <map>
+#include <set>
 
 /**
  * @file RelationFolders.h
@@ -49,6 +50,9 @@ public:
 		BMessage	relationConfig;
 		bool		common = false;	///< the common view of several files (what they have in common): nothing is dropped into it, see "Open related (common)"
 		bool		all = false;	///< the folder of all the relations of a file (of all types, in one folder): a dropped file is a generic relation that is shown in it
+		bool		lazy = false;	///< the folder of a relation that a plugin works out (dynamic): its files are fetched when it is opened, again at every opening after the cache time, see FolderOpened()
+		bool		fetching = false;	///< the files are being fetched (a second opening does not ask again)
+		bigtime_t	fetchedAt = 0;	///< when the last fetch ended (0: not yet)
 	};
 
 	/** a file that stands for a stored relation */
@@ -79,6 +83,20 @@ public:
 	bool		IsRelationFile(const node_ref& node) const;
 
 	// What happens in a relation folder, reported by the pose views. All return true if the event was about a relation.
+
+	/**
+	 * A window opens the folder. If it is the folder of a relation that a plugin works out (lazy: a spatial relation), the relations are asked for now, in a thread, with a file
+	 * "Fetching relations..." meanwhile; what was there before is replaced when the answer is in. At every opening, but not while a fetch is going on and not within the cache time
+	 * (kFetchAgainAfter) of the last one: a folder that is kept (a shortcut on the Desktop to "near my home") shows what the plugin finds now. Nothing for any other folder.
+	 * @param ref where the folder is now: it may have been moved since it was made (the Desktop), then the registered ref is replaced.
+	 * A folder of a relation of a plugin that is not registered (copied to a place that stays, from before Akita was started) registers itself from its attributes, see
+	 * TrackerSenRelations::AdoptKeptFolder(), and is fetched at once.
+	 */
+	void		FolderOpened(const node_ref& folder, const entry_ref& ref);
+	/** A fetch of the folder was started (by FetchInto): it is not started a second time. */
+	void		FetchStarted(const node_ref& folder);
+	/** The fetch of the folder ended (whether it worked or not): the cache time runs from now. */
+	void		FetchFinished(const node_ref& folder);
 
 	/** The file is gone: the relation is removed. */
 	bool		EntryRemoved(const node_ref& file);
@@ -112,4 +130,5 @@ private:
 	std::map<node_ref, FolderInfo>	fFolders;
 	std::map<node_ref, FileInfo>	fFiles;
 	std::map<node_ref, bool>		fWatched;
+	std::set<node_ref>				fAdopting;	///< kept folders whose registration is on its way (a second opening does not start it again)
 };

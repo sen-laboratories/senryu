@@ -78,7 +78,8 @@ TTracker::HandleSenMessage(BMessage* message)
 		if (result == B_OK) {
 			BString viewId;
 			TrackerSenRelations::NewViewId(&viewId);
-			result = TrackerSenRelations::MaterializeAll(source, viewId.String(), &folderRef);
+			// (with a group: only the relations of that group, the ones of the submenu of the same name)
+			result = TrackerSenRelations::MaterializeAll(source, viewId.String(), &folderRef, message->GetString(sen::conf::kGroup, NULL));
 		}
 		if (result == B_OK) {
 			BMessage* open = new BMessage(B_REFS_RECEIVED);
@@ -515,6 +516,10 @@ PrepareCommonRelationFolder(BMessage* message, entry_ref* folderRef)
 	entry_ref typeFolder;
 	bool any = false;
 	for (int32 index = 0; index < context->relations.CountStrings(); index++) {
+		// (not the remote ones: each file would ask a service on the internet)
+		BMessage typeConfig;
+		if (context->FindConfig(context->relations.StringAt(index).String(), &typeConfig) && typeConfig.GetBool(sen::conf::kRemote, false))
+			continue;
 		if (TrackerSenRelations::MaterializeTypeOfSelection(sources, viewId.String(), context->relations.StringAt(index).String(), &typeFolder) == B_OK)
 			any = true;
 	}
@@ -794,12 +799,17 @@ TTracker::PrepareRelationFolder(BMessage *message, entry_ref* relationDirRef)
 			PRINT(("could not find relation config for type %s, skipping.\n", relationType));
 			continue;
 		}
-		// stored relations are shown as files, one per relation; relations of plugins are resolved at run time
-		// when their menu is used, their folder stays a placeholder here
-		result = TrackerSenRelations::MaterializeType(srcRef, viewId.String(), relationType, relationDirRef);
+		// the relations are shown as files, one per relation (stored or worked out when asked for). Not those that ask a service on the internet
+		// (remote): their folder stays a placeholder here, the one of the relation itself asks for them
+		result = relationConf.GetBool(sen::conf::kRemote, false) ? B_NOT_SUPPORTED
+			: TrackerSenRelations::MaterializeType(srcRef, viewId.String(), relationType, relationDirRef);
 		if (result == B_NOT_SUPPORTED) {
 			result = TrackerSenRelations::CreateRelationDirectory(viewId.String(), srcId.String(), TrackerSenRelations::DisplayNameOf(srcRef).String(), relationType,
 				&relationConf, relationDirRef);
+			// the folder of a relation that asks a service on the internet (remote: a spatial one) is empty until it is entered: it is fetched then, as the relations of a document
+			// are extracted when its folder is made, but later
+			if (result == B_OK && relationConf.GetBool(sen::conf::kRemote, false) && !relationConf.GetBool(sen::conf::kSelf, false))
+				TrackerSenRelations::RegisterTypeFolder(srcRef, viewId.String(), relationType, relationConf, srcId.String(), *relationDirRef, true);
 		}
 		if ((result != B_OK)) {
 			PRINT(("could not create directory for relation %s: %s\n", relationType, strerror(result)));
@@ -956,13 +966,30 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 		relationConf.AddString(sen::key::kRelationType, relationType);
 
 	} else {
-		// a stored relation: the view is made as for the menu of all relations (the files of the relations, which can be edited)
+		// the view is made as for the menu of all relations (the files of the relations, which can be edited if they are stored), of the answer that the menu got:
+		// it was asked for once (a relation that asks a service on the internet is slow), the menu has the answer
+		BMessage answer;
+		const BMessage* menuAnswer = NULL;
+		if (message->FindMessage(sen::key::kRelations, &relations) == B_OK && message->HasMessage(sen::key::kIdToRefMap)) {
+			answer.AddMessage(sen::key::kRelations, &relations);
+			BMessage part;
+			if (message->FindMessage(sen::key::kIdToRefMap, &part) == B_OK)
+				answer.AddMessage(sen::key::kIdToRefMap, &part);
+			if (message->FindMessage(sen::key::kIdToNameMap, &part) == B_OK)
+				answer.AddMessage(sen::key::kIdToNameMap, &part);
+			BMessage configs;
+			configs.AddMessage(relationType, &relationConf);
+			answer.AddMessage(sen::key::kRelationConfigMap, &configs);
+			answer.AddString(sen::key::kSourceId, srcId);
+			answer.AddInt32(sen::key::kResult, B_OK);
+			menuAnswer = &answer;
+		}
 		BString storedViewId;
 		TrackerSenRelations::NewViewId(&storedViewId);
-		result = TrackerSenRelations::MaterializeType(srcRef, storedViewId.String(), relationType, relationDirRef);
+		result = TrackerSenRelations::MaterializeType(srcRef, storedViewId.String(), relationType, relationDirRef, menuAnswer);
 		if (result != B_NOT_SUPPORTED)
 			return result;
-		// resolved at run time (by a plugin): handed over with the menu
+		// not made as a folder of files (the answer has the tree): as it is
 		message->FindMessage(sen::key::kRelations, &relations);
 		PRINT(("got relations for type %s for source %s:\n", relationType, srcRef.name));
 	}

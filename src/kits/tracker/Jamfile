@@ -67,6 +67,7 @@ for architectureObject in [ MultiArchSubDirSetup ] {
 			NodeWalker.cpp
 			OpenRelationsMenu.cpp
 			OpenRelationTargetsMenu.cpp
+			SpinnerMenuItem.cpp
 			OpenWithWindow.cpp
 			OverrideAlert.cpp
 			PendingNodeMonitorCache.cpp

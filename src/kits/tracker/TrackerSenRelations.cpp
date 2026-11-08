@@ -21,6 +21,7 @@
 #include <Locker.h>
 #include <Volume.h>
 #include <fs_attr.h>
+#include <time.h>
 
 #include <sen/Sen.h>
 #include <sen/SenOntoCore.h>
@@ -31,8 +32,10 @@
 #include <Alert.h>
 #include <Catalog.h>
 #include <Messenger.h>
+#include <thread>
 #include <vector>
 
+#include "Attributes.h"
 #include "MimeTypes.h"
 #include "TrackerSenRelations.h"
 #include "RelationFolders.h"
@@ -103,6 +106,23 @@ CopyTargetIcon(BNode& relationNode, const entry_ref& target)
 	}
 	relationNode.WriteAttr("BEOS:ICON", B_VECTOR_ICON_TYPE, 0, data, size);
 	delete[] data;
+
+	// and its thumbnail (the picture of a place, the cover of a book), as the menus show it: Tracker shows the one of a file only while it is newer than the file, so it is made
+	// newer than the file of the relation that was just made
+	time_t modified;
+	int64_t created;
+	attr_info thumbnailInfo;
+	if (targetNode.GetModificationTime(&modified) != B_OK
+			|| targetNode.ReadAttr(kAttrThumbnailCreationTime, B_TIME_TYPE, 0, &created, sizeof(int64_t)) != sizeof(int64_t) || created <= modified
+			|| targetNode.GetAttrInfo(kAttrThumbnail, &thumbnailInfo) != B_OK || thumbnailInfo.size <= 0)
+		return;
+	char* thumbnail = new char[thumbnailInfo.size];
+	if (targetNode.ReadAttr(kAttrThumbnail, thumbnailInfo.type, 0, thumbnail, thumbnailInfo.size) == thumbnailInfo.size
+			&& relationNode.WriteAttr(kAttrThumbnail, thumbnailInfo.type, 0, thumbnail, thumbnailInfo.size) == thumbnailInfo.size) {
+		int64_t now = (int64_t)time(NULL) + 1;
+		relationNode.WriteAttr(kAttrThumbnailCreationTime, B_TIME_TYPE, 0, &now, sizeof(int64_t));
+	}
+	delete[] thumbnail;
 }
 
 
@@ -231,7 +251,18 @@ TrackerSenRelations::WriteTargetRelations(
 			entryName << " (" << roleText << ")";
 		}
 
-		// ensure file/dir name is unique (two relations with the same role: the second one is numbered)
+		// ensure file/dir name is unique. Two targets with the same name (two schools called alike): the second is named like its file, which is unique in its folder and tells
+		// them apart the way the Library does ("Volksschule X (Speisinger Straße 20)", else the number at OpenStreetMap)
+		if (BEntry(&relationDir, entryName.String()).Exists()) {
+			entry_ref targetRef;
+			if (properties.FindRef(sen::attr::kRelationTargetRef, &targetRef) == B_OK) {
+				BString fileName(targetRef.name);
+				fileName.ReplaceAll('/', '\\');
+				if (fileName != entryName && !BEntry(&relationDir, fileName.String()).Exists())
+					entryName = fileName;
+			}
+		}
+		// (two relations with the same role, or a target without a file: the second one is numbered)
 		if (BEntry(&relationDir, entryName.String()).Exists()) {
 			// human readable 1-based index, following the first relation #0 (without index)
 			entryName << " #" << relationIndex + 1;
@@ -541,6 +572,28 @@ TrackerSenRelations::RelationDirectoryPath(const char* viewId, const char* relat
 }
 
 
+/**
+ * The folder of the relations of a type shows the icon that the type has for it (SEN:ICON:FOLDER in its MIME type: a globe in a folder for the spatial relations), if it has one; else
+ * it shows the icon of the type. Nothing is said if there is none (most types have none). @return whether an icon was set.
+ */
+static bool
+ApplyFolderIcon(BNode& folder, const char* relationType)
+{
+	BPath path;
+	if (find_directory(B_USER_SETTINGS_DIRECTORY, &path) != B_OK || path.Append("mime_db") != B_OK || path.Append(relationType) != B_OK)
+		return false;
+	BNode mimeNode(path.Path());
+	attr_info info;
+	if (mimeNode.InitCheck() != B_OK || mimeNode.GetAttrInfo(sen::attr::kRelationFolderIcon, &info) != B_OK || info.type != B_VECTOR_ICON_TYPE || info.size <= 0
+			|| info.size > 64 * 1024)
+		return false;
+	std::vector<char> icon(info.size);
+	if (mimeNode.ReadAttr(sen::attr::kRelationFolderIcon, B_VECTOR_ICON_TYPE, 0, icon.data(), info.size) != info.size)
+		return false;
+	return folder.WriteAttr("BEOS:ICON", B_VECTOR_ICON_TYPE, 0, icon.data(), info.size) == info.size;
+}
+
+
 status_t
 TrackerSenRelations::CreateRelationDirectory(
 	const char* viewId,
@@ -615,6 +668,7 @@ TrackerSenRelations::CreateRelationDirectory(
 		if (result == B_OK) result = relationNode.WriteAttrString(sen::attr::kRelationSource, new BString(sourceId));
 		// TODO: also attach relation message for self relations
 		if (result == B_OK) result = relationNode.WriteAttrString(sen::attr::kFolderName, &folderLabel);
+		if (result == B_OK) ApplyFolderIcon(relationNode, relationType);
 	}
 
 	// return ref
@@ -1127,7 +1181,10 @@ TrackerSenRelations::IsInRelationView(const entry_ref* ref)
 }
 
 
-/** The self relations of a file in a folder: asked of the server (which lets the plugin of the type of the file extract them), written as the view of one self relation is. */
+/**
+ * The self relations of a file in a folder: asked of the server (which lets the plugin of the type of the file extract them), written as the view of one self relation is.
+ * Not those that ask a service on the internet (kRemote): the folder of the relation itself does.
+ */
 void
 TrackerSenRelations::MaterializeSelfRelations(const entry_ref& sourceRef, const BString& sourceId, entry_ref* folderRef)
 {
@@ -1145,7 +1202,8 @@ TrackerSenRelations::MaterializeSelfRelations(const entry_ref& sourceRef, const 
 			|| pluginConfig.FindString(sensei::key::kDefaultType, &defaultType) != B_OK
 			|| pluginConfig.FindMessage(sensei::key::kTypesPlugins, &typesPlugins) != B_OK
 			|| all.FindMessage(sen::key::kRelationConfigMap, &configs) != B_OK
-			|| configs.FindMessage(defaultType.String(), &relationConfig) != B_OK)
+			|| configs.FindMessage(defaultType.String(), &relationConfig) != B_OK
+			|| relationConfig.GetBool(sen::conf::kRemote, false))
 		return;
 
 	int32 count = typesPlugins.CountNames(B_STRING_TYPE);
@@ -1180,8 +1238,55 @@ TrackerSenRelations::MaterializeSelfRelations(const entry_ref& sourceRef, const 
 }
 
 
+/**
+ * The empty folder of a relation type inside the folder of all the relations of a file: named after the relation, of the type of the relation (so it has its icon), a relation folder
+ * of the source, with the title that the other folders of relations have.
+ */
 status_t
-TrackerSenRelations::MaterializeAll(const entry_ref& sourceRef, const char* viewId, entry_ref* folderRef)
+TrackerSenRelations::CreateLazyTypeFolderIn(const entry_ref& parentRef, const entry_ref& sourceRef, const BString& sourceId, const char* viewId, const char* relationType,
+	const BMessage& relationConfig, entry_ref* typeRef)
+{
+	BDirectory parent(&parentRef);
+	status_t result = parent.InitCheck();
+	if (result != B_OK)
+		return result;
+
+	const char* relationName = relationConfig.GetString(sen::key::kRelationName, relationType);
+	const char* relationLabel = relationConfig.GetString(sen::key::kRelationLabel, relationName);
+	BString folderName(relationName);
+	folderName.ReplaceAll('/', '\\');
+	if (folderName.IsEmpty() || folderName[0] == '.')
+		folderName.Prepend("_");
+
+	BDirectory folder;
+	result = parent.CreateDirectory(folderName.String(), &folder);
+	if (result == B_FILE_EXISTS) {
+		// (a file of a relation has this name: the folder is named after its type, too)
+		const char* shortType = strrchr(relationType, '/');
+		folderName << " (" << (shortType != NULL ? shortType + 1 : relationType) << ")";
+		result = parent.CreateDirectory(folderName.String(), &folder);
+	}
+	if (result != B_OK)
+		return result;
+
+	BEntry entry;
+	folder.GetEntry(&entry);
+	BNode node(&entry);
+	BString title(DisplayNameOf(sourceRef));
+	title << " → " << relationLabel << " relations";
+	BNodeInfo info(&node);
+	if (info.InitCheck() == B_OK)
+		info.SetType(relationType);
+	node.WriteAttrString("META:TYPE", new BString(sen::mime::kRelationFolder));
+	node.WriteAttrString(sen::attr::kRelationSource, new BString(sourceId));
+	node.WriteAttrString(sen::attr::kFolderName, &title);
+	ApplyFolderIcon(node, relationType);
+	return entry.GetRef(typeRef);
+}
+
+
+status_t
+TrackerSenRelations::MaterializeAll(const entry_ref& sourceRef, const char* viewId, entry_ref* folderRef, const char* group)
 {
 	BMessenger server(sen::kServerSignature);
 	BMessage ask(sen::cmd::kRelationsGetAll);
@@ -1208,8 +1313,9 @@ TrackerSenRelations::MaterializeAll(const entry_ref& sourceRef, const char* view
 		result = path.Append(viewId);
 	if (result == B_OK)
 		result = path.Append("all");
-	BString title("All relations of ");
-	title << DisplayNameOf(sourceRef);
+	const bool ofGroup = group != NULL && group[0] != '\0';
+	BString title(ofGroup ? group : "All");
+	title << " relations of " << DisplayNameOf(sourceRef);
 	BString folderName(title);
 	folderName.ReplaceAll('/', '-');
 	if (result == B_OK)
@@ -1230,9 +1336,30 @@ TrackerSenRelations::MaterializeAll(const entry_ref& sourceRef, const char* view
 		node.WriteAttrString(sen::attr::kFolderName, &title);
 	}
 
-	// a file for each relation of each stored type (those of plugins are resolved at run time: their menus show them)
+	// a file for each relation of each type. Dynamic ones (a plugin or a query works them out) are not different: they are asked for as the stored ones. Not asked for are the self
+	// relations (what a document contains: below) and the remote ones, which ask a service on the internet (slow, may need a permission): each would be asked of every file whose
+	// "all relations" is opened. A remote relation gets its folder, empty: it is asked for when that is opened (and again at every opening after the cache time, see
+	// RelationFolders::FolderOpened), whatever the plugin makes of it.
+	BMessage typeConfigs;
+	all.FindMessage(sen::key::kRelationConfigMap, &typeConfigs);
 	for (int32 i = 0; i < types.CountStrings(); i++) {
 		const BString& relationType = types.StringAt(i);
+		BMessage listedConfig;
+		if (ofGroup) {
+			// (the relations of the group of a submenu: what has no config has no group)
+			if (typeConfigs.FindMessage(relationType.String(), &listedConfig) != B_OK || strcmp(listedConfig.GetString(sen::conf::kGroup, ""), group) != 0)
+				continue;
+		}
+		if (typeConfigs.FindMessage(relationType.String(), &listedConfig) == B_OK) {
+			if (listedConfig.GetBool(sen::conf::kSelf, false))
+				continue;
+			if (listedConfig.GetBool(sen::conf::kRemote, false)) {
+				entry_ref typeRef;
+				if (CreateLazyTypeFolderIn(*folderRef, sourceRef, sourceId, viewId, relationType.String(), listedConfig, &typeRef) == B_OK)
+					RegisterTypeFolder(sourceRef, viewId, relationType.String(), listedConfig, sourceId.String(), typeRef, true);
+				continue;
+			}
+		}
 		BMessage askType(sen::cmd::kRelationsGet);
 		askType.AddRef(sen::key::kSourceRef, &sourceRef);
 		askType.AddString(sen::key::kRelationType, relationType);
@@ -1246,7 +1373,7 @@ TrackerSenRelations::MaterializeAll(const entry_ref& sourceRef, const char* view
 		reply.FindMessage(sen::key::kIdToRefMap, &idToRef);
 		reply.FindMessage(sen::key::kIdToNameMap, &idToName);
 		if (reply.FindMessage(sen::key::kRelationConfigMap, &configs) != B_OK || configs.FindMessage(relationType.String(), &relationConfig) != B_OK
-				|| relationConfig.GetBool(sen::conf::kDynamic, false) || relationConfig.GetBool(sen::conf::kSelf, false))
+				|| relationConfig.GetBool(sen::conf::kRemote, false) || relationConfig.GetBool(sen::conf::kSelf, false))
 			continue;
 
 		BMessage list;
@@ -1261,12 +1388,24 @@ TrackerSenRelations::MaterializeAll(const entry_ref& sourceRef, const char* view
 		WriteTargetRelations(&list, &config, &workingRef, &openRef);
 	}
 
-	// the self relations (what a document contains: the top level of the TOC of a PDF, with what is below it as folders), which a plugin extracts
-	MaterializeSelfRelations(sourceRef, sourceId, folderRef);
+	// the folder of a group has the icon that its relations have for their folders (the same for all of a group: the globe in a folder of the spatial ones)
+	if (ofGroup) {
+		BNode node(&folderEntry);
+		for (int32 i = 0; i < types.CountStrings(); i++) {
+			BMessage groupConfig;
+			if (typeConfigs.FindMessage(types.StringAt(i).String(), &groupConfig) == B_OK && strcmp(groupConfig.GetString(sen::conf::kGroup, ""), group) == 0
+					&& ApplyFolderIcon(node, types.StringAt(i).String()))
+				break;
+		}
+	}
 
-	// like the folder of all types: files that are dropped on it become generic relations
+	// the self relations (what a document contains: the top level of the TOC of a PDF, with what is below it as folders), which a plugin extracts (not those of a group)
+	if (!ofGroup)
+		MaterializeSelfRelations(sourceRef, sourceId, folderRef);
+
+	// like the folder of all types: files that are dropped on it become generic relations (not in the folder of a group: they would not belong to it)
 	RelationFolders::FolderInfo folder;
-	if (folderEntry.GetNodeRef(&folder.node) == B_OK) {
+	if (!ofGroup && folderEntry.GetNodeRef(&folder.node) == B_OK) {
 		folder.ref = *folderRef;
 		folder.sourceRef = sourceRef;
 		folder.sourceId = sourceId;
@@ -1302,7 +1441,7 @@ TrackerSenRelations::MaterializeTypeOfSelection(const std::vector<entry_ref>& so
 
 	BMessenger server(sen::kServerSignature);
 	BMessage reply;
-	status_t result = server.IsValid() ? server.SendMessage(&ask, &reply, 10000000, 10000000) : B_ERROR;
+	status_t result = server.IsValid() ? server.SendMessage(&ask, &reply, 100000000, 100000000) : B_ERROR;
 	if (result == B_OK)
 		result = reply.GetInt32(sen::key::kResult, B_ERROR);
 	if (result != B_OK) {
@@ -1318,7 +1457,8 @@ TrackerSenRelations::MaterializeTypeOfSelection(const std::vector<entry_ref>& so
 			|| configs.FindMessage(relationType, &relationConfig) != B_OK) {
 		return B_NAME_NOT_FOUND;
 	}
-	if (relationConfig.GetBool(sen::conf::kDynamic, false) || relationConfig.GetBool(sen::conf::kSelf, false))
+	// (a self relation, dynamic or not, is a tree that its menu hands over: see MaterializeSelfRelations. Any other is a folder of what the server answers now, stored or worked out)
+	if (relationConfig.GetBool(sen::conf::kSelf, false))
 		return B_NOT_SUPPORTED;
 
 	BString sourceName;
@@ -1360,52 +1500,46 @@ TrackerSenRelations::MaterializeTypeOfSelection(const std::vector<entry_ref>& so
 }
 
 
-status_t
-TrackerSenRelations::MaterializeType(const entry_ref& sourceRef, const char* viewId, const char* relationType,
-	entry_ref* typeDirRef)
-{
-	if (strcmp(relationType, sen::mime::kAssociationRelation) == 0) {
-		BNode source(&sourceRef);
-		char sourceType[B_MIME_TYPE_LENGTH];
-		if (BNodeInfo(&source).GetType(sourceType) == B_OK && BString(sourceType).StartsWith(sen::mime::kClassificationPrefix))
-			return MakeFilesWithQuery(sourceRef, viewId, typeDirRef);
-	}
+namespace {
 
+/** Asks the SEN server for the relations of one type of a file (kRelationsGet); with @p configOnly only for the config of the type, which the server answers at once. */
+status_t
+AskServerForType(const entry_ref& sourceRef, const char* relationType, bool configOnly, BMessage* reply)
+{
 	BMessage ask(sen::cmd::kRelationsGet);
 	ask.AddRef(sen::key::kSourceRef, &sourceRef);
 	ask.AddString(sen::key::kRelationType, relationType);
 	ask.AddBool(sen::key::kIdToRefMap, true);
+	if (configOnly)
+		ask.AddBool(sen::key::kConfigOnly, true);
 
 	BMessenger server(sen::kServerSignature);
-	BMessage reply;
-	status_t result = server.IsValid() ? server.SendMessage(&ask, &reply, 5000000, 5000000) : B_ERROR;
+	// (a stored relation is answered at once; one that a plugin works out may ask a web service: the server gives up on it after 90 s)
+	status_t result = server.IsValid() ? server.SendMessage(&ask, reply, configOnly ? 10000000 : 100000000, configOnly ? 10000000 : 100000000) : B_ERROR;
 	if (result == B_OK)
-		result = reply.GetInt32(sen::key::kResult, B_ERROR);
-	if (result != B_OK) {
-		ERROR("could not get the relations of type %s from the SEN server: %s\n", relationType, strerror(result));
-		return result;
-	}
+		result = reply->GetInt32(sen::key::kResult, B_ERROR);
+	return result;
+}
 
-	BMessage relations, idToRef, idToName, configs, relationConfig;
+/** the name of the file that tells that the relations are being fetched, in the folder that is already open */
+const char* const kFetchingName = "Fetching relations" B_UTF8_ELLIPSIS;
+/** the name of the file that says that they could not be fetched starts with this */
+const char* const kFailedPrefix = "The relations could not be fetched";
+
+}	// namespace
+
+
+/**
+ * The files of a folder of the relations of one type, from the answer of the server. The folder is registered with the views of relations when it has its files.
+ */
+status_t
+TrackerSenRelations::FillTypeFolder(const BMessage& reply, const entry_ref& sourceRef, const char* viewId, const char* relationType,
+	const BMessage& relationConfig, const char* sourceId, entry_ref* typeDirRef)
+{
+	BMessage relations, idToRef, idToName;
 	reply.FindMessage(sen::key::kRelations, &relations);
 	reply.FindMessage(sen::key::kIdToRefMap, &idToRef);
 	reply.FindMessage(sen::key::kIdToNameMap, &idToName);
-	if (reply.FindMessage(sen::key::kRelationConfigMap, &configs) != B_OK
-			|| configs.FindMessage(relationType, &relationConfig) != B_OK) {
-		return B_NAME_NOT_FOUND;
-	}
-
-	// relations of plugins are resolved at run time, not stored: they cannot be edited and are shown by their menus
-	if (relationConfig.GetBool(sen::conf::kDynamic, false) || relationConfig.GetBool(sen::conf::kSelf, false))
-		return B_NOT_SUPPORTED;
-
-	BString sourceId(reply.GetString(sen::key::kSourceId, ""));
-	if (sourceId.IsEmpty())
-		GetInodeForRef(&sourceRef, &sourceId);
-
-	result = CreateRelationDirectory(viewId, sourceId.String(), DisplayNameOf(sourceRef).String(), relationType, &relationConfig, typeDirRef);
-	if (result != B_OK)
-		return result;
 
 	BMessage list;
 	RelationsToList(relations, idToRef, idToName, &list);
@@ -1416,14 +1550,29 @@ TrackerSenRelations::MaterializeType(const entry_ref& sourceRef, const char* vie
 	config.AddString(sen::key::kRelationType, relationType);
 
 	entry_ref workingRef(*typeDirRef), openRef(*typeDirRef);
-	result = WriteTargetRelations(&list, &config, &workingRef, &openRef);
-	if (result != B_OK)
-		return result;
+	return WriteTargetRelations(&list, &config, &workingRef, &openRef);
+}
 
+
+void
+TrackerSenRelations::RegisterTypeFolder(const entry_ref& sourceRef, const char* viewId, const char* relationType, const BMessage& relationConfig,
+	const char* sourceId, const entry_ref& typeDirRef, bool lazy)
+{
 	RelationFolders::FolderInfo folder;
-	BEntry folderEntry(typeDirRef);
+	folder.lazy = lazy;
+	BEntry folderEntry(&typeDirRef);
+	if (lazy) {
+		// a folder that a person keeps (copied to the Desktop or the home folder) must know where its relations come from when it is opened later, in another session: the SEN:ID
+		// of the source (written when the folder is made; an inode if it has none) and its ref
+		BNode node(&folderEntry);
+		BMessage holder;
+		const void* flat;
+		ssize_t flatSize;
+		if (node.InitCheck() == B_OK && holder.AddRef("ref", &sourceRef) == B_OK && holder.FindData("ref", B_REF_TYPE, &flat, &flatSize) == B_OK)
+			node.WriteAttr(sen::attr::kRelationSourceRef, B_REF_TYPE, 0, flat, flatSize);
+	}
 	if (folderEntry.GetNodeRef(&folder.node) == B_OK) {
-		folder.ref = *typeDirRef;
+		folder.ref = typeDirRef;
 		folder.sourceRef = sourceRef;
 		folder.sourceId = sourceId;
 		folder.relationType = relationType;
@@ -1431,5 +1580,197 @@ TrackerSenRelations::MaterializeType(const entry_ref& sourceRef, const char* vie
 		folder.relationConfig = relationConfig;
 		RelationFolders::Instance().RegisterFolder(folder);
 	}
+}
+
+
+bool
+TrackerSenRelations::LooksLikeKeptFolder(const entry_ref& folderRef)
+{
+	BNode node(&folderRef);
+	if (node.InitCheck() != B_OK)
+		return false;
+	BString kind, sourceId;
+	char type[B_MIME_TYPE_LENGTH];
+	return node.ReadAttrString("META:TYPE", &kind) == B_OK && kind == sen::mime::kRelationFolder
+		&& node.ReadAttrString(sen::attr::kRelationSource, &sourceId) == B_OK && !sourceId.IsEmpty()
+		&& BNodeInfo(&node).GetType(type) == B_OK && BString(type).StartsWith(sen::mime::kRelationPrefix);
+}
+
+
+bool
+TrackerSenRelations::AdoptKeptFolder(const entry_ref& folderRef)
+{
+	BNode node(&folderRef);
+	BString sourceId;
+	char type[B_MIME_TYPE_LENGTH];
+	if (node.InitCheck() != B_OK || node.ReadAttrString(sen::attr::kRelationSource, &sourceId) != B_OK || sourceId.IsEmpty()
+			|| BNodeInfo(&node).GetType(type) != B_OK)
+		return false;
+
+	// the source: by its SEN:ID (the file may have moved, the ref of the folder's attribute is then out of date), else the ref that the folder keeps
+	entry_ref sourceRef;
+	bool found = false;
+	BMessenger server(sen::kServerSignature);
+	if (!server.IsValid())
+		return false;
+	{
+		BMessage ask(sen::cmd::kQueryRefForId), reply;
+		ask.AddString(sen::attr::kId, sourceId);
+		found = server.SendMessage(&ask, &reply, 5000000, 5000000) == B_OK && reply.FindRef("ref", &sourceRef) == B_OK;
+	}
+	if (!found) {
+		attr_info info;
+		if (node.GetAttrInfo(sen::attr::kRelationSourceRef, &info) == B_OK && info.type == B_REF_TYPE && info.size > 0 && info.size < 4096) {
+			char buffer[4096];
+			BMessage holder;
+			if (node.ReadAttr(sen::attr::kRelationSourceRef, B_REF_TYPE, 0, buffer, info.size) == info.size
+					&& holder.AddData("ref", B_REF_TYPE, buffer, info.size) == B_OK && holder.FindRef("ref", &sourceRef) == B_OK)
+				found = BEntry(&sourceRef).Exists();
+		}
+	}
+	if (!found)
+		return false;
+
+	// the config of the relation: only the relations that a plugin works out are kept like this (the folder of a stored relation is an editor of it, which a copy is not)
+	BMessage configReply, configs, config;
+	if (AskServerForType(sourceRef, type, true, &configReply) != B_OK || configReply.FindMessage(sen::key::kRelationConfigMap, &configs) != B_OK
+			|| configs.FindMessage(type, &config) != B_OK)
+		return false;
+	if (config.GetBool(sen::conf::kSelf, false) || !(config.GetBool(sen::conf::kDynamic, false) || config.GetBool(sen::conf::kRemote, false)))
+		return false;
+
+	RegisterTypeFolder(sourceRef, "", type, config, sourceId.String(), folderRef, true);
+	return true;
+}
+
+
+status_t
+TrackerSenRelations::MaterializeLater(const entry_ref& sourceRef, const char* viewId, const char* relationType, const BMessage& relationConfig,
+	const char* knownSourceId, entry_ref* typeDirRef)
+{
+	BString sourceId(knownSourceId);
+	if (sourceId.IsEmpty())
+		GetInodeForRef(&sourceRef, &sourceId);
+
+	status_t result = CreateRelationDirectory(viewId, sourceId.String(), DisplayNameOf(sourceRef).String(), relationType, &relationConfig, typeDirRef);
+	if (result != B_OK)
+		return result;
+	RegisterTypeFolder(sourceRef, viewId, relationType, relationConfig, sourceId.String(), *typeDirRef, true);
+
+	// the folder opens at once and says that the relations are on their way; they appear in it as the answer comes (and it asks again when it is opened later, after the cache time)
+	FetchInto(sourceRef, viewId, relationType, relationConfig, sourceId.String(), *typeDirRef);
+	return B_OK;
+}
+
+
+void
+TrackerSenRelations::FetchInto(const entry_ref& sourceRef, const char* viewId, const char* relationType, const BMessage& relationConfig,
+	const char* sourceId, const entry_ref& folderRef)
+{
+	node_ref folderNode;
+	BEntry(&folderRef).GetNodeRef(&folderNode);
+	RelationFolders::Instance().FetchStarted(folderNode);
+
+	BDirectory folder(&folderRef);
+	// (what an earlier fetch said about its failure is out of date now)
+	{
+		BEntry old;
+		char name[B_FILE_NAME_LENGTH];
+		std::vector<BString> stale;
+		while (folder.GetNextEntry(&old) == B_OK) {
+			if (old.GetName(name) == B_OK && strncmp(name, kFailedPrefix, strlen(kFailedPrefix)) == 0)
+				stale.push_back(name);
+		}
+		for (const BString& name : stale)
+			BEntry(&folder, name.String()).Remove();
+	}
+	BFile placeholder;
+	folder.CreateFile(kFetchingName, &placeholder, true);
+
+	const BString viewIdCopy(viewId), typeCopy(relationType), sourceIdCopy(sourceId);
+	std::thread([sourceRef, viewIdCopy, typeCopy, relationConfig, sourceIdCopy, folderRef, folderNode]() {
+		BMessage reply;
+		status_t result = AskServerForType(sourceRef, typeCopy.String(), false, &reply);
+
+		BDirectory folder(&folderRef);
+		BEntry(&folder, kFetchingName).Remove();
+		if (result == B_OK) {
+			// the folder shows what the plugin finds now: what an earlier fetch left goes when the new answer is in (the files of a dynamic relation are not registered as
+			// stored ones, so taking them away removes no relation)
+			std::vector<BString> older;
+			BEntry entry;
+			BPath path;
+			while (folder.GetNextEntry(&entry) == B_OK) {
+				if (entry.GetPath(&path) == B_OK)
+					older.push_back(path.Path());
+			}
+			for (const BString& each : older)
+				std::filesystem::remove_all(std::filesystem::path(each.String()));
+
+			entry_ref typeDir(folderRef);
+			result = FillTypeFolder(reply, sourceRef, viewIdCopy.String(), typeCopy.String(), relationConfig, sourceIdCopy.String(), &typeDir);
+		}
+		if (result != B_OK) {
+			ERROR("could not get the relations of type %s from the SEN server: %s\n", typeCopy.String(), strerror(result));
+			BFile failed;
+			folder.CreateFile((BString(kFailedPrefix) << " (" << strerror(result) << ")").String(), &failed, true);
+		}
+		RelationFolders::Instance().FetchFinished(folderNode);
+	}).detach();
+}
+
+
+status_t
+TrackerSenRelations::MaterializeType(const entry_ref& sourceRef, const char* viewId, const char* relationType,
+	entry_ref* typeDirRef, const BMessage* answer)
+{
+	if (strcmp(relationType, sen::mime::kAssociationRelation) == 0) {
+		BNode source(&sourceRef);
+		char sourceType[B_MIME_TYPE_LENGTH];
+		if (BNodeInfo(&source).GetType(sourceType) == B_OK && BString(sourceType).StartsWith(sen::mime::kClassificationPrefix))
+			return MakeFilesWithQuery(sourceRef, viewId, typeDirRef);
+	}
+
+	// the answer that the menu got is the one that the folder shows (asking again would ask a service on the internet again, for a remote relation)
+	BMessage reply;
+	status_t result = B_OK;
+	if (answer != NULL) {
+		reply = *answer;
+	} else {
+		// A relation that a plugin works out (dynamic) can take long, a web service: the config is asked first (it is answered at once), the folder is made and
+		// opened, and the relations are fetched meanwhile and added to it.
+		BMessage configReply, configs, config;
+		if (AskServerForType(sourceRef, relationType, true, &configReply) == B_OK && configReply.FindMessage(sen::key::kRelationConfigMap, &configs) == B_OK
+				&& configs.FindMessage(relationType, &config) == B_OK && config.GetBool(sen::conf::kDynamic, false) && !config.GetBool(sen::conf::kSelf, false))
+			return MaterializeLater(sourceRef, viewId, relationType, config, configReply.GetString(sen::key::kSourceId, ""), typeDirRef);
+		result = AskServerForType(sourceRef, relationType, false, &reply);
+	}
+	if (result != B_OK) {
+		ERROR("could not get the relations of type %s from the SEN server: %s\n", relationType, strerror(result));
+		return result;
+	}
+
+	BMessage configs, relationConfig;
+	if (reply.FindMessage(sen::key::kRelationConfigMap, &configs) != B_OK || configs.FindMessage(relationType, &relationConfig) != B_OK)
+		return B_NAME_NOT_FOUND;
+
+	// a self relation (what a document contains), dynamic or not, is a tree that its menu hands over (PrepareRelationTargetFolder, MaterializeSelfRelations). Any other relation is made
+	// into a folder of what the server answers now: if it is dynamic (worked out by a plugin or a query, whether remote or not) its files cannot be changed, and asked again later the
+	// folder is made again.
+	if (relationConfig.GetBool(sen::conf::kSelf, false))
+		return B_NOT_SUPPORTED;
+
+	BString sourceId(reply.GetString(sen::key::kSourceId, ""));
+	if (sourceId.IsEmpty())
+		GetInodeForRef(&sourceRef, &sourceId);
+
+	result = CreateRelationDirectory(viewId, sourceId.String(), DisplayNameOf(sourceRef).String(), relationType, &relationConfig, typeDirRef);
+	if (result != B_OK)
+		return result;
+
+	result = FillTypeFolder(reply, sourceRef, viewId, relationType, relationConfig, sourceId.String(), typeDirRef);
+	if (result != B_OK)
+		return result;
+	RegisterTypeFolder(sourceRef, viewId, relationType, relationConfig, sourceId.String(), *typeDirRef);
 	return B_OK;
 }
