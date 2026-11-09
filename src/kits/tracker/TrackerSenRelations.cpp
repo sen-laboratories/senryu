@@ -101,9 +101,20 @@ CopyTargetIcon(BNode& relationNode, const entry_ref& target)
 		delete[] data;
 		data = NULL;
 		char mimeType[B_MIME_TYPE_LENGTH];
-		if (info.GetType(mimeType) != B_OK || BMimeType(mimeType).GetIcon(&data, &size) != B_OK) {
+		if (info.GetType(mimeType) != B_OK) {
 			delete[] data;
 			return;
+		}
+		// the icon of the type, else the one of its supertype (text/markdown has none of its own: Tracker shows the icon of text for it)
+		BMimeType mime(mimeType);
+		if (mime.GetIcon(&data, &size) != B_OK) {
+			delete[] data;
+			data = NULL;
+			BMimeType super;
+			if (mime.GetSupertype(&super) != B_OK || super.GetIcon(&data, &size) != B_OK) {
+				delete[] data;
+				return;
+			}
 		}
 	}
 	relationNode.WriteAttr("BEOS:ICON", B_VECTOR_ICON_TYPE, 0, data, size);
