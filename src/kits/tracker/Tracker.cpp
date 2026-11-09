@@ -873,6 +873,12 @@ TTracker::OpenRef(const entry_ref* ref, const node_ref* nodeToClose,
 		return B_OK;
 	}
 
+	// SEN: a file of an entity type opens with the application of its semantic type (a person of the People of Haiku opens in Shoji)
+	if (selector != kOpenWith && !model->IsContainer() && OpenBySemanticType(ref)) {
+		delete model;
+		return B_OK;
+	}
+
 	bool openAsContainer = model->IsContainer();
 
 	if (openAsContainer && selector != kOpenWith) {

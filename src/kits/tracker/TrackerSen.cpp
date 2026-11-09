@@ -5,8 +5,10 @@
 
 #define DEBUG 1
 
+#include <AppFileInfo.h>
 #include <Debug.h>
 #include <Entry.h>
+#include <File.h>
 #include <FindDirectory.h>
 #include <Message.h>
 #include <NodeInfo.h>
@@ -716,6 +718,39 @@ TTracker::OpenOntologyAsFolder(const entry_ref* ref)
 	open->AddRef("refs", &folderRef);
 	be_app_messenger.SendMessage(open);
 	return true;
+}
+
+
+/**
+ * A file of an entity type of SEN (its semantic type in META:TYPE, entity/x-vnd.sen-labs.entity.person) opens with the application of that type, also when its file type is another one:
+ * a person that was made by the People of Haiku is application/x-person, and People shows its own attributes only, none of those of SEN. Returns false (nothing is done) for any other
+ * file, for one that has the same type in both, and for a type that has no application: it is opened as any file then.
+ */
+bool
+TTracker::OpenBySemanticType(const entry_ref* ref)
+{
+	BNode node(ref);
+	BString semanticType;
+	if (node.InitCheck() != B_OK || node.ReadAttrString(sen::attr::kType, &semanticType) != B_OK || !semanticType.StartsWith("entity/"))
+		return false;
+	char fileType[B_MIME_TYPE_LENGTH];
+	if (BNodeInfo(&node).GetType(fileType) == B_OK && strcasecmp(fileType, semanticType.String()) == 0)
+		return false;
+
+	// (the application that the roster finds for the type: its preferred one, else one that says it handles the type: the type of an entity has no preferred application, Shoji handles it)
+	BMimeType type(semanticType.String());
+	entry_ref application;
+	if (!type.IsInstalled() || be_roster->FindApp(semanticType.String(), &application) != B_OK)
+		return false;
+	char signature[B_MIME_TYPE_LENGTH] = "";
+	BFile applicationFile(&application, B_READ_ONLY);
+	BAppFileInfo(&applicationFile).GetSignature(signature);
+	if (strcasecmp(signature, kTrackerSignature) == 0)
+		return false;		// (Tracker itself: nothing better than the normal way)
+
+	BMessage refs(B_REFS_RECEIVED);
+	refs.AddRef("refs", ref);
+	return TrackerLaunch(&application, &refs, true) == B_OK;
 }
 
 
