@@ -43,11 +43,15 @@ All rights reserved.
 #include <Locale.h>
 #include <StringFormat.h>
 
+#include <BarberPole.h>
+
 #include "AutoLock.h"
 #include "Bitmaps.h"
 #include "ContainerWindow.h"
 #include "DirMenu.h"
+#include "Model.h"
 #include "PoseView.h"
+#include "RelationFolders.h"
 #include "Utilities.h"
 
 
@@ -56,6 +60,15 @@ All rights reserved.
 
 
 const bigtime_t kBarberPoleDelay = 500000;
+// the barber pole that goes with "Resolving relations..." (BarberPole of the shared kit), and what is left around it
+const float kResolvePoleWidth = 80;
+
+static BString
+ResolvingText()
+{
+	BString text(B_TRANSLATE("Resolving relations" B_UTF8_ELLIPSIS));
+	return text;
+}
 static const float kMinFontSize = 8.0f;
 
 
@@ -73,7 +86,10 @@ BCountView::BCountView(BPoseView* view)
 	fLastBarberPoleOffset(5),
 	fStartSpinningAfter(0),
 	fTypeAheadString(""),
-	fFilterString("")
+	fFilterString(""),
+	fResolving(false),
+	fResolvePole(NULL),
+	fWatchingFetches(false)
 {
 	GetTrackerResources()->GetBitmapResource(B_MESSAGE_TYPE, R_BarberPoleBitmap, &fBarberPoleMap);
 
@@ -87,6 +103,8 @@ BCountView::BCountView(BPoseView* view)
 
 BCountView::~BCountView()
 {
+	if (fWatchingFetches)
+		RelationFolders::Instance().StopWatchingFetches(fWatchedFolder, BMessenger(this));
 	delete fBarberPoleMap;
 }
 
@@ -115,6 +133,8 @@ void
 BCountView::Pulse()
 {
 	TrySpinningBarberPole();
+	// (the window may show another folder now: the one that it shows is the one that is watched)
+	_UpdateResolving();
 }
 
 
@@ -214,6 +234,8 @@ BCountView::Draw(BRect updateRect)
 	BString itemString;
 	if (IsTypingAhead())
 		itemString << TypeAhead();
+	else if (fResolving)
+		itemString << ResolvingText();
 	else if (IsFiltering()) {
 		BString lastCountStr;
 		fNumberFormat.Format(lastCountStr, fLastCount);
@@ -275,6 +297,8 @@ BCountView::Draw(BRect updateRect)
 
 	MovePenTo(textRect.LeftBottom());
 	DrawString(itemString.String());
+	if (fResolving)
+		_PlaceResolvePole(textRect, StringWidth(itemString.String()));
 
 	// draw pop up indicator
 	if (popsUp) {
@@ -356,6 +380,114 @@ void
 BCountView::AttachedToWindow()
 {
 	CheckCount();
+	_UpdateResolving();
+}
+
+
+void
+BCountView::DetachedFromWindow()
+{
+	if (fWatchingFetches) {
+		RelationFolders::Instance().StopWatchingFetches(fWatchedFolder, BMessenger(this));
+		fWatchingFetches = false;
+	}
+	BView::DetachedFromWindow();
+}
+
+
+void
+BCountView::MessageReceived(BMessage* message)
+{
+	if (message->what == RelationFolders::kFetchStateChanged)
+		_UpdateResolving();
+	else
+		BView::MessageReceived(message);
+}
+
+
+BSize
+BCountView::MinSize()
+{
+	BSize size = BView::MinSize();
+	if (fResolving) {
+		// (it is not set as the explicit size: the window sets that when it is laid out, also after the folder began to be fetched)
+		const float gap = be_control_look->ComposeSpacing(B_USE_SMALL_SPACING);
+		const float needed = gap * 2 + StringWidth(ResolvingText().String()) + gap + kResolvePoleWidth + gap;
+		size.width = std::max(size.width, needed);
+	}
+	return size;
+}
+
+
+void
+BCountView::_UpdateResolving()
+{
+	node_ref folder;
+	bool relationFolder = false;
+	const Model* model = fPoseView->TargetModel();
+	if (model != NULL && model->NodeRef() != NULL) {
+		folder = *model->NodeRef();
+		relationFolder = RelationFolders::Instance().IsRelationFolder(folder);
+	}
+
+	if (fWatchingFetches && (!relationFolder || folder != fWatchedFolder)) {
+		RelationFolders::Instance().StopWatchingFetches(fWatchedFolder, BMessenger(this));
+		fWatchingFetches = false;
+	}
+	if (relationFolder && !fWatchingFetches) {
+		RelationFolders::Instance().WatchFetches(folder, BMessenger(this));
+		fWatchedFolder = folder;
+		fWatchingFetches = true;
+	}
+
+	const bool resolving = relationFolder && RelationFolders::Instance().IsFetching(folder);
+	if (resolving == fResolving)
+		return;
+	fResolving = resolving;
+
+	// (the status bar is narrow: while the text and the pole are there it is as wide as they need, see MinSize)
+	InvalidateLayout();
+
+	if (resolving) {
+		if (fResolvePole == NULL) {
+			fResolvePole = new BarberPole("resolving relations");
+			fResolvePole->SetViewUIColor(B_PANEL_BACKGROUND_COLOR);
+			AddChild(fResolvePole);
+			fResolvePole->Hide();
+		}
+		fResolvePole->Start();
+		if (fResolvePole->IsHidden())
+			fResolvePole->Show();
+	} else if (fResolvePole != NULL) {
+		fResolvePole->Stop();
+		if (!fResolvePole->IsHidden())
+			fResolvePole->Hide();
+	}
+	Invalidate();
+}
+
+
+// next to the text: as wide as there is room for, up to a width of its own
+void
+BCountView::_PlaceResolvePole(const BRect& textRect, float textWidth)
+{
+	if (fResolvePole == NULL)
+		return;
+	const float gap = be_control_look->ComposeSpacing(B_USE_SMALL_SPACING);
+	BRect pole(textRect.left + textWidth + gap, Bounds().top + 4, 0, Bounds().bottom - 4);
+	pole.right = std::min(pole.left + kResolvePoleWidth, Bounds().right - gap);
+	if (pole.Width() < 24) {
+		// (no room: the text is all that is shown)
+		if (!fResolvePole->IsHidden())
+			fResolvePole->Hide();
+		return;
+	}
+	if (fResolving && fResolvePole->IsHidden())
+		fResolvePole->Show();
+	if (fResolvePole->Frame() != pole) {
+		fResolvePole->MoveTo(pole.LeftTop());
+		fResolvePole->ResizeTo(pole.Width(), pole.Height());
+	}
 }
 
 

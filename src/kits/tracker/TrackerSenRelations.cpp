@@ -7,6 +7,8 @@
 #define DEBUG 1
 
 #include <Debug.h>
+#include <OS.h>
+#include <stdlib.h>
 #include <Directory.h>
 #include <File.h>
 #include <FindDirectory.h>
@@ -1521,8 +1523,6 @@ AskServerForType(const entry_ref& sourceRef, const char* relationType, bool conf
 	return result;
 }
 
-/** the name of the file that tells that the relations are being fetched, in the folder that is already open */
-const char* const kFetchingName = "Fetching relations" B_UTF8_ELLIPSIS;
 /** the name of the file that says that they could not be fetched starts with this */
 const char* const kFailedPrefix = "The relations could not be fetched";
 
@@ -1684,16 +1684,17 @@ TrackerSenRelations::FetchInto(const entry_ref& sourceRef, const char* viewId, c
 		for (const BString& name : stale)
 			BEntry(&folder, name.String()).Remove();
 	}
-	BFile placeholder;
-	folder.CreateFile(kFetchingName, &placeholder, true);
+	// (no file for it: the window that shows the folder says in its status bar that the relations are resolved, see BCountView and RelationFolders::WatchFetches)
 
 	const BString viewIdCopy(viewId), typeCopy(relationType), sourceIdCopy(sourceId);
 	std::thread([sourceRef, viewIdCopy, typeCopy, relationConfig, sourceIdCopy, folderRef, folderNode]() {
+		// (for the tests: AKITA_FETCH_DELAY=<seconds> lets the fetch wait before it asks, so that the state "resolving" of the window can be looked at)
+		if (const char* delay = getenv("AKITA_FETCH_DELAY"))
+			snooze((bigtime_t)(atof(delay) * 1000000));
 		BMessage reply;
 		status_t result = AskServerForType(sourceRef, typeCopy.String(), false, &reply);
 
 		BDirectory folder(&folderRef);
-		BEntry(&folder, kFetchingName).Remove();
 		if (result == B_OK) {
 			// the folder shows what the plugin finds now: what an earlier fetch left goes when the new answer is in (the files of a dynamic relation are not registered as
 			// stored ones, so taking them away removes no relation)

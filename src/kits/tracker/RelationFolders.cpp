@@ -19,6 +19,7 @@
 
 #include <string.h>
 
+#include <algorithm>
 #include <thread>
 #include <vector>
 
@@ -208,21 +209,79 @@ RelationFolders::FolderOpened(const node_ref& folder, const entry_ref& ref)
 void
 RelationFolders::FetchStarted(const node_ref& folder)
 {
-	BAutolock lock(fLock);
-	auto found = fFolders.find(folder);
-	if (found != fFolders.end())
-		found->second.fetching = true;
+	{
+		BAutolock lock(fLock);
+		auto found = fFolders.find(folder);
+		if (found != fFolders.end())
+			found->second.fetching = true;
+	}
+	_TellFetchWatchers(folder, true);
 }
 
 
 void
 RelationFolders::FetchFinished(const node_ref& folder)
 {
+	{
+		BAutolock lock(fLock);
+		auto found = fFolders.find(folder);
+		if (found != fFolders.end()) {
+			found->second.fetching = false;
+			found->second.fetchedAt = system_time();
+		}
+	}
+	_TellFetchWatchers(folder, false);
+}
+
+
+bool
+RelationFolders::IsFetching(const node_ref& folder) const
+{
 	BAutolock lock(fLock);
 	auto found = fFolders.find(folder);
-	if (found != fFolders.end()) {
-		found->second.fetching = false;
-		found->second.fetchedAt = system_time();
+	return found != fFolders.end() && found->second.fetching;
+}
+
+
+void
+RelationFolders::WatchFetches(const node_ref& folder, const BMessenger& target)
+{
+	BAutolock lock(fLock);
+	std::vector<BMessenger>& watchers = fFetchWatchers[folder];
+	if (std::find(watchers.begin(), watchers.end(), target) == watchers.end())
+		watchers.push_back(target);
+}
+
+
+void
+RelationFolders::StopWatchingFetches(const node_ref& folder, const BMessenger& target)
+{
+	BAutolock lock(fLock);
+	auto found = fFetchWatchers.find(folder);
+	if (found == fFetchWatchers.end())
+		return;
+	found->second.erase(std::remove(found->second.begin(), found->second.end(), target), found->second.end());
+	if (found->second.empty())
+		fFetchWatchers.erase(found);
+}
+
+
+// (the messages are sent outside of the lock: a window that handles one asks for the state again)
+void
+RelationFolders::_TellFetchWatchers(const node_ref& folder, bool fetching)
+{
+	std::vector<BMessenger> watchers;
+	{
+		BAutolock lock(fLock);
+		auto found = fFetchWatchers.find(folder);
+		if (found != fFetchWatchers.end())
+			watchers = found->second;
+	}
+	for (BMessenger& watcher : watchers) {
+		BMessage message(kFetchStateChanged);
+		message.AddBool("fetching", fetching);
+		if (watcher.SendMessage(&message) != B_OK)
+			StopWatchingFetches(folder, watcher);
 	}
 }
 

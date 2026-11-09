@@ -35,9 +35,13 @@ All rights reserved.
 #define _COUNT_VIEW_H
 
 
+#include <Node.h>
 #include <NumberFormat.h>
 #include <String.h>
 #include <View.h>
+
+
+class BarberPole;
 
 
 namespace BPrivate {
@@ -55,7 +59,10 @@ public:
 	virtual void Draw(BRect);
 	virtual void MouseDown(BPoint);
 	virtual void AttachedToWindow();
+	virtual void DetachedFromWindow();
+	virtual void MessageReceived(BMessage*);
 	virtual void Pulse();
+	virtual BSize MinSize();
 
 	void CheckCount();
 	void StartBarberPole();
@@ -78,6 +85,9 @@ private:
 	BRect BarberPoleOuterRect() const;
 	BRect TextRect() const;
 	void TrySpinningBarberPole();
+	/** the window shows a relation folder whose files are being fetched: "Resolving relations..." and a barber pole instead of the count */
+	void _UpdateResolving();
+	void _PlaceResolvePole(const BRect& textRect, float textWidth);
 
 	int32 fLastCount;
 	int32 fLastCountSelected;
@@ -89,6 +99,11 @@ private:
 	BString fTypeAheadString;
 	BString fFilterString;
 	BNumberFormat fNumberFormat;
+
+	bool fResolving;
+	BarberPole* fResolvePole;
+	bool fWatchingFetches;
+	node_ref fWatchedFolder;
 };
 
 } // namespace BPrivate
