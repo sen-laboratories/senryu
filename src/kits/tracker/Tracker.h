@@ -184,6 +184,8 @@ protected:
 	status_t EditNewEntity(const entry_ref* ref);
 	status_t PrepareLaunchTarget(const entry_ref* srcRef, const char* targetId, entry_ref* targetRef, BMessage* params);
 	bool OpenOntologyAsFolder(const entry_ref* ref);
+	/** a file of an entity type of SEN opens with the application of that type (the semantic type in META:TYPE), whatever its file type is */
+	bool OpenBySemanticType(const entry_ref* ref);
 	status_t PrepareRelationFolder(BMessage *message, entry_ref *relationDIr);
 	status_t PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDir);
 

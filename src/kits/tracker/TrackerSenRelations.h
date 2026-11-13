@@ -120,8 +120,9 @@ public:
 	static status_t	MaterializeType(const entry_ref& sourceRef, const char* viewId,
 						const char* relationType, entry_ref* typeDirRef, const BMessage* answer = NULL);
 	/**
-	 * The folder of a relation that a plugin works out (dynamic) and that is not known yet: made and registered at once, with a file "Fetching relations..." in it; the relations
-	 * are asked of the server in a thread, which adds their files as the answer comes (and takes the placeholder away, or says that they could not be fetched).
+	 * The folder of a relation that a plugin works out (dynamic) and that is not known yet: made and registered at once, empty; the relations
+	 * are asked of the server in a thread, which adds their files as the answer comes (or says that they could not be fetched). While it works the status bar of the window that shows the
+	 * folder says "Resolving relations..." with a barber pole (RelationFolders::IsFetching and WatchFetches; no placeholder file).
 	 */
 	static status_t	MaterializeLater(const entry_ref& sourceRef, const char* viewId, const char* relationType, const BMessage& relationConfig,
 						const char* sourceId, entry_ref* typeDirRef);

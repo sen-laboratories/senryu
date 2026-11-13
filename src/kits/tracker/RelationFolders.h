@@ -8,11 +8,13 @@
 #include <Locker.h>
 #include <Looper.h>
 #include <Message.h>
+#include <Messenger.h>
 #include <Node.h>
 #include <String.h>
 
 #include <map>
 #include <set>
+#include <vector>
 
 /**
  * @file RelationFolders.h
@@ -93,10 +95,21 @@ public:
 	 * TrackerSenRelations::AdoptKeptFolder(), and is fetched at once.
 	 */
 	void		FolderOpened(const node_ref& folder, const entry_ref& ref);
-	/** A fetch of the folder was started (by FetchInto): it is not started a second time. */
+	/** A fetch of the folder was started (by FetchInto): it is not started a second time. The watchers of the folder are told. */
 	void		FetchStarted(const node_ref& folder);
-	/** The fetch of the folder ended (whether it worked or not): the cache time runs from now. */
+	/** The fetch of the folder ended (whether it worked or not): the cache time runs from now. The watchers of the folder are told. */
 	void		FetchFinished(const node_ref& folder);
+	/** whether the files of the relation folder are being fetched now (the status bar of its window says that the relations are resolved) */
+	bool		IsFetching(const node_ref& folder) const;
+	/**
+	 * A window that shows a relation folder wants to know when a fetch starts and ends: `target` gets kFetchStateChanged (`fetching`: bool) at both, from the thread that does it (it is a message,
+	 * so the window handles it in its own). A target that is not valid any more is dropped when it is told.
+	 */
+	void		WatchFetches(const node_ref& folder, const BMessenger& target);
+	void		StopWatchingFetches(const node_ref& folder, const BMessenger& target);
+
+	/** the message that the watchers of a fetch get: `fetching` is true when it starts, false when it ended */
+	static const uint32	kFetchStateChanged = 'RFfs';
 
 	/** The file is gone: the relation is removed. */
 	bool		EntryRemoved(const node_ref& file);
@@ -123,11 +136,13 @@ private:
 	status_t	MoveRelation(const FileInfo& info, const FolderInfo& to, const node_ref& fileNode);
 
 	void		StartWatching(const node_ref& folder);
+	void		_TellFetchWatchers(const node_ref& folder, bool fetching);
 
 	class Watcher;
 	Watcher*						fWatcher;
 	mutable BLocker					fLock;
 	std::map<node_ref, FolderInfo>	fFolders;
+	std::map<node_ref, std::vector<BMessenger> >	fFetchWatchers;	///< the windows that show a folder, by the folder
 	std::map<node_ref, FileInfo>	fFiles;
 	std::map<node_ref, bool>		fWatched;
 	std::set<node_ref>				fAdopting;	///< kept folders whose registration is on its way (a second opening does not start it again)
