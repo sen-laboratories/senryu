@@ -49,6 +49,10 @@ All rights reserved.
 #include <Volume.h>
 #include <Window.h>
 
+#include <sen/SenAttrValues.h>
+#include <sen/SenAttributes.h>
+#include <sen/SenFilterMenu.h>
+
 #include "Attributes.h"
 #include "ContainerWindow.h"
 #include "Commands.h"
@@ -77,6 +81,7 @@ BTextWidget::BTextWidget(Model* model, BColumn* column, BPoseView* view)
 	fActive(false),
 	fSymLink(model->IsSymLink()),
 	fMaxWidth(0),
+	fFilterMenu(NULL),
 	fLastClickedTime(0)
 {
 }
@@ -87,6 +92,7 @@ BTextWidget::~BTextWidget()
 	if (fLastClickedTime != 0)
 		fParams.poseView->SetTextWidgetToCheck(NULL, this);
 
+	delete fFilterMenu;
 	delete fText;
 }
 
@@ -552,6 +558,9 @@ BTextWidget::StartEdit(BPoseView* view, BPose* pose, BColumn* column)
 	SetActive(true);
 		// for widget
 
+	// SEN: an attribute with common values (an enum in the schema, kept with the MIME type) gets the list that follows the text below the field
+	StartValueList(textView, pose, column);
+
 	textView->SelectAll();
 	textView->ScrollToSelection();
 		// scroll to beginning so that text is visible
@@ -562,6 +571,33 @@ BTextWidget::StartEdit(BPoseView* view, BPose* pose, BColumn* column)
 
 	// force immediate redraw so TextView appears instantly
 	view->Window()->UpdateIfNeeded();
+}
+
+
+void
+BTextWidget::StartValueList(BTextView* textView, BPose* pose, BColumn* column)
+{
+	Model* model = pose->TargetModel();
+	if (model == NULL || column == NULL)
+		return;
+
+	// the type of the file, and its semantic type (META:TYPE) that the SEN plugins set
+	BString semanticType;
+	if (model->OpenNode() == B_OK) {
+		model->Node()->ReadAttrString(::sen::attr::kType, &semanticType);
+		model->CloseNode();
+	}
+
+	::sen::attrvalues::Values values;
+	if (!(!semanticType.IsEmpty() && ::sen::attrvalues::Load(semanticType.String(), column->AttrName(), &values))
+		&& !::sen::attrvalues::Load(model->MimeType(), column->AttrName(), &values))
+		return;
+
+	fFilterMenu = new ::sen::FilterPopUpMenu(column->AttrName(), new BMessage());
+	fFilterMenu->SetValues(values);
+	// one Enter picks the value and ends the edit as it ends the edit of any text
+	fFilterMenu->SetEnterAfterPick(true);
+	fFilterMenu->AttachTo(textView);
 }
 
 
@@ -586,6 +622,10 @@ BTextWidget::StopEdit(bool saveChanges, BPoint poseLoc, BPoseView* view,
 	ASSERT(column != NULL);
 	if (column == NULL)
 		return;
+
+	// (the list goes first: it follows the text view)
+	delete fFilterMenu;
+	fFilterMenu = NULL;
 
 	if (saveChanges && fText->CommitEditedText(textView)) {
 		// we have an actual change, re-sort

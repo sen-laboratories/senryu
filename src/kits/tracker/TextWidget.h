@@ -40,6 +40,10 @@ All rights reserved.
 #include "WidgetAttributeText.h"
 
 
+namespace sen {
+class FilterPopUpMenu;
+}
+
 namespace BPrivate {
 
 class BPose;
@@ -81,6 +85,7 @@ public:
 		// we can invalidate properly
 
 	void StartEdit(BPoseView*, BPose*, BColumn*);
+	void StartValueList(BTextView* textView, BPose* pose, BColumn* column);
 	void StopEdit(bool saveChanges, BPoint loc, BPoseView*, BPose*, int32 index);
 
 	void SelectAll(BPoseView* view);
@@ -122,6 +127,9 @@ private:
 	bool fSymLink : 1;
 
 	float fMaxWidth;
+
+	// SEN: the list of common values that follows the text while an attribute with an enum is edited
+	::sen::FilterPopUpMenu* fFilterMenu;
 
 	bigtime_t fLastClickedTime;
 	struct MouseUpParams fParams;
