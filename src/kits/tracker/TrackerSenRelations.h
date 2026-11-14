@@ -7,6 +7,7 @@
 
 #include <vector>
 #include <Entry.h>
+#include <InterfaceDefs.h>
 #include <Message.h>
 #include <ObjectList.h>
 #include <functional>
@@ -17,6 +18,8 @@
 // Stateless SEN relation attribute/filesystem I/O, factored out of TTracker
 // so it can be exercised without a live Tracker instance (see TemplateUtils
 // for the reference pattern).
+class BBitmap;
+
 class TrackerSenRelations {
 public:
 	static bool		ResolveRelation(const entry_ref* ref, BString* srcId,
@@ -62,6 +65,11 @@ public:
 	static void		ApplySticky(const entry_ref& ref);
 	static status_t	GetSenIcon(const char* mimeType, const char* iconType,
 						void** icon, size_t* iconSize);
+	/**
+	 * The icon of the folder of the relations of a type, for a menu: SEN:ICON:FOLDER of its MIME type, the folder of the system if it has none. A relation is shown as the folder that
+	 * it is (its items are what is related and have the icons of their own types). The caller owns the bitmap; NULL if there is not even the folder of the system.
+	 */
+	static BBitmap*	FolderIconBitmap(const char* relationType, icon_size which = B_MINI_ICON);
 	static status_t	GetInodeForRef(const entry_ref* srcRef, BString* inode);
 	static status_t	WriteTargetRelations(BMessage* relations,
 						BMessage* relationConf, entry_ref* workingDirRef,

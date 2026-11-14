@@ -20,6 +20,7 @@
 #include "TrackerSenRelations.h"
 
 #include <Alert.h>
+#include <Bitmap.h>
 #include <Button.h>
 #include <Catalog.h>
 #include <Debug.h>
@@ -42,6 +43,20 @@
 #include <stdio.h>
 #include <strings.h>
 #include "TrackerSenLog.h"
+
+/**
+ * The entry of a relation in a menu: a relation is a folder of what it relates, so it has the icon of the folder of its type (the folder of the system if the type has none). The items
+ * inside the menu are what is related and have the icons of their own types (an event the calendar).
+ */
+static BMenuItem*
+FolderIconItem(BMenu* menu, BMessage* message, const char* relationType)
+{
+	BBitmap* icon = TrackerSenRelations::FolderIconBitmap(relationType, B_MINI_ICON);
+	BMenuItem* item = icon != NULL ? new IconMenuItem(menu, message, icon, B_MINI_ICON) : new IconMenuItem(menu, message, relationType);
+	delete icon;
+	return item;
+}
+
 
 OpenRelationsMenu::OpenRelationsMenu(const char* label, const BMessage* entriesToOpen,
 	BWindow* parentWindow, const BMessenger& target)
@@ -301,9 +316,9 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 		// get label from relation config
 		BString label = ResolveRelationLabel(relationConfigs, typeName);
 
-        BMenuItem* item = new IconMenuItem(
+        BMenuItem* item = FolderIconItem(
             new OpenRelationTargetsMenu(label.String(), message, fParentWindow, fTrackerMessenger),
-										openRelationTargetsMsg, typeName);
+										openRelationTargetsMsg, typeName.String());
 
 		// redirect open relation targets message to Tracker app directly
 		item->SetTarget(be_app_messenger);
@@ -341,7 +356,7 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 		openGroup->AddString(sen::key::kSourceId, srcId);
 		openGroup->AddString(sen::conf::kGroup, std::get<0>(each));
 		RelationContexts::Tag(openGroup, contextId);
-		BMenuItem* groupItem = new IconMenuItem(std::get<1>(each), openGroup, std::get<2>(each).String());
+		BMenuItem* groupItem = FolderIconItem(std::get<1>(each), openGroup, std::get<2>(each).String());
 		groupItem->SetTarget(be_app_messenger);
 		AddItem(groupItem);
 	}
@@ -474,10 +489,10 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const entry_ref* sourceRef) {
 		// get label from relation config
 		BString label = ResolveRelationLabel(relationConfigs, defaultType);
 
-        BMenuItem* item = new IconMenuItem(
+        BMenuItem* item = FolderIconItem(
             new OpenRelationTargetsMenu(label.String(), new BMessage(message), fParentWindow, be_app_messenger),
             new BMessage(openRelationTargetsMsg),
-			defaultType
+			defaultType.String()
         );
 		// redirect open relation targets message to Tracker app directly
 		item->SetTarget(be_app_messenger);

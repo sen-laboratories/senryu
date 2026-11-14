@@ -19,6 +19,9 @@
 #include <Path.h>
 #include <StringList.h>
 #include <Autolock.h>
+#include <Bitmap.h>
+#include <ControlLook.h>
+#include <IconUtils.h>
 #include <InterfaceDefs.h>
 #include <Locker.h>
 #include <Volume.h>
@@ -1066,6 +1069,36 @@ TrackerSenRelations::GetSenIcon(const char* mimeType, const char* iconType, void
 	}
 
 	return result;
+}
+
+
+BBitmap*
+TrackerSenRelations::FolderIconBitmap(const char* relationType, icon_size which)
+{
+	BBitmap* bitmap = new BBitmap(BRect(BPoint(0, 0), be_control_look->ComposeIconSize(which)), B_RGBA32);
+	if (bitmap->InitCheck() != B_OK) {
+		delete bitmap;
+		return NULL;
+	}
+
+	// the folder of the relations of the type (a type that has none is not told: most have none yet)
+	void* buffer = NULL;
+	size_t size = 0;
+	if (relationType != NULL && relationType[0] != '\0'
+			&& GetSenIcon(relationType, sen::attr::kRelationFolderIcon, &buffer, &size) == B_OK && buffer != NULL) {
+		const status_t drawn = BIconUtils::GetVectorIcon((const uint8*)buffer, size, bitmap);
+		delete[] (char*)buffer;
+		if (drawn == B_OK)
+			return bitmap;
+	} else if (buffer != NULL) {
+		delete[] (char*)buffer;
+	}
+
+	// else the folder of the system: a relation is a folder of what it relates
+	if (BMimeType("application/x-vnd.Be-directory").GetIcon(bitmap, which) == B_OK)
+		return bitmap;
+	delete bitmap;
+	return NULL;
 }
 
 

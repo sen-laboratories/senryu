@@ -554,8 +554,13 @@ BPoseView::HandleRelationDrop(const BMessage* dragMessage, BPose* targetPose, BP
 	}
 	if (!groups.empty() && menu.CountItems() > 0)
 		menu.AddSeparatorItem();
-	for (const auto& each : groups)
-		menu.AddItem(new IconMenuItem(std::get<1>(each), NULL, std::get<2>(each).String()));
+	for (const auto& each : groups) {
+		// (a group is a folder of relations: the icon of the folder of its type, the relations in it have the icons of their types)
+		BBitmap* folder = TrackerSenRelations::FolderIconBitmap(std::get<2>(each).String(), B_MINI_ICON);
+		menu.AddItem(folder != NULL ? new IconMenuItem(std::get<1>(each), NULL, folder, B_MINI_ICON)
+			: new IconMenuItem(std::get<1>(each), NULL, std::get<2>(each).String()));
+		delete folder;
+	}
 	if (menu.CountItems() == 0) {
 		BMenuItem* none = new BMenuItem(B_TRANSLATE("No relation fits these files"), NULL);
 		none->SetEnabled(false);
