@@ -439,6 +439,25 @@ TextViewPasteFilter(BMessage* message, BHandler**, BMessageFilter* filter)
 }
 
 
+// SEN: the common values of the attribute of a column for the type of a file (and its semantic type META:TYPE), if the ontology has some
+static bool
+ValuesFor(BPose* pose, BColumn* column, ::sen::attrvalues::Values* values)
+{
+	Model* model = pose != NULL ? pose->TargetModel() : NULL;
+	if (model == NULL || column == NULL)
+		return false;
+
+	BString semanticType;
+	if (model->OpenNode() == B_OK) {
+		model->Node()->ReadAttrString(::sen::attr::kType, &semanticType);
+		model->CloseNode();
+	}
+
+	return (!semanticType.IsEmpty() && ::sen::attrvalues::Load(semanticType.String(), column->AttrName(), values))
+		|| ::sen::attrvalues::Load(model->MimeType(), column->AttrName(), values);
+}
+
+
 void
 BTextWidget::StartEdit(BPoseView* view, BPose* pose, BColumn* column)
 {
@@ -527,6 +546,21 @@ BTextWidget::StartEdit(BPoseView* view, BPose* pose, BColumn* column)
 		}
 	}
 
+	// SEN: a field with a list of values is as wide as its widest value and the arrow, even when the text is short or empty (it would be a small box with an arrow)
+	bool valued = false;
+	{
+		::sen::attrvalues::Values values;
+		if (ValuesFor(pose, column, &values)) {
+			valued = true;
+			float widest = 0;
+			for (size_t i = 0; i < values.texts.size(); i++)
+				widest = std::max(widest, textView->StringWidth(values.texts[i].c_str()));
+			const float wanted = std::min(fMaxWidth, widest + ceilf(textView->LineHeight() * 1.1f) + 12);
+			if (rect.Width() < wanted)
+				rect.right = rect.left + wanted - 1;
+		}
+	}
+
 	// resize textView
 	textView->ResizeTo(std::min(fMaxWidth, rect.Width()) + 4, rect.Height() + 4);
 	textView->SetTextRect(rect.OffsetToCopy(2, 2));
@@ -550,6 +584,9 @@ BTextWidget::StartEdit(BPoseView* view, BPose* pose, BColumn* column)
 		= new BScrollView("BorderView", textView, 0, 0, false, false, B_PLAIN_BORDER);
 	view->AddChild(scrollView);
 
+	// (a field with a list of values keeps its width while the text changes, as one that is too wide does: the key filter looks at MaxWidth() after every key)
+	if (valued)
+		fMaxWidth = 0;
 	bool tooWide = textView->TextRect().Width() > fMaxWidth;
 	textView->MakeResizable(!tooWide, tooWide ? NULL : scrollView);
 
@@ -577,20 +614,8 @@ BTextWidget::StartEdit(BPoseView* view, BPose* pose, BColumn* column)
 void
 BTextWidget::StartValueList(BTextView* textView, BPose* pose, BColumn* column)
 {
-	Model* model = pose->TargetModel();
-	if (model == NULL || column == NULL)
-		return;
-
-	// the type of the file, and its semantic type (META:TYPE) that the SEN plugins set
-	BString semanticType;
-	if (model->OpenNode() == B_OK) {
-		model->Node()->ReadAttrString(::sen::attr::kType, &semanticType);
-		model->CloseNode();
-	}
-
 	::sen::attrvalues::Values values;
-	if (!(!semanticType.IsEmpty() && ::sen::attrvalues::Load(semanticType.String(), column->AttrName(), &values))
-		&& !::sen::attrvalues::Load(model->MimeType(), column->AttrName(), &values))
+	if (!ValuesFor(pose, column, &values))
 		return;
 
 	fFilterMenu = new ::sen::FilterPopUpMenu(column->AttrName(), new BMessage());
