@@ -1757,8 +1757,11 @@ TrackerSenRelations::FetchInto(const entry_ref& sourceRef, const char* viewId, c
 		}
 		if (result != B_OK) {
 			ERROR("could not get the relations of type %s from the SEN server: %s\n", typeCopy.String(), strerror(result));
+			// the one file that stays: it says in the folder itself that the relations could not be resolved (a time out of a web service, no answer), with the icon of a broken link, so that
+			// the message is not one that is easy to miss or one that blocks the window
 			BFile failed;
-			folder.CreateFile((BString(kFailedPrefix) << " (" << strerror(result) << ")").String(), &failed, true);
+			if (folder.CreateFile((BString(kFailedPrefix) << " (" << strerror(result) << ")").String(), &failed, true) == B_OK)
+				BNodeInfo(&failed).SetType(B_LINK_MIMETYPE);
 		}
 		RelationFolders::Instance().FetchFinished(folderNode);
 	}).detach();
