@@ -1145,6 +1145,12 @@ TrackerSenRelations::RelationsToList(const BMessage& relations, const BMessage& 
 				properties.RemoveName(sen::key::kTargetMissing);
 				properties.AddBool(sen::key::kTargetMissing, true);
 			}
+			// a relation that has a title of its own (a place inside its target: an event of a calendar file, a page of a document) is named by it: the title of the target is that of
+			// the whole file and is the same for all of them. This holds for any relation type: nothing here knows what the relation is about.
+			BString itemTitle(properties.GetString("dc:title", ""));
+			itemTitle.Trim();
+			if (!itemTitle.IsEmpty())
+				name = itemTitle;
 			properties.RemoveName(sensei::key::kName);
 			properties.AddString(sensei::key::kName, name);
 
