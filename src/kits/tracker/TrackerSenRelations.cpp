@@ -96,6 +96,12 @@ CopyTargetIcon(BNode& relationNode, const entry_ref& target)
 	if (targetNode.InitCheck() != B_OK)
 		return;
 
+	// a type of the MIME database (what an ontology defines, what a package depends on): the file is the entry of the type, whose icon is the one that the files of the type have, not its own.
+	// All the relations to types look alike, with the icon of their relation (one type that has an icon of its own, or a supertype that has one, must not stand out among them)
+	BPath targetPath(&target);
+	if (targetPath.InitCheck() == B_OK && strstr(targetPath.Path(), "/mime_db/") != NULL)
+		return;
+
 	uint8* data = NULL;
 	size_t size = 0;
 	type_code type = 0;

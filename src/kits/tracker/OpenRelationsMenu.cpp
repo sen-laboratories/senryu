@@ -112,6 +112,9 @@ OpenRelationsMenu::MaterialiseSources()
 bool
 OpenRelationsMenu::StartBuildingItemList()
 {
+	// a menu that is greyed out shows nothing and asks nothing of the server (the plugins are not started to work out what nobody can open)
+	if (!IsEnabled())
+		return false;
     if (! be_roster->IsRunning(sen::kServerSignature)) {
         PRINT(("failed to reach SEN server, please start process '%s' first.\n", sen::kServerSignature));
         return false;

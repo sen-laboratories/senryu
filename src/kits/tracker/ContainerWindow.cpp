@@ -2400,35 +2400,41 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 	parent->AddItem(fOpenRelationsItem, menuIndex + 1);
 	Shortcuts()->UpdateOpenRelationsItem(fOpenRelationsItem);
 
-	// self relations, take over from above but adapt to self relations
-	BMessage messageSelf(message);
-	messageSelf.ReplaceUInt32(sen::key::kAction, sen::cmd::kRelationsGetAllSelf);
-	// a node of a view of contained relations (a bookmark) contains what is below it, of the document: the menu shows only that
-	messageSelf.RemoveName("refs");
-	messageSelf.RemoveName(OpenRelationsMenu::kMaterialiseItems);
-	for (int32 index = 0; index < count; index++) {
-		BPose* pose = PoseView()->SelectionList()->ItemAt(index);
-		entry_ref nodeRef = *pose->TargetModel()->EntryRef();
-		entry_ref source;
-		BMessage nodeRelations;
-		if (TrackerSenRelations::SelfRelationNode(&nodeRef, &source, &nodeRelations)) {
-			messageSelf.AddRef("refs", &source);
-			messageSelf.AddRef(sen::key::kRelationNode, &nodeRef);
-		} else {
-			entry_ref relatedRef = TrackerSenRelations::RelationTargetOrSelf(&nodeRef);
-			messageSelf.AddRef("refs", &relatedRef);
-		}
-	}
-
-	// Note: the menu itself targets Tracker, same as for fOpenRelationsItem above
-	fOpenSelfRelationsItem = Shortcuts()->OpenSelfRelationsItem(
-		new OpenRelationsMenu(Shortcuts()->OpenSelfRelationsLabel(), &messageSelf, this, BMessenger(PoseView())) );
-
-	parent->AddItem(fOpenSelfRelationsItem, menuIndex + 2);
-	Shortcuts()->UpdateOpenSelfRelationsItem(fOpenSelfRelationsItem);
-	// what a document contains is that of one document: for several files it means nothing. Nor for an event of a calendar: it contains nothing, the calendar does
-	if (count > 1 || anyItem)
+	// what a document contains is that of one document: for several files it means nothing. Nor for an event of a calendar: it contains nothing, the calendar does.
+	// The item is only shown then, as the plain item that it is (greyed out): a submenu that is not available is not opened and asks nothing of the server
+	if (count > 1 || anyItem) {
+		fOpenSelfRelationsItem = Shortcuts()->OpenSelfRelationsItem();
+		parent->AddItem(fOpenSelfRelationsItem, menuIndex + 2);
+		Shortcuts()->UpdateOpenSelfRelationsItem(fOpenSelfRelationsItem);
 		fOpenSelfRelationsItem->SetEnabled(false);
+	} else {
+		// self relations, take over from above but adapt to self relations
+		BMessage messageSelf(message);
+		messageSelf.ReplaceUInt32(sen::key::kAction, sen::cmd::kRelationsGetAllSelf);
+		// a node of a view of contained relations (a bookmark) contains what is below it, of the document: the menu shows only that
+		messageSelf.RemoveName("refs");
+		messageSelf.RemoveName(OpenRelationsMenu::kMaterialiseItems);
+		for (int32 index = 0; index < count; index++) {
+			BPose* pose = PoseView()->SelectionList()->ItemAt(index);
+			entry_ref nodeRef = *pose->TargetModel()->EntryRef();
+			entry_ref source;
+			BMessage nodeRelations;
+			if (TrackerSenRelations::SelfRelationNode(&nodeRef, &source, &nodeRelations)) {
+				messageSelf.AddRef("refs", &source);
+				messageSelf.AddRef(sen::key::kRelationNode, &nodeRef);
+			} else {
+				entry_ref relatedRef = TrackerSenRelations::RelationTargetOrSelf(&nodeRef);
+				messageSelf.AddRef("refs", &relatedRef);
+			}
+		}
+
+		// Note: the menu itself targets Tracker, same as for fOpenRelationsItem above
+		fOpenSelfRelationsItem = Shortcuts()->OpenSelfRelationsItem(
+			new OpenRelationsMenu(Shortcuts()->OpenSelfRelationsLabel(), &messageSelf, this, BMessenger(PoseView())) );
+
+		parent->AddItem(fOpenSelfRelationsItem, menuIndex + 2);
+		Shortcuts()->UpdateOpenSelfRelationsItem(fOpenSelfRelationsItem);
+	}
 
 	// the items of a relation whose items are entities (the events of a calendar) are kept as the entities: a copy of the file would copy the relation
 	if (anyItem) {
