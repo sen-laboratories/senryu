@@ -816,6 +816,120 @@ TrackerSenRelations::RelationTargetOrSelf(const entry_ref* ref)
 
 
 bool
+TrackerSenRelations::IsMaterialisableItem(const entry_ref& ref, BString* entityType)
+{
+	BEntry entry(&ref);
+	if (entry.InitCheck() != B_OK || entry.IsDirectory())
+		return false;
+	BNode node(&ref);
+	char type[B_MIME_TYPE_LENGTH];
+	type[0] = '\0';
+	if (node.InitCheck() != B_OK || BNodeInfo(&node).GetType(type) != B_OK || strncmp(type, "relation/", 9) != 0)
+		return false;
+	entry_ref target;
+	if (!ReadTargetRef(node, &target))
+		return false;
+
+	// the configuration of the relation type: a resource of its MIME type, which is an attribute in the MIME database of the user (what the server reads, too)
+	BPath path;
+	if (find_directory(B_USER_SETTINGS_DIRECTORY, &path) != B_OK || path.Append("mime_db") != B_OK || path.Append(type) != B_OK)
+		return false;
+	BNode mime(path.Path());
+	attr_info info;
+	if (mime.InitCheck() != B_OK || mime.GetAttrInfo(sen::attr::kRelationConfig, &info) != B_OK || info.size <= 0)
+		return false;
+	char* buffer = new char[info.size];
+	BMessage config;
+	bool found = false;
+	if (mime.ReadAttr(sen::attr::kRelationConfig, B_MESSAGE_TYPE, 0, buffer, info.size) == info.size && config.Unflatten(buffer) == B_OK) {
+		BString materialiseAs;
+		if (config.FindString(sen::conf::kMaterialiseAs, &materialiseAs) == B_OK && !materialiseAs.IsEmpty()) {
+			if (entityType != NULL)
+				*entityType = materialiseAs;
+			found = true;
+		}
+	}
+	delete[] buffer;
+	return found;
+}
+
+
+status_t
+TrackerSenRelations::MaterialiseItems(const std::vector<entry_ref>& items, std::vector<entry_ref>* entities, const entry_ref* destination)
+{
+	entities->assign(items.size(), entry_ref());
+	BMessenger server(sen::kServerSignature);
+	if (!server.IsValid())
+		return B_ERROR;
+
+	// the items that hold the same file (the events of one calendar) are asked for at once
+	std::vector<bool> done(items.size(), false);
+	status_t status = B_OK;
+	for (size_t first = 0; first < items.size(); first++) {
+		if (done[first])
+			continue;
+		BNode node(&items[first]);
+		entry_ref source;
+		char type[B_MIME_TYPE_LENGTH];
+		type[0] = '\0';
+		if (node.InitCheck() != B_OK || BNodeInfo(&node).GetType(type) != B_OK || !ReadTargetRef(node, &source)) {
+			done[first] = true;
+			continue;
+		}
+		BMessage request(sen::cmd::kRelationsMaterialise);
+		request.AddRef(sen::key::kSourceRef, &source);
+		request.AddString(sen::key::kRelationType, type);
+		if (destination != NULL)
+			request.AddRef(sen::key::kDestinationRef, destination);
+		std::vector<size_t> group;
+		std::vector<BString> ids;
+		for (size_t each = first; each < items.size(); each++) {
+			if (done[each])
+				continue;
+			BNode other(&items[each]);
+			entry_ref otherSource;
+			char otherType[B_MIME_TYPE_LENGTH];
+			otherType[0] = '\0';
+			if (other.InitCheck() != B_OK || BNodeInfo(&other).GetType(otherType) != B_OK || strcmp(otherType, type) != 0
+					|| !ReadTargetRef(other, &otherSource) || !(otherSource == source))
+				continue;
+			BMessage properties;
+			ConvertAttributesToMessage(&items[each], &properties);
+			request.AddMessage(sen::key::kRelationProperties, &properties);
+			ids.push_back(BString(properties.GetString(sen::key::kItemId, "")));
+			group.push_back(each);
+			done[each] = true;
+		}
+
+		BMessage reply;
+		// (the plugin is started and may read a calendar of years: the server gives up on it after 90 s)
+		status_t result = server.SendMessage(&request, &reply, 100000000, 100000000);
+		if (result == B_OK)
+			result = reply.GetInt32(sen::key::kResult, B_ERROR);
+		if (result != B_OK) {
+			ERROR("the SEN server could not make the entities of the items of %s: %s\n", type, strerror(result));
+			status = result;
+			continue;
+		}
+		BMessage target;
+		for (int32 index = 0; reply.FindMessage(sensei::key::kTargets, index, &target) == B_OK; index++) {
+			entry_ref entity;
+			const char* itemId = target.GetString(sen::key::kItemId, "");
+			if (target.FindRef(sen::key::kTargetRef, &entity) != B_OK)
+				continue;
+			for (size_t i = 0; i < group.size(); i++) {
+				if (ids[i] == itemId) {
+					(*entities)[group[i]] = entity;
+					break;
+				}
+			}
+		}
+	}
+	return status;
+}
+
+
+bool
 TrackerSenRelations::SelfRelationNode(const entry_ref* ref, entry_ref* source, BMessage* relations)
 {
 	BNode node(ref);

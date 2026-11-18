@@ -58,6 +58,9 @@ FolderIconItem(BMenu* menu, BMessage* message, const char* relationType)
 }
 
 
+const char* const OpenRelationsMenu::kMaterialiseItems = "SEN:materialiseItems";
+
+
 OpenRelationsMenu::OpenRelationsMenu(const char* label, const BMessage* entriesToOpen,
 	BWindow* parentWindow, const BMessenger& target)
 	:
@@ -77,6 +80,35 @@ OpenRelationsMenu::OpenRelationsMenu(const char* label, const BMessage* entriesT
 	fEntriesToOpen.FindRef("refs", &fSourceRef);
 }
 
+void
+OpenRelationsMenu::MaterialiseSources()
+{
+	std::vector<entry_ref> refs, items;
+	std::vector<size_t> itemAt;
+	entry_ref each;
+	for (int32 index = 0; fEntriesToOpen.FindRef("refs", index, &each) == B_OK; index++) {
+		refs.push_back(each);
+		if (TrackerSenRelations::IsMaterialisableItem(each)) {
+			items.push_back(each);
+			itemAt.push_back(refs.size() - 1);
+		}
+	}
+	if (items.empty())
+		return;
+
+	std::vector<entry_ref> entities;
+	TrackerSenRelations::MaterialiseItems(items, &entities);
+	for (size_t i = 0; i < items.size(); i++) {
+		// (an item that could not be made an entity is its target again: the relations of the calendar, as before)
+		refs[itemAt[i]] = entities[i].name != NULL ? entities[i] : TrackerSenRelations::RelationTargetOrSelf(&items[i]);
+	}
+	fEntriesToOpen.RemoveName("refs");
+	for (const entry_ref& ref : refs)
+		fEntriesToOpen.AddRef("refs", &ref);
+	fEntriesToOpen.FindRef("refs", &fSourceRef);
+}
+
+
 bool
 OpenRelationsMenu::StartBuildingItemList()
 {
@@ -85,6 +117,9 @@ OpenRelationsMenu::StartBuildingItemList()
         return false;
     }
 	fSenMessenger = BMessenger(sen::kServerSignature);
+
+	if (fEntriesToOpen.GetBool(kMaterialiseItems, false))
+		MaterialiseSources();
 
 	// get relations for all refs received, 'what' field contains relation type (ALL or SELF)
 	BMessage message(fEntriesToOpen);

@@ -30,6 +30,19 @@ public:
 	 * with one (the attribute SEN:REL:TRG), else the file itself. A folder (a nested relation) is the relation itself.
 	 */
 	static entry_ref	RelationTargetOrSelf(const entry_ref* ref);
+	/**
+	 * Whether the file is the item of a relation whose items stand for entities (the events of a calendar: the relation type has `SEN:materialiseAs`, see sen::conf::kMaterialiseAs),
+	 * and which entity type that is. The file is a relation file of a view (it has the type of the relation and a target, the file that holds the items). Cheap: it reads the file and the
+	 * MIME database, so that a menu can ask it. A relation without it is a link (a reference into a PDF): what is done with its file is done with the target.
+	 */
+	static bool			IsMaterialisableItem(const entry_ref& ref, BString* entityType = NULL);
+	/**
+	 * Asks the SEN server (the plugin of the relation) for the entities of the items: a file of its own for each, found by its identifier if it was made before. @p entities has an
+	 * entry for each of @p items, in the same order; one that has no entity (the calendar has changed, the plugin could not make it) is left empty (name NULL). Runs the server's calls and
+	 * may take a while (the plugin is started): not in the thread of a window. @return B_OK if the server answered.
+	 * @param destination NULL: the entities are those of the Library (one that is kept is found). A folder: they are made there, a copy of one that is kept elsewhere too (what was dropped in it).
+	 */
+	static status_t		MaterialiseItems(const std::vector<entry_ref>& items, std::vector<entry_ref>* entities, const entry_ref* destination = NULL);
 	/** The relations of SEN are for files and folders: not for the Trash and what is in it, and not for the Desktop folder itself.
 	 *  (The folders are those of find_directory(), on the volume of the item.) */
 	static bool			HasNoRelations(const entry_ref* ref);

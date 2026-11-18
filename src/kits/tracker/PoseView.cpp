@@ -43,6 +43,7 @@ All rights reserved.
 #include <algorithm>
 #include <functional>
 #include <map>
+#include <vector>
 
 #include <ctype.h>
 #include <errno.h>
@@ -5391,6 +5392,37 @@ BPoseView::MoveSelectionInto(Model* destFolder, BContainerWindow* srcWindow,
 				&& (RelationFolders::Instance().IsRelationFolder(*srcWindow->TargetModel()->NodeRef())
 					|| TrackerSenRelations::IsInRelationView(srcWindow->TargetModel()->EntryRef()))) {
 			moveMode = kCopySelectionTo;
+		}
+
+		// SEN: the items of a relation whose items are entities (the events of a calendar) are made as the entities, in the folder they were dropped in: a copy of the file of
+		// such an item would copy the relation. (The other files of the selection, and the links, are copied as before.)
+		if ((moveMode == kCopySelectionTo || moveMode == kMoveSelectionTo) && !destIsTrash && srcWindow->TargetModel() != NULL
+				&& TrackerSenRelations::IsInRelationView(srcWindow->TargetModel()->EntryRef())
+				&& !TrackerSenRelations::IsInRelationView(destFolder->EntryRef())) {
+			std::vector<entry_ref> items;
+			const int32 listed = srcList->CountItems();
+			const bool parallel = pointList != NULL && pointList->CountItems() == listed;
+			for (int32 i = listed - 1; i >= 0; i--) {
+				if (!TrackerSenRelations::IsMaterialisableItem(*srcList->ItemAt(i)))
+					continue;
+				items.insert(items.begin(), *srcList->ItemAt(i));
+				delete srcList->RemoveItemAt(i);
+				if (parallel)
+					delete (BPoint*)pointList->RemoveItem(i);
+			}
+			if (!items.empty()) {
+				MaterialiseItemsInto(items, *destFolder->EntryRef());
+				if (srcList->CountItems() == 0) {
+					delete srcList;
+					delete destEntry;
+					if (pointList != NULL) {
+						for (int32 i = 0; i < pointList->CountItems(); i++)
+							delete (BPoint*)pointList->ItemAt(i);
+						delete pointList;
+					}
+					return;
+				}
+			}
 		}
 
 		// move will replace current selection

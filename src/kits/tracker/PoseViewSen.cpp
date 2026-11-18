@@ -51,6 +51,7 @@ All rights reserved.
 #include <FindDirectory.h>
 #include <NodeInfo.h>
 #include <PopUpMenu.h>
+#include <Notification.h>
 #include <Query.h>
 #include <Roster.h>
 #include <VolumeRoster.h>
@@ -67,6 +68,7 @@ All rights reserved.
 #include "TrackerSenRelations.h"
 #include <set>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <vector>
 
@@ -209,9 +211,25 @@ BPoseView::RequestOpenRelations(uint32 what, OpenRelationsRequest* request)
 	// the selected files (a file in a view of relations stands for its target), or else the folder that the window shows
 	std::vector<entry_ref> sources;
 	if (CountSelected() > 0) {
+		std::vector<entry_ref> items;
+		std::vector<size_t> itemAt;
 		for (int32 index = 0; index < CountSelected(); index++) {
 			BPose* pose = fSelectionList->ItemAt(index);
-			sources.push_back(TrackerSenRelations::RelationTargetOrSelf(pose->TargetModel()->ResolveIfLink()->EntryRef()));
+			const entry_ref* ref = pose->TargetModel()->ResolveIfLink()->EntryRef();
+			sources.push_back(TrackerSenRelations::RelationTargetOrSelf(ref));
+			if (what != kOpenSelfRelations && TrackerSenRelations::IsMaterialisableItem(*ref)) {
+				items.push_back(*ref);
+				itemAt.push_back(sources.size() - 1);
+			}
+		}
+		// an item of a relation whose items are entities (an event of a calendar) is about its entity (the target stays what it is if the entity cannot be made)
+		if (!items.empty()) {
+			std::vector<entry_ref> entities;
+			TrackerSenRelations::MaterialiseItems(items, &entities);
+			for (size_t i = 0; i < items.size(); i++) {
+				if (entities[i].name != NULL)
+					sources[itemAt[i]] = entities[i];
+			}
 		}
 	} else if (TargetModel() != NULL) {
 		sources.push_back(*TargetModel()->EntryRef());
@@ -297,6 +315,7 @@ BPoseView::HandleSenMessage(BMessage* message)
 	switch(message->what) {
 		case kOpenRelations:
 		case kOpenSelfRelations:
+		case kCopyToLibrary:
 		case sensei::cmd::kExtract:
 		case sensei::cmd::kEnrich:
 		case sensei::cmd::kIdentify:
@@ -335,6 +354,10 @@ BPoseView::HandleSenMessage(BMessage* message)
 			}
 			break;
 		}
+		case kCopyToLibrary:
+			result = CopySelectionToLibrary();
+			break;
+
 		case sensei::cmd::kExtract:
 			PRINT(("PoseView::SENSEI extract called.\n"));
 			break;
@@ -368,6 +391,78 @@ BPoseView::HandleSenMessage(BMessage* message)
 	message->SendReply(&reply);
 
 	return true;
+}
+
+
+status_t
+BPoseView::CopySelectionToLibrary()
+{
+	std::vector<entry_ref> items;
+	for (int32 index = 0; index < CountSelected(); index++) {
+		const entry_ref* ref = fSelectionList->ItemAt(index)->TargetModel()->ResolveIfLink()->EntryRef();
+		if (TrackerSenRelations::IsMaterialisableItem(*ref))
+			items.push_back(*ref);
+	}
+	if (items.empty())
+		return B_NOT_SUPPORTED;
+	if (!be_roster->IsRunning(sen::kServerSignature))
+		return B_NOT_ALLOWED;
+
+	// the plugin is started and the files are made: not in the thread of the window
+	std::thread([items]() {
+		std::vector<entry_ref> entities;
+		TrackerSenRelations::MaterialiseItems(items, &entities);
+		int32 made = 0;
+		BString folder;
+		for (const entry_ref& entity : entities) {
+			if (entity.name == NULL)
+				continue;
+			made++;
+			if (folder.IsEmpty()) {
+				BPath path(&entity);
+				if (path.GetParent(&path) == B_OK)
+					folder = path.Path();
+			}
+		}
+		BNotification notification(made == (int32)items.size() ? B_INFORMATION_NOTIFICATION : B_ERROR_NOTIFICATION);
+		notification.SetGroup("Akita");
+		notification.SetTitle(B_TRANSLATE("Copy to Library"));
+		BString text;
+		if (made == 0) {
+			text = B_TRANSLATE("The items could not be copied.");
+		} else {
+			text.SetToFormat(B_TRANSLATE("%d of %d copied to %s."), (int)made, (int)items.size(), folder.String());
+		}
+		notification.SetContent(text);
+		notification.Send();
+	}).detach();
+	return B_OK;
+}
+
+
+void
+BPoseView::MaterialiseItemsInto(const std::vector<entry_ref>& items, const entry_ref& folder)
+{
+	if (items.empty())
+		return;
+	std::thread([items, folder]() {
+		std::vector<entry_ref> entities;
+		TrackerSenRelations::MaterialiseItems(items, &entities, &folder);
+		int32 made = 0;
+		for (const entry_ref& entity : entities) {
+			if (entity.name != NULL)
+				made++;
+		}
+		if (made == (int32)items.size())
+			return;		// (the files are there: nothing to tell)
+		BNotification notification(B_ERROR_NOTIFICATION);
+		notification.SetGroup("Akita");
+		notification.SetTitle(B_TRANSLATE("Copy to Library"));
+		BString text;
+		text.SetToFormat(B_TRANSLATE("%d of %d could not be copied."), (int)(items.size() - made), (int)items.size());
+		notification.SetContent(text);
+		notification.Send();
+	}).detach();
 }
 
 

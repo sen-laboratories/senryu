@@ -48,6 +48,7 @@ All rights reserved.
 #include "PendingNodeMonitorCache.h"
 #include "PoseList.h"
 #include <sen/Sen.h>
+#include <vector>
 #include "TitleView.h"
 #include "Utilities.h"
 #include "ViewState.h"
@@ -477,6 +478,13 @@ protected:
 	status_t RequestOpenRelations(uint32 what, OpenRelationsRequest* request);
 	status_t ExtractRefsFromSelection(BMessage* refs);
 	status_t EnrichRefsFromSelection(bool wipe = true);
+	/** The items of a relation whose items are entities (the events of a calendar) among the selected files become files of their own in the Library (kCopyToLibrary). */
+	status_t CopySelectionToLibrary();
+	/**
+	 * Makes the entities of the items of a relation whose items are entities (the events of a calendar) in @p folder, the place where they were dropped (a thread of its own: the plugin
+	 * is started). Tells when an item could not be made. The files appear in the folder as any file does.
+	 */
+	static void MaterialiseItemsInto(const std::vector<entry_ref>& items, const entry_ref& folder);
 	status_t EnrichRefWithPlugin(const entry_ref* ref, bool wipe = true);
 
 	bool SetProperty(BMessage* message, BMessage* specifier, int32 form,

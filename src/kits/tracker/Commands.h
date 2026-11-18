@@ -58,6 +58,7 @@ const uint32 kEnrichEntry = sensei::cmd::kEnrich;	// reuse SENSEI definition for
 const uint32 kNewAssociation = 'Tnas';			// new association relation
 const uint32 kOpenRelations = 'Tore';			// Tracker menu command vs. nested relation handling in SEN
 const uint32 kOpenSelfRelations = 'Tosr';		// ditto
+const uint32 kCopyToLibrary = 'Tctl';			// the items of a relation whose items are entities (the events of a calendar) become files of their own, in the Library
 
 const uint32 kCloseAllWindows = 'Tall';
 const uint32 kCloseWindowAndChildren = 'Tcwc';
