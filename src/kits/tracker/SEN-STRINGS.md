@@ -15,3 +15,7 @@ Localisation has low priority for now. These strings were added or changed for S
 | Label: | RelationLabelWindow | text field of that window |
 | Cancel | RelationLabelWindow | button |
 | OK | RelationLabelWindow | button |
+| Akita updated | TrackerSen | title of the alert that offers a restart when the package of Akita was updated |
+| Akita has been updated. Restart it now to use the new version? Your windows are opened again. | TrackerSen | text of that alert |
+| Later | TrackerSen | button |
+| Restart | TrackerSen | button |

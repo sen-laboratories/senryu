@@ -1051,3 +1051,16 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 
 	return result;
 }
+
+
+#include "AkitaUpdateWatcher.h"
+
+void
+StartWatchingForAkitaUpdate()
+{
+	static AkitaUpdateWatcher* watcher = NULL;
+	if (watcher != NULL)
+		return;
+	watcher = new AkitaUpdateWatcher();
+	watcher->Start();
+}
