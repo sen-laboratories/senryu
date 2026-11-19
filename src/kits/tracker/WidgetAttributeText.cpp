@@ -36,6 +36,8 @@ All rights reserved.
 #include "WidgetAttributeText.h"
 
 #include <algorithm>
+#include <map>
+#include <string>
 #include <ctype.h>
 #include <stdlib.h>
 #include <strings.h>
@@ -156,6 +158,48 @@ TruncStringBase(BString* outString, const char* inString, int32 length,
 }
 
 
+// The width of the widest text that a format of date and time can make with the font of a view: the longest month name and weekday, at the widest time of day. It does not change while the
+// font and the locale do not, so it is kept (the file manager asks for it for every row that it draws).
+template <class View>
+static float
+WidestTimeText(BDateTimeFormat& formatter, BDateFormatStyle dateStyle, BTimeFormatStyle timeStyle, const View* view)
+{
+	BFont font;
+	view->GetFont(&font);
+	font_family family;
+	font_style style;
+	font.GetFamilyAndStyle(&family, &style);
+	BString key;
+	key.SetToFormat("%s/%s/%.2f/%d/%d/%s", family, style, font.Size(), (int)dateStyle, (int)timeStyle, BLocale::Default() != NULL ? "l" : "-");
+	static std::map<std::string, float> kept;
+	auto found = kept.find(key.String());
+	if (found != kept.end())
+		return found->second;
+
+	float widest = 0;
+	BString text;
+	// (a day in each month, and several in a week: the longest names)
+	for (int month = 1; month <= 12; month++) {
+		for (int day = 21; day <= 27; day += 2) {
+			struct tm parts;
+			memset(&parts, 0, sizeof(parts));
+			parts.tm_year = 126;
+			parts.tm_mon = month - 1;
+			parts.tm_mday = day;
+			parts.tm_hour = 20;
+			parts.tm_min = 38;
+			parts.tm_sec = 38;
+			parts.tm_isdst = -1;
+			const time_t sample = mktime(&parts);
+			if (sample != (time_t)-1 && formatter.Format(text, sample, dateStyle, timeStyle) == B_OK)
+				widest = std::max(widest, view->StringWidth(text.String(), text.Length()));
+		}
+	}
+	kept[key.String()] = widest;
+	return widest;
+}
+
+
 template <class View>
 float
 TruncTimeBase(BString* outString, int64 value, const View* view, float width)
@@ -178,10 +222,15 @@ TruncTimeBase(BString* outString, int64 value, const View* view, float width)
 	BString date;
 	BDateTimeFormat formatter;
 	for (unsigned int i = 0; i < B_COUNT_OF(formats); ++i) {
+		// SEN: the format is chosen by the widest text that the format can make (the longest month, the widest digits), not by this value: every row of a column then has the
+		// same format. The value that fits ("5. Mai 1939 um 00:00") would be shown beside the ones that do not ("28.11.2024, 00:00")
+		const float widest = WidestTimeText(formatter, formats[i].dateStyle, formats[i].timeStyle, view);
+		if (widest > width && i + 1 < B_COUNT_OF(formats))
+			continue;
 		if (formatter.Format(date, timeValue, formats[i].dateStyle,
 				formats[i].timeStyle) == B_OK) {
 			resultWidth = view->StringWidth(date.String(), date.Length());
-			if (resultWidth <= width) {
+			if (resultWidth <= width || i + 1 == B_COUNT_OF(formats)) {
 				// Found a format that fits the available space, stop searching
 				break;
 			}

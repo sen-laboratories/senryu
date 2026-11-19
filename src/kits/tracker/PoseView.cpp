@@ -36,6 +36,8 @@ All rights reserved.
 
 #include "PoseView.h"
 
+#include <Roster.h>
+
 #include <sen/Sen.h>
 #include "RelationFolders.h"
 #include "SenCursors.h"
@@ -8669,9 +8671,32 @@ BPoseView::OpenSelectionCommon(BPose* clickedPose, int32* poseIndex, bool openWi
 
 	BMessage message(B_REFS_RECEIVED);
 
+	// SEN: an item of a relation whose items stand for entities (an event of a calendar: the file of the relation has the calendar as its target) opens as the entity, which is
+	// made if it is not there yet; the target stays what it is if the entity cannot be made
+	std::vector<entry_ref> refs;
+	for (int32 index = 0; index < selectCount; index++)
+		refs.push_back(*fSelectionList->ItemAt(index)->TargetModel()->EntryRef());
+	{
+		std::vector<entry_ref> items;
+		std::vector<size_t> itemAt;
+		for (size_t index = 0; index < refs.size(); index++) {
+			if (TrackerSenRelations::IsMaterialisableItem(refs[index])) {
+				items.push_back(refs[index]);
+				itemAt.push_back(index);
+			}
+		}
+		if (!items.empty() && be_roster->IsRunning(sen::kServerSignature)) {
+			std::vector<entry_ref> entities;
+			TrackerSenRelations::MaterialiseItems(items, &entities);
+			for (size_t index = 0; index < items.size(); index++) {
+				if (entities[index].name != NULL)
+					refs[itemAt[index]] = entities[index];
+			}
+		}
+	}
+
 	for (int32 index = 0; index < selectCount; index++) {
-		BPose* pose = fSelectionList->ItemAt(index);
-		message.AddRef("refs", pose->TargetModel()->EntryRef());
+		message.AddRef("refs", &refs[index]);
 
 		// close parent window if option down and we're not the desktop
 		// and we're not in single window mode
