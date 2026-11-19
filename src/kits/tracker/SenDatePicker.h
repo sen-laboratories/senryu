@@ -39,9 +39,11 @@ public:
 	 * @param picked the message that is sent to the target when a day is picked, with the text added in the field "text"
 	 * @param allDayLabel the (translated) label of the box *All day*
 	 * @param takeFocus false: the window never takes the focus (the field of an edit keeps the keyboard); true: it is a window like another and goes when it is deactivated
+	 * @param changed the message that is sent (with the text in the field "text") when the time of day or *All day* is changed, so that the field has it at once: Enter or leaving the
+	 * field completes the edit with it (without it only a pick of a day made the text)
 	 */
 	DatePickerWindow(BPoint where, const BDate& date, int32 hour, int32 minute, bool withTime, bool allDay, const BMessenger& target, const BMessage& picked,
-			const char* allDayLabel, bool takeFocus = false)
+			const char* allDayLabel, bool takeFocus = false, const BMessage* changed = NULL)
 		:
 		BWindow(BRect(0.0, 0.0, 100.0, 130.0), "", B_NO_BORDER_WINDOW_LOOK, B_FLOATING_ALL_WINDOW_FEEL,
 			B_AUTO_UPDATE_SIZE_LIMITS | B_ASYNCHRONOUS_CONTROLS | (takeFocus ? 0 : B_AVOID_FOCUS) | B_NOT_MINIMIZABLE | B_NOT_MOVABLE | B_NOT_RESIZABLE
@@ -49,6 +51,7 @@ public:
 		fTarget(target),
 		fPicked(picked),
 		fTakesFocus(takeFocus),
+		fChanged(changed != NULL ? *changed : BMessage((uint32)0)),
 		fHour(NULL),
 		fMinute(NULL),
 		fAllDay(NULL)
@@ -131,10 +134,7 @@ public:
 				int32 day, month, year;
 				if (message->FindInt32("day", &day) != B_OK || message->FindInt32("month", &month) != B_OK || message->FindInt32("year", &year) != B_OK)
 					break;
-				BString text;
-				text.SetToFormat("%04d-%02d-%02d", (int)year, (int)month, (int)day);
-				if (fHour != NULL && fAllDay->Value() != B_CONTROL_ON)
-					text << BString().SetToFormat(" %02d:%02d", (int)fHour->Value(), (int)fMinute->Value());
+				const BString text = _Text(year, month, day);
 				BMessage picked(fPicked);
 				picked.RemoveName("text");
 				picked.AddString("text", text.String());
@@ -144,6 +144,16 @@ public:
 			}
 			case kTimeChanged:
 				_UpdateEnabled();
+				if (fChanged.what != 0) {
+					// (the day that is shown: the one that was picked last, else the one that the field had)
+					const BDate date = fView->Date();
+					if (date.IsValid()) {
+						BMessage changed(fChanged);
+						changed.RemoveName("text");
+						changed.AddString("text", _Text(date.Year(), date.Month(), date.Day()).String());
+						fTarget.SendMessage(&changed);
+					}
+				}
 				break;
 			case kMonthDown:
 			case kMonthUp:
@@ -179,6 +189,16 @@ private:
 		return button;
 	}
 
+	/** the text of a day, with the time of day unless *All day* is checked */
+	BString _Text(int32 year, int32 month, int32 day) const
+	{
+		BString text;
+		text.SetToFormat("%04d-%02d-%02d", (int)year, (int)month, (int)day);
+		if (fHour != NULL && fAllDay->Value() != B_CONTROL_ON)
+			text << BString().SetToFormat(" %02d:%02d", (int)fHour->Value(), (int)fMinute->Value());
+		return text;
+	}
+
 	/** the time of day is greyed with *All day* */
 	void _UpdateEnabled()
 	{
@@ -203,6 +223,7 @@ private:
 	BMessenger					fTarget;
 	BMessage					fPicked;
 	bool						fTakesFocus;
+	BMessage					fChanged;
 	BStringView*				fMonth;
 	BStringView*				fYear;
 	BPrivate::BCalendarView*	fView;

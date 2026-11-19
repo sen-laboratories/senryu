@@ -2400,6 +2400,20 @@ BPoseView::MessageReceived(BMessage* message)
 				ActiveTextWidget()->ShowDatePicker(this);
 			break;
 
+		case kMsgDateChanged:
+		{
+			// the time of day or All day was changed in the calendar: the field has it at once, the edit is completed by Enter or by leaving the field
+			BString text;
+			BView* scrollView = FindView("BorderView");
+			BTextView* textView = scrollView != NULL
+				? dynamic_cast<BTextView*>(scrollView->FindView("WidgetTextView")) : NULL;
+			if (textView != NULL && message->FindString("text", &text) == B_OK) {
+				textView->SetText(text.String());
+				textView->Select(textView->TextLength(), textView->TextLength());
+			}
+			break;
+		}
+
 		case kMsgDatePicked:
 		{
 			// the day that was picked is the text of the field that is edited; the edit ends with it

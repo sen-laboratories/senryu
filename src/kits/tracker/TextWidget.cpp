@@ -747,8 +747,9 @@ BTextWidget::ShowDatePicker(BPoseView* view)
 	}
 
 	const BPoint where = view->ConvertToScreen(scrollView->Frame().LeftBottom() + BPoint(0, 2));
+	const BMessage changed(kMsgDateChanged);
 	::sen::DatePickerWindow* picker = new ::sen::DatePickerWindow(where, date, hour, minute,
-		fText->TimeKind() == 2, allDay, BMessenger(view), BMessage(kMsgDatePicked), B_TRANSLATE("All day"));
+		fText->TimeKind() == 2, allDay, BMessenger(view), BMessage(kMsgDatePicked), B_TRANSLATE("All day"), false, &changed);
 	fDatePicker = BMessenger(picker);
 	picker->Show();
 }

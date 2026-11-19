@@ -1863,6 +1863,9 @@ TrackerSenRelations::FetchInto(const entry_ref& sourceRef, const char* viewId, c
 			snooze((bigtime_t)(atof(delay) * 1000000));
 		BMessage reply;
 		status_t result = AskServerForType(sourceRef, typeCopy.String(), false, &reply);
+		// (a relation that has no targets, as an older server says it, is an empty folder: no file says that something failed)
+		if (result == B_ENTRY_NOT_FOUND)
+			result = B_OK;
 
 		BDirectory folder(&folderRef);
 		if (result == B_OK) {

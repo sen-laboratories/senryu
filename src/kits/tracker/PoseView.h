@@ -88,6 +88,7 @@ const uint32 kMsgCheckTextWidget = 'Tctw';
 // SEN: the calendar of a day or time that is edited (opened by the arrow of the field; its pick is the text of the field, which ends the edit)
 const uint32 kMsgOpenDatePicker = 'Tdpo';
 const uint32 kMsgDatePicked = 'Tdpk';
+const uint32 kMsgDateChanged = 'Tdpc';
 	// SEN: the pause after a click on a cell is over: the edit may start
 
 
