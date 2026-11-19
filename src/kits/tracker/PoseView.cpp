@@ -39,6 +39,7 @@ All rights reserved.
 #include <Roster.h>
 
 #include <sen/Sen.h>
+#include <sen/SenRepeatPicker.h>
 #include "RelationFolders.h"
 #include "SenCursors.h"
 #include "TrackerSenRelations.h"
@@ -1181,6 +1182,43 @@ BPoseView::SetActivePose(BPose* pose)
 		CommitActivePose();
 		fActivePose = pose;
 	}
+}
+
+
+/**
+ * Opens the window for how a thing repeats (every N weeks, the weekdays, how long) for the file whose Repeats is edited: the edit ends without its text (the list of values said `Custom...`),
+ * the window writes the words and the rule itself. The attribute changes are seen by the node monitor as any other.
+ */
+void
+BPoseView::OpenRepeatPicker()
+{
+	BPose* pose = ActivePose();
+	BView* scrollView = FindView("BorderView");
+	BTextView* textView = scrollView != NULL ? dynamic_cast<BTextView*>(scrollView->FindView("WidgetTextView")) : NULL;
+	if (pose == NULL || pose->TargetModel() == NULL || textView == NULL)
+		return;
+
+	const entry_ref ref = *pose->TargetModel()->EntryRef();
+	const BPoint where = textView->ConvertToScreen(BPoint(textView->Bounds().left, textView->Bounds().bottom + 2));
+	CommitActivePose(false);
+
+	::sen::RepeatPickerLabels labels;
+	labels.title = B_TRANSLATE("Repeat");
+	labels.every = B_TRANSLATE("Every");
+	labels.units[0] = B_TRANSLATE("days");
+	labels.units[1] = B_TRANSLATE("weeks");
+	labels.units[2] = B_TRANSLATE("months");
+	labels.units[3] = B_TRANSLATE("years");
+	labels.ends = B_TRANSLATE("Ends");
+	labels.never = B_TRANSLATE("Never");
+	labels.after = B_TRANSLATE("After");
+	labels.times = B_TRANSLATE("times");
+	labels.on = B_TRANSLATE_COMMENT("On", "the last day of a repeat");
+	labels.doesNotRepeat = B_TRANSLATE("Doesn't repeat");
+	labels.ok = B_TRANSLATE("OK");
+	labels.cancel = B_TRANSLATE("Cancel");
+	labels.more = B_TRANSLATE("This repeat says more than can be set here; OK replaces it.");
+	new ::sen::RepeatPickerWindow(where, ref, BMessenger(this), NULL, labels);
 }
 
 
@@ -2398,6 +2436,10 @@ BPoseView::MessageReceived(BMessage* message)
 		case kMsgOpenDatePicker:
 			if (ActiveTextWidget() != NULL)
 				ActiveTextWidget()->ShowDatePicker(this);
+			break;
+
+		case kMsgOpenRepeatPicker:
+			OpenRepeatPicker();
 			break;
 
 		case kMsgDateChanged:

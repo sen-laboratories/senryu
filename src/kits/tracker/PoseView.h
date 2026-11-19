@@ -87,6 +87,7 @@ const uint32 kMsgMouseLongDown = 'Mold';
 const uint32 kMsgCheckTextWidget = 'Tctw';
 // SEN: the calendar of a day or time that is edited (opened by the arrow of the field; its pick is the text of the field, which ends the edit)
 const uint32 kMsgOpenDatePicker = 'Tdpo';
+const uint32 kMsgOpenRepeatPicker = 'Trpo';
 const uint32 kMsgDatePicked = 'Tdpk';
 const uint32 kMsgDateChanged = 'Tdpc';
 	// SEN: the pause after a click on a cell is over: the edit may start
@@ -351,6 +352,7 @@ public:
 	void SetActivePose(BPose*);
 	BPose* ActivePose() const;
 	void CommitActivePose(bool saveChanges = true);
+	void OpenRepeatPicker();
 	static bool PoseVisible(const Model*, const PoseInfo*);
 	bool FrameForPose(BPose* targetPose, bool convert, BRect* poseRect);
 	bool CreateSymlinkPoseTarget(Model* symlink);

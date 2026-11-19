@@ -54,6 +54,7 @@ All rights reserved.
 #include <sen/SenAttrValues.h>
 #include <sen/SenAttributes.h>
 #include <sen/SenFilterMenu.h>
+#include <sen/SenRecurrence.h>
 #include <sen/SenTimeAttributes.h>
 
 #include "Attributes.h"
@@ -664,7 +665,7 @@ BTextWidget::StartEdit(BPoseView* view, BPose* pose, BColumn* column)
 		// for widget
 
 	// SEN: an attribute with common values (an enum in the schema, kept with the MIME type) gets the list that follows the text below the field
-	StartValueList(textView, pose, column);
+	StartValueList(textView, view, pose, column);
 	StartDatePicker(textView, view, column);
 
 	textView->SelectAll();
@@ -681,7 +682,7 @@ BTextWidget::StartEdit(BPoseView* view, BPose* pose, BColumn* column)
 
 
 void
-BTextWidget::StartValueList(BTextView* textView, BPose* pose, BColumn* column)
+BTextWidget::StartValueList(BTextView* textView, BPoseView* view, BPose* pose, BColumn* column)
 {
 	::sen::attrvalues::Values values;
 	if (!ValuesFor(pose, column, &values))
@@ -691,6 +692,9 @@ BTextWidget::StartValueList(BTextView* textView, BPose* pose, BColumn* column)
 	fFilterMenu->SetValues(values);
 	// one Enter picks the value and ends the edit as it ends the edit of any text
 	fFilterMenu->SetEnterAfterPick(true);
+	// how a thing repeats: the list ends with `Custom...`, a window for every N weeks, the weekdays and how long (it writes the words and the rule)
+	if (::sen::recurrence::IsWordsAttribute(column->AttrName()) && !fText->IsReadOnlyFile())
+		fFilterMenu->SetExtraItem(B_TRANSLATE("Custom" B_UTF8_ELLIPSIS), BMessenger(view), BMessage(kMsgOpenRepeatPicker));
 	fFilterMenu->AttachTo(textView);
 }
 
