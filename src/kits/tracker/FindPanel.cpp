@@ -34,12 +34,16 @@ All rights reserved.
 
 
 #include "FindPanel.h"
+#include "SenDatePicker.h"
 
 #include <utility>
 
 #include <errno.h>
 #include <fs_attr.h>
 #include <parsedate.h>
+
+#include <sen/SenFilterMenu.h>
+#include <sen/SenTimeAttributes.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -52,6 +56,7 @@ All rights reserved.
 #include <ControlLook.h>
 #include <Cursor.h>
 #include <Debug.h>
+#include <DateTime.h>
 #include <Directory.h>
 #include <File.h>
 #include <FilePanel.h>
@@ -136,6 +141,43 @@ static const char* operatorLabels[] = {
 	B_TRANSLATE_MARK("before"),
 	B_TRANSLATE_MARK("after")
 };
+
+// SEN: the arrow of a time row opens a calendar, the calendar answers with the text of the day
+static const uint32 kMsgFindOpenDatePicker = 'Fdpo';
+static const uint32 kMsgFindDatePicked = 'Fdpk';
+
+
+/**
+ * What a time that was typed into the row of a query means: the moment (seconds since 1970) and how long the period lasts that was named (a day, a month, a year: 86400 s and more; a
+ * time of day without seconds: a minute; with seconds: one second). A day is the day on the local clock, as the person who types it means it. The times of the ontologies are kept as 64-bit
+ * integers, and BFS reads a date in words as 32 bits: the question is asked with the integer (see BuildAttrQuery()).
+ */
+static bool
+ParseFindTime(const char* text, int64* moment, int64* span)
+{
+	::sen::edtf::Value value;
+	if (::sen::edtf::Parse(text, &value, ::sen::timeattr::LocalOffsetAt) && value.valid) {
+		if (value.IsExact()) {
+			*moment = value.earliest;
+			*span = value.precision == ::sen::edtf::Precision::Minute ? 60 : 1;
+		} else {
+			*moment = value.earliest - ::sen::timeattr::LocalOffsetAt(value.earliest);
+			*span = value.latest + 1 - value.earliest;
+		}
+		return true;
+	}
+
+	// words (yesterday, 12 Nov 2026): what the system reads
+	int flags = 0;
+	const time_t parsed = parsedate_etc(text, -1, &flags);
+	if (parsed <= 0)
+		return false;
+
+	*moment = parsed;
+	*span = 1;
+	return true;
+}
+
 
 namespace BPrivate {
 
@@ -1153,6 +1195,7 @@ FindPanel::FindPanel(BFile* node, FindWindow* parent, bool fromTemplate, bool ed
 
 FindPanel::~FindPanel()
 {
+	ClearDatePickers();
 	int32 count = fDirectoryFilters.CountItems();
 	for (int32 i = 0; i < count; i++)
 		delete fDirectoryFilters.RemoveItemAt(i);
@@ -1785,6 +1828,7 @@ FindPanel::MessageReceived(BMessage* message)
 				return;
 
 			item->Menu()->Superitem()->SetMarked(true);
+			UpdateDatePickers();
 			Invalidate();
 			break;
 
@@ -1797,8 +1841,34 @@ FindPanel::MessageReceived(BMessage* message)
 			if (item->Submenu()->ItemAt(0) != NULL)
 				item->Submenu()->ItemAt(0)->SetMarked(true);
 
+			UpdateDatePickers();
 			Invalidate();
 			break;
+
+		case kMsgFindOpenDatePicker:
+		{
+			int32 row;
+			if (message->FindInt32("row", &row) == B_OK)
+				ShowDatePicker(row);
+			break;
+		}
+
+		case kMsgFindDatePicked:
+		{
+			int32 row;
+			BString text;
+			BString title("TextEntry");
+			if (message->FindInt32("row", &row) != B_OK || message->FindString("text", &text) != B_OK)
+				break;
+
+			title << row;
+			BTextControl* textControl = dynamic_cast<BTextControl*>(FindAttrView(title.String(), row));
+			if (textControl != NULL) {
+				textControl->SetText(text.String());
+				textControl->MakeFocus();
+			}
+			break;
+		}
 
 		case B_SAVE_REQUESTED:
 		{
@@ -1945,15 +2015,21 @@ FindPanel::BuildAttrQuery(BQuery* query, bool& dynamicDate) const
 		if (item == NULL)
 			continue;
 
+		// SEN: a time that is asked for with the integer: "is" asks for the period that was named, from its start to its end
+		int64 periodEnd = 0;
+		BString periodAttribute;
+
 		BMessage* message = item->Message();
 		int32 type;
 		if (message->FindInt32("type", &type) == B_OK) {
 
 			const char* str;
+			BString attrName;
 			if (message->FindString("name", &str) == B_OK)
-				query->PushAttr(str);
+				attrName = str;
 			else
-				query->PushAttr(item->Label());
+				attrName = item->Label();
+			query->PushAttr(attrName.String());
 
 			switch (type) {
 				case B_STRING_TYPE:
@@ -1962,6 +2038,24 @@ FindPanel::BuildAttrQuery(BQuery* query, bool& dynamicDate) const
 
 				case B_TIME_TYPE:
 				{
+					int64 moment, span;
+					if (attrName != "last_modified" && ParseFindTime(textControl->Text(), &moment, &span)) {
+						query_op chosen = B_EQ;
+						BMenuItem* chosenItem = item->Submenu() != NULL ? item->Submenu()->FindMarked() : NULL;
+						if (chosenItem != NULL && chosenItem->Message() != NULL)
+							chosenItem->Message()->FindInt32("operator", (int32*)&chosen);
+
+						if (chosen == B_GT) {
+							// after: after the period that was named (after 2026-11-12 is from the 13th on)
+							moment += span - 1;
+						} else if (chosen == B_EQ) {
+							periodEnd = moment + span;
+							periodAttribute = attrName;
+						}
+						query->PushInt64(moment);
+						break;
+					}
+
 					int flags = 0;
 					DEBUG_ONLY(time_t result =)
 					parsedate_etc(textControl->Text(), -1,
@@ -2042,9 +2136,17 @@ FindPanel::BuildAttrQuery(BQuery* query, bool& dynamicDate) const
 		if (operatorItem && operatorItem->Message() != NULL) {
 			operatorItem->Message()->FindInt32("operator",
 				(int32*)&theOperator);
-			query->PushOp(theOperator);
+			// (a time that "is" a day is not before the day and not after it: from its start up to its end)
+			query->PushOp(periodEnd != 0 && theOperator == B_EQ ? B_GE : theOperator);
 		} else {
-			query->PushOp(B_EQ);
+			query->PushOp(periodEnd != 0 ? B_GE : B_EQ);
+		}
+
+		if (periodEnd != 0) {
+			query->PushAttr(periodAttribute.String());
+			query->PushInt64(periodEnd);
+			query->PushOp(B_LT);
+			query->PushOp(B_AND);
 		}
 
 		// add logic based on selection in Logic menufield
@@ -2761,6 +2863,7 @@ FindPanel::AddAttrRow()
 	fAttrGrid->SetColumnWeight(2, 10);
 
 	AddAttributeControls(fAttrGrid->CountRows());
+	UpdateDatePickers();
 
 	// add logic to previous attrview
 	if (fAttrGrid->CountRows() > 1)
@@ -2775,6 +2878,86 @@ FindPanel::AddAttrRow()
 }
 
 
+/** SEN: a row that asks for a time (the attribute of the row has the type time) has the arrow of a calendar at the end of its text field; the other rows have none. */
+void
+FindPanel::UpdateDatePickers()
+{
+	if (fAttrGrid == NULL)
+		return;
+
+	if ((int32)fDatePickers.size() < fAttrGrid->CountRows())
+		fDatePickers.resize(fAttrGrid->CountRows(), NULL);
+
+	for (int32 row = 0; row < fAttrGrid->CountRows(); row++) {
+		BString title("TextEntry");
+		title << row;
+		BTextControl* textControl = dynamic_cast<BTextControl*>(FindAttrView(title.String(), row));
+		BMenuField* menuField = dynamic_cast<BMenuField*>(FindAttrView("MenuField", row));
+		BMenuItem* item = menuField != NULL ? menuField->Menu()->FindMarked() : NULL;
+		int32 type = 0;
+		if (item != NULL && item->Message() != NULL)
+			item->Message()->FindInt32("type", &type);
+
+		const bool wanted = textControl != NULL && textControl->Window() != NULL && type == B_TIME_TYPE;
+		::sen::FilterPopUpMenu*& picker = fDatePickers[row];
+		if (wanted && picker == NULL) {
+			picker = new ::sen::FilterPopUpMenu("date", new BMessage());
+			BMessage open(kMsgFindOpenDatePicker);
+			open.AddInt32("row", row);
+			picker->SetArrowMessage(BMessenger(this), open);
+			picker->AttachTo(textControl->TextView());
+		} else if (!wanted && picker != NULL) {
+			delete picker;
+			picker = NULL;
+		}
+	}
+}
+
+
+void
+FindPanel::ClearDatePickers()
+{
+	for (size_t row = 0; row < fDatePickers.size(); row++) {
+		delete fDatePickers[row];
+		fDatePickers[row] = NULL;
+	}
+}
+
+
+/** The calendar below the text field of a row, at the day that the text says (else today); it goes when the window of the query is left. */
+void
+FindPanel::ShowDatePicker(int32 row)
+{
+	if (fDatePicker.IsValid()) {
+		fDatePicker.SendMessage(B_QUIT_REQUESTED);
+		fDatePicker = BMessenger();
+		return;
+	}
+
+	BString title("TextEntry");
+	title << row;
+	BTextControl* textControl = dynamic_cast<BTextControl*>(FindAttrView(title.String(), row));
+	if (textControl == NULL)
+		return;
+
+	BDate date = BDate::CurrentDate(B_LOCAL_TIME);
+	int64 moment, span;
+	if (ParseFindTime(textControl->Text(), &moment, &span)) {
+		struct tm parts;
+		const time_t when = (time_t)moment;
+		if (localtime_r(&when, &parts) != NULL)
+			date.SetDate(parts.tm_year + 1900, parts.tm_mon + 1, parts.tm_mday);
+	}
+
+	BMessage picked(kMsgFindDatePicked);
+	picked.AddInt32("row", row);
+	const BPoint where = textControl->ConvertToScreen(BPoint(0, textControl->Bounds().bottom + 2));
+	::sen::DatePickerWindow* picker = new ::sen::DatePickerWindow(where, date, 0, 0, false, true, BMessenger(this), picked, B_TRANSLATE("All day"), true);
+	fDatePicker = BMessenger(picker);
+	picker->Show();
+}
+
+
 void
 FindPanel::RemoveAttrRow()
 {
@@ -2784,6 +2967,10 @@ FindPanel::RemoveAttrRow()
 	BView* view;
 
 	int32 row = fAttrGrid->CountRows() - 1;
+	if ((size_t)row < fDatePickers.size()) {
+		delete fDatePickers[row];
+		fDatePickers[row] = NULL;
+	}
 	for (int32 col = fAttrGrid->CountColumns(); col > 0; col--) {
 		BLayoutItem* item = fAttrGrid->ItemAt(col - 1, row);
 		if (item == NULL)
@@ -3145,6 +3332,8 @@ FindPanel::RemoveAttrViewItems(bool removeGrid)
 {
 	if (fAttrGrid == NULL)
 		return;
+
+	ClearDatePickers();
 
 	BView* view = fAttrGrid->View();
 	for (int32 index = view->CountChildren(); index > 0; index--) {
@@ -3555,6 +3744,11 @@ FindPanel::AddAttributes(BMenu* menu, const BMimeType& mimeType)
 				message = new BMessage(kAttributeItem);
 				message->AddInt32("operator", B_GT);
 				submenu->AddItem(new BMenuItem(operatorLabels[8], message));
+
+				// SEN: "is" a day (or a month, a year, a minute): within the period that was typed
+				message = new BMessage(kAttributeItem);
+				message->AddInt32("operator", B_EQ);
+				submenu->AddItem(new BMenuItem(operatorLabels[1], message));
 				break;
 		}
 		submenu->SetTargetForItems(this);

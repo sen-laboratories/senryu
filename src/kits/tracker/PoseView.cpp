@@ -2393,6 +2393,25 @@ BPoseView::MessageReceived(BMessage* message)
 				fTextWidgetToCheck->CheckExpiration();
 			break;
 
+		case kMsgOpenDatePicker:
+			if (ActiveTextWidget() != NULL)
+				ActiveTextWidget()->ShowDatePicker(this);
+			break;
+
+		case kMsgDatePicked:
+		{
+			// the day that was picked is the text of the field that is edited; the edit ends with it
+			BString text;
+			BView* scrollView = FindView("BorderView");
+			BTextView* textView = scrollView != NULL
+				? dynamic_cast<BTextView*>(scrollView->FindView("WidgetTextView")) : NULL;
+			if (textView != NULL && message->FindString("text", &text) == B_OK) {
+				textView->SetText(text.String());
+				CommitActivePose(true);
+			}
+			break;
+		}
+
 		case kMsgMouseDragged:
 			MouseDragged(message);
 			break;

@@ -40,8 +40,10 @@ All rights reserved.
 
 #include <Alert.h>
 #include <Catalog.h>
+#include <ControlLook.h>
 #include <Clipboard.h>
 #include <Debug.h>
+#include <DateTime.h>
 #include <Directory.h>
 #include <MessageFilter.h>
 #include <ScrollView.h>
@@ -52,12 +54,14 @@ All rights reserved.
 #include <sen/SenAttrValues.h>
 #include <sen/SenAttributes.h>
 #include <sen/SenFilterMenu.h>
+#include <sen/SenTimeAttributes.h>
 
 #include "Attributes.h"
 #include "ContainerWindow.h"
 #include "Commands.h"
 #include "FSUtils.h"
 #include "PoseView.h"
+#include "SenDatePicker.h"
 #include "Utilities.h"
 
 
@@ -506,6 +510,16 @@ BTextWidget::StartEdit(BPoseView* view, BPose* pose, BColumn* column)
 	if (!IsEditable() || IsActive())
 		return;
 
+	if (fText->IsCheckbox()) {
+		// SEN: a boolean is a check box: the click turns it over and nothing is edited (a file on a volume that cannot be written keeps its value)
+		if (!view->SelectedVolumeIsReadOnly() && fText->ToggleValue()) {
+			const BPoint where = view->ViewMode() == kListMode
+				? BPoint(0, view->IndexOfPose(pose) * view->ListElemHeight()) : pose->Location(view);
+			CheckAndUpdate(where, column, view, true);
+		}
+		return;
+	}
+
 	view->SetActiveTextWidget(this);
 
 	// The initial text color has to be set differently on Desktop
@@ -598,6 +612,14 @@ BTextWidget::StartEdit(BPoseView* view, BPose* pose, BColumn* column)
 		}
 	}
 
+	// SEN: a day or a time has the arrow of its calendar: room for a time that is written out
+	if (!valued && fText->TimeKind() != 0 && !fText->IsReadOnlyFile() && !view->SelectedVolumeIsReadOnly()) {
+		valued = true;
+		const float wanted = std::min(fMaxWidth, textView->StringWidth("0000-00-00 00:00") + ceilf(textView->LineHeight() * 1.1f) + 12);
+		if (rect.Width() < wanted)
+			rect.right = rect.left + wanted - 1;
+	}
+
 	// SEN: the field of an attribute fills its cell (an empty value would be a field that is hard to see and to hit)
 	if (view->ViewMode() == kListMode && column != NULL && column != view->FirstColumn()) {
 		const BRect cell(CalcCellRect(poseLoc, column, view));
@@ -643,6 +665,7 @@ BTextWidget::StartEdit(BPoseView* view, BPose* pose, BColumn* column)
 
 	// SEN: an attribute with common values (an enum in the schema, kept with the MIME type) gets the list that follows the text below the field
 	StartValueList(textView, pose, column);
+	StartDatePicker(textView, view, column);
 
 	textView->SelectAll();
 	textView->ScrollToSelection();
@@ -673,6 +696,74 @@ BTextWidget::StartValueList(BTextView* textView, BPose* pose, BColumn* column)
 
 
 void
+BTextWidget::StartDatePicker(BTextView* textView, BPoseView* view, BColumn* column)
+{
+	// (a field with a list of values has its arrow already; a file that cannot be written has no calendar to change it with)
+	if (fFilterMenu != NULL || fText->TimeKind() == 0 || fText->IsReadOnlyFile() || view->SelectedVolumeIsReadOnly())
+		return;
+
+	fFilterMenu = new ::sen::FilterPopUpMenu(column->AttrName(), new BMessage());
+	fFilterMenu->SetArrowMessage(BMessenger(view), BMessage(kMsgOpenDatePicker));
+	fFilterMenu->AttachTo(textView);
+}
+
+
+/** Opens the calendar below the field (the arrow opens it, a second click on the arrow closes it again), at the day and the time that the text says, else now. */
+void
+BTextWidget::ShowDatePicker(BPoseView* view)
+{
+	if (fDatePicker.IsValid()) {
+		fDatePicker.SendMessage(B_QUIT_REQUESTED);
+		fDatePicker = BMessenger();
+		return;
+	}
+
+	BView* scrollView = view->FindView("BorderView");
+	BTextView* textView = scrollView != NULL ? dynamic_cast<BTextView*>(scrollView->FindView("WidgetTextView")) : NULL;
+	if (textView == NULL)
+		return;
+
+	BDate date = BDate::CurrentDate(B_LOCAL_TIME);
+	time_t now = time(NULL);
+	struct tm parts;
+	int32 hour = 0, minute = 0;
+	if (localtime_r(&now, &parts) != NULL) {
+		hour = parts.tm_hour;
+		minute = parts.tm_min;
+	}
+	bool allDay = false;
+
+	::sen::edtf::Value value;
+	if (::sen::edtf::Parse(textView->Text(), &value, ::sen::timeattr::LocalOffsetAt) && value.valid) {
+		const time_t moment = (time_t)value.earliest;
+		// (an exact time is on the local clock, a day is the moment that it begins at in UTC)
+		const bool found = value.IsExact() ? localtime_r(&moment, &parts) != NULL : gmtime_r(&moment, &parts) != NULL;
+		if (found) {
+			date.SetDate(parts.tm_year + 1900, parts.tm_mon + 1, parts.tm_mday);
+			hour = value.IsExact() ? parts.tm_hour : 0;
+			minute = value.IsExact() ? parts.tm_min : 0;
+			allDay = !value.IsExact();
+		}
+	}
+
+	const BPoint where = view->ConvertToScreen(scrollView->Frame().LeftBottom() + BPoint(0, 2));
+	::sen::DatePickerWindow* picker = new ::sen::DatePickerWindow(where, date, hour, minute,
+		fText->TimeKind() == 2, allDay, BMessenger(view), BMessage(kMsgDatePicked), B_TRANSLATE("All day"));
+	fDatePicker = BMessenger(picker);
+	picker->Show();
+}
+
+
+void
+BTextWidget::CloseDatePicker()
+{
+	if (fDatePicker.IsValid())
+		fDatePicker.SendMessage(B_QUIT_REQUESTED);
+	fDatePicker = BMessenger();
+}
+
+
+void
 BTextWidget::StopEdit(bool saveChanges, BPoint poseLoc, BPoseView* view,
 	BPose* pose, int32 poseIndex)
 {
@@ -695,6 +786,7 @@ BTextWidget::StopEdit(bool saveChanges, BPoint poseLoc, BPoseView* view,
 		return;
 
 	// (the list goes first: it follows the text view)
+	CloseDatePicker();
 	delete fFilterMenu;
 	fFilterMenu = NULL;
 
@@ -807,6 +899,24 @@ BTextWidget::Draw(BRect eraseRect, BRect textRect, BPoseView* view, BView* drawV
 		// let's determine the baseline position
 
 	const char* fittingText = fText->FittingText(view);
+
+	if (fText->IsCheckbox()) {
+		// SEN: a boolean is a check box, greyed where it cannot be changed (the attribute is read-only, or the volume cannot be written)
+		const font_height& height = view->FontInfo();
+		const float size = std::min(ceilf(height.ascent + height.descent), textRect.Height() - 1);
+		BRect box(textRect.left + 1, roundf(textRect.top + (textRect.Height() - size) / 2), 0, 0);
+		box.right = box.left + size - 1;
+		box.bottom = box.top + size - 1;
+
+		uint32 flags = fText->IsChecked() ? BControlLook::B_ACTIVATED : 0;
+		if (!IsEditable() || fText->IsReadOnlyFile() || view->SelectedVolumeIsReadOnly())
+			flags |= BControlLook::B_DISABLED;
+
+		drawView->SetDrawingMode(B_OP_COPY);
+		be_control_look->DrawCheckBox(drawView, box, textRect, ui_color(B_LIST_BACKGROUND_COLOR), flags);
+		drawView->ConstrainClippingRegion(NULL);
+		return;
+	}
 
 	// Draw text outline if enabled unless selected or column resizing.
 	if (drawOutlines) {

@@ -36,6 +36,8 @@ All rights reserved.
 #define _TEXT_WIDGET_H
 
 
+#include <Messenger.h>
+
 #include "Model.h"
 #include "WidgetAttributeText.h"
 
@@ -94,6 +96,10 @@ public:
 
 	void StartEdit(BPoseView*, BPose*, BColumn*);
 	void StartValueList(BTextView* textView, BPose* pose, BColumn* column);
+	void StartDatePicker(BTextView* textView, BPoseView* view, BColumn* column);
+		// SEN: a day or a time gets a calendar that drops down from the arrow of the field
+	void ShowDatePicker(BPoseView* view);
+	void CloseDatePicker();
 	void StopEdit(bool saveChanges, BPoint loc, BPoseView*, BPose*, int32 index);
 
 	void SelectAll(BPoseView* view);
@@ -143,6 +149,8 @@ private:
 
 	// SEN: the list of common values that follows the text while an attribute with an enum is edited
 	::sen::FilterPopUpMenu* fFilterMenu;
+	// SEN: the calendar that drops down from the field of a day or a time (a window that never takes the focus)
+	BMessenger fDatePicker;
 
 	bigtime_t fLastClickedTime;
 	bigtime_t fEditDelay;

@@ -19,3 +19,6 @@ Localisation has low priority for now. These strings were added or changed for S
 | Akita has been updated. Restart it now to use the new version? Your windows are opened again. | TrackerSen | text of that alert |
 | Later | TrackerSen | button |
 | Restart | TrackerSen | button |
+| Sorry, that is not a time. Type a day and time such as 2026-11-12 09:30, or a time that is not exact such as 1994-05~. | WidgetAttributeText | alert when the text typed into the start or end column of the list is no time (the example is not translated) |
+| Sorry, that is not a time. Type a day and time such as 2026-11-12 09:30. | WidgetAttributeText | the same for another time attribute |
+| All day | TextWidget | box in the calendar of a time that is edited in the list: the time of day is left out (the same text is not shown in the Find window, whose calendar is for days) |
