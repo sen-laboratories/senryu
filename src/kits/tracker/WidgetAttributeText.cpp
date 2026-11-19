@@ -73,6 +73,7 @@ All rights reserved.
 #include "Utilities.h"
 #include "ViewState.h"
 
+#include <sen/SenRecurrence.h>
 #include <sen/SenTimeAttributes.h>
 
 
@@ -1900,6 +1901,9 @@ GenericAttributeText::CommitEditedTextFlavor(BTextView* textView)
 		case B_STRING_TYPE:
 			size = fModel->WriteAttr(columnName, type, 0, textView->Text(),
 				(size_t)textView->TextLength() + 1);
+			// how a thing repeats is said in words (Repeats) and as a rule that programs read: the rule follows the words (SenRecurrence.h)
+			if (size >= 0 && sen::recurrence::IsWordsAttribute(columnName))
+				sen::recurrence::SyncFromText(node, textView->Text());
 			break;
 
 		case B_BOOL_TYPE:
