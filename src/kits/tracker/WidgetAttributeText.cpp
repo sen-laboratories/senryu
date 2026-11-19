@@ -35,6 +35,7 @@ All rights reserved.
 
 #include "WidgetAttributeText.h"
 
+#include <algorithm>
 #include <ctype.h>
 #include <stdlib.h>
 #include <strings.h>
@@ -1170,6 +1171,17 @@ DayText(BString* text, time_t stored)
 }
 
 
+// The room that the check box of a boolean needs (the text that is fitted under it is "[x]" or "[ ]", which can be narrower than the box when a font is narrow or the column is)
+static float
+CheckboxWidth(const BPoseView* view)
+{
+	if (view == NULL)
+		return 0;
+	const font_height height = view->FontInfo();
+	return ceilf(height.ascent + height.descent) + 4;
+}
+
+
 static bool
 ParseTimeInWords(const char* text, time_t* result)
 {
@@ -1372,9 +1384,11 @@ GenericAttributeText::FitValue(BString* outString, const BPoseView* view)
 	fOldWidth = fColumn->Width();
 
 	if (!fValueIsDefined) {
-		*outString = IsCheckbox() ? "\xE2\x98\x90" : "-";	// (a check box that is not checked: the control is drawn over it)
+		*outString = IsCheckbox() ? "[ ]" : "-";	// (a check box that is not checked: the control is drawn over it)
 		fTruncatedWidth = TruncString(outString, fFullValueText.String(),
 			fFullValueText.Length(), view, fOldWidth);
+		if (IsCheckbox())
+			fTruncatedWidth = std::max(fTruncatedWidth, CheckboxWidth(view));
 		fDirty = false;
 		return;
 	}
@@ -1440,8 +1454,8 @@ GenericAttributeText::FitValue(BString* outString, const BPoseView* view)
 
  			sprintf(buffer, "%s", fValue.boolt ? "true" : "false");
 			fFullValueText = buffer;
-			// (the text that is fitted is the glyph of a check box, so that a change of the value changes the text and the cell is drawn again; BTextWidget draws a check box over it)
-			strcpy(buffer, fValue.boolt ? "\xE2\x98\x91" : "\xE2\x98\x90");
+			// (the text that is fitted is "[x]" or "[ ]", so that a change of the value changes the text and the cell is drawn again; BTextWidget draws a check box over it)
+			strcpy(buffer, fValue.boolt ? "[x]" : "[ ]");
 			break;
 
 		case B_CHAR_TYPE:
@@ -1517,6 +1531,8 @@ GenericAttributeText::FitValue(BString* outString, const BPoseView* view)
 	}
 	fTruncatedWidth = TruncString(outString, buffer, (ssize_t)strlen(buffer),
 		view, fOldWidth);
+	if (IsCheckbox())
+		fTruncatedWidth = std::max(fTruncatedWidth, CheckboxWidth(view));
 	fDirty = false;
 }
 
