@@ -77,6 +77,14 @@ public:
 	BRect CalcClickRect(BPoint poseLoc, const BColumn*, const BPoseView*);
 		// calls CalcRect, if result too narow, returns a wider rect for
 		// easy clicking
+	BRect CalcHitRect(BPoint poseLoc, const BColumn*, const BPoseView*);
+		// SEN: where a click counts for this widget. In list view the whole
+		// cell of an editable attribute (like a cell of a spreadsheet: an
+		// empty value is as easy to hit as a long one), else CalcClickRect.
+		// The name (first column) keeps the rect of its text: the space after
+		// it is where a rubber band selection starts
+	BRect CalcCellRect(BPoint poseLoc, const BColumn*, const BPoseView*);
+		// SEN: the whole cell of a column in list view (full height of the row)
 	BRect ColumnRect(BPoint poseLoc, const BColumn*, const BPoseView*);
 		// returns the rect of the widget in a column, regardless
 		// of the string width; faster than CalcRect
@@ -109,6 +117,10 @@ public:
 	void CheckExpiration();
 	void CancelWait();
 
+	// SEN: the cell that was clicked is outlined at once, until its edit starts or something else is clicked
+	bool IsArmed() const { return fArmed; }
+	void SetArmed(bool armed) { fArmed = armed; }
+
 	float MaxWidth() { return fMaxWidth; };
 	void SetMaxWidth(float maxWidth) { fMaxWidth = maxWidth; };
 
@@ -125,6 +137,7 @@ private:
 	bool fVisible : 1;
 	bool fActive : 1;
 	bool fSymLink : 1;
+	bool fArmed : 1;
 
 	float fMaxWidth;
 
@@ -132,6 +145,8 @@ private:
 	::sen::FilterPopUpMenu* fFilterMenu;
 
 	bigtime_t fLastClickedTime;
+	bigtime_t fEditDelay;
+		// how long after the click the edit starts (if nothing else is clicked)
 	struct MouseUpParams fParams;
 };
 

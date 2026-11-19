@@ -90,7 +90,10 @@ public:
 		ModelNodeLazyOpener &opener, int32* index = NULL);
 		// adds the widget if needed
 
-	bool PointInPose(BPoint poseLoc, const BPoseView*, BPoint where, BTextWidget** = NULL) const;
+	bool PointInPose(BPoint poseLoc, const BPoseView*, BPoint where, BTextWidget** = NULL,
+		bool forClick = false) const;
+		// SEN: forClick: the whole cell of an editable attribute counts (clicks and drags that start
+		// there), not only its text (drop targets, which must not be wider than what is shown)
 	bool PointInPose(const BPoseView*, BPoint where) const;
 	BRect CalcRect(BPoint loc, const BPoseView*, bool minimal_rect = false) const;
 	BRect CalcRect(const BPoseView*) const;

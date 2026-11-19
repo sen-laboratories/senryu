@@ -84,6 +84,8 @@ const uint32 kCheckTypeahead = 'Tcty';
 
 const uint32 kMsgMouseDragged = 'Mdrg';
 const uint32 kMsgMouseLongDown = 'Mold';
+const uint32 kMsgCheckTextWidget = 'Tctw';
+	// SEN: the pause after a click on a cell is over: the edit may start
 
 
 class BPoseView : public BView {
@@ -263,7 +265,8 @@ public:
 	int32 IndexOfPose(const BPose*) const;
 	BPose* PoseAtIndex(int32 index) const;
 
-	BPose* FindPose(BPoint where, int32* index = NULL) const;
+	BPose* FindPose(BPoint where, int32* index = NULL, bool forClick = false) const;
+		// SEN: forClick: the whole cell of an editable attribute is part of the file (see BPose::PointInPose)
 		// return pose at location h, v (search list starting from
 		// bottom so drawing and hit detection reflect the same pose
 		// ordering)
@@ -439,6 +442,11 @@ public:
 	virtual void AdaptToDesktopIntegrationChange(BMessage*);
 
 	void SetTextWidgetToCheck(BTextWidget*, BTextWidget* = NULL);
+	void StartTextWidgetCheck(BTextWidget*, bigtime_t delay);
+		// SEN: the widget is checked once after the delay (a timer of its own, not the
+		// pulse of the window, which is slow: the edit starts when it is meant to)
+	void SetArmedWidget(BTextWidget*, BPose*);
+		// SEN: the cell that was clicked is outlined until its edit starts
 
 	BTextWidget* ActiveTextWidget() { return fActiveTextWidget; };
 	void SetActiveTextWidget(BTextWidget* w) { fActiveTextWidget = w; };
@@ -830,6 +838,11 @@ private:
 
 	BTextWidget* fTextWidgetToCheck;
 	BTextWidget* fActiveTextWidget;
+	BPose* fArmedPose;
+	uint32 fArmedAttrHash;
+		// the cell that is outlined: of this file, the column of this attribute (looked up when needed:
+		// a pointer to the widget could be left behind by a file that goes)
+	BMessageRunner* fTextWidgetRunner;
 
 private:
 	mutable uint32 fCachedIconSizeFrom;

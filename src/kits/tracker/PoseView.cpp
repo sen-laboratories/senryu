@@ -264,6 +264,9 @@ BPoseView::BPoseView(Model* model, uint32 viewMode)
 	fDeskbarFrame(0, 0, -1, -1),
 	fTextWidgetToCheck(NULL),
 	fActiveTextWidget(NULL),
+	fArmedPose(NULL),
+	fArmedAttrHash(0),
+	fTextWidgetRunner(NULL),
 	fCachedIconSizeFrom(0),
 	fStateNeedsSaving(false),
 	fSavePoseLocations(true),
@@ -309,6 +312,7 @@ BPoseView::~BPoseView()
 	delete fViewState;
 	delete fModel;
 	delete fKeyRunner;
+	delete fTextWidgetRunner;
 	delete fBrokenLinks;
 	delete fDragMessage;
 	delete fCachedTypesList;
@@ -2382,6 +2386,11 @@ BPoseView::MessageReceived(BMessage* message)
 		case kListMode:
 		case kMiniIconMode:
 			SetViewMode(message->what);
+			break;
+
+		case kMsgCheckTextWidget:
+			if (fTextWidgetToCheck != NULL)
+				fTextWidgetToCheck->CheckExpiration();
 			break;
 
 		case kMsgMouseDragged:
@@ -7416,7 +7425,7 @@ BPoseView::ShowContextMenu(BPoint where)
 
 	// handle pose selection
 	int32 index;
-	BPose* clickedPose = FindPose(where, &index);
+	BPose* clickedPose = FindPose(where, &index, true);
 	if (clickedPose != NULL) {
 		if (!clickedPose->IsSelected()) {
 			ClearSelection();
@@ -7636,7 +7645,7 @@ BPoseView::MouseDragged(const BMessage* message)
 	bool extendSelection = (modifiers() & B_COMMAND_KEY) != 0 && fMultipleSelection;
 
 	int32 index;
-	BPose* clickedPose = FindPose(where, &index);
+	BPose* clickedPose = FindPose(where, &index, true);
 	if (clickedPose != NULL)
 		DragSelectedPoses(clickedPose, where, buttons);
 	else if (buttons == B_PRIMARY_MOUSE_BUTTON)
@@ -7708,7 +7717,7 @@ BPoseView::MouseDown(BPoint where)
 	CommitActivePose();
 
 	int32 index;
-	BPose* clickedPose = FindPose(where, &index);
+	BPose* clickedPose = FindPose(where, &index, true);
 	if (clickedPose != NULL) {
 		if (!clickedPose->IsSelected() || !secondaryMouseButtonDown)
 			AddRemoveSelectionRange(where, extendSelection, clickedPose);
@@ -7717,6 +7726,15 @@ BPoseView::MouseDown(BPoint where)
 			&& (clickedPose != fLastClickedPose || secondaryMouseButtonDown)) {
 			fTextWidgetToCheck->CancelWait();
 		}
+
+		// SEN: the cell that is clicked is outlined at once (an editable attribute of the list), the edit follows
+		BTextWidget* clickedWidget = NULL;
+		if (ViewMode() == kListMode && buttons == B_PRIMARY_MOUSE_BUTTON && !extendSelection)
+			clickedPose->PointInPose(BPoint(0, index * fListElemHeight), this, where, &clickedWidget, true);
+		if (clickedWidget != NULL && clickedWidget->IsEditable() && ColumnFor(clickedWidget->AttrHash()) != FirstColumn())
+			SetArmedWidget(clickedWidget, clickedPose);
+		else
+			SetArmedWidget(NULL, NULL);
 
 		if ((mods & B_COMMAND_KEY) != 0 && buttons == B_PRIMARY_MOUSE_BUTTON && WasDoubleClick(clickedPose, where)
 			&& fLastClickButtons == B_PRIMARY_MOUSE_BUTTON) {
@@ -7738,6 +7756,7 @@ BPoseView::MouseDown(BPoint where)
 	} else {
 		// click was not in any pose
 		fLastClickedPose = NULL;
+		SetArmedWidget(NULL, NULL);
 		if (fTextWidgetToCheck != NULL)
 			fTextWidgetToCheck->CancelWait();
 
@@ -7767,6 +7786,43 @@ BPoseView::SetTextWidgetToCheck(BTextWidget* widget, BTextWidget* old)
 
 
 void
+BPoseView::StartTextWidgetCheck(BTextWidget* widget, bigtime_t delay)
+{
+	fTextWidgetToCheck = widget;
+	delete fTextWidgetRunner;
+	// (a little more than the delay: the widget looks at the time itself)
+	fTextWidgetRunner = new BMessageRunner(BMessenger(this), new BMessage(kMsgCheckTextWidget), delay + 5000, 1);
+}
+
+
+void
+BPoseView::SetArmedWidget(BTextWidget* widget, BPose* pose)
+{
+	const uint32 hash = widget != NULL ? widget->AttrHash() : 0;
+	if (fArmedPose == pose && fArmedAttrHash == hash)
+		return;
+
+	// (the cell that was outlined and the one that is: both are drawn again)
+	for (int pass = 0; pass < 2; pass++) {
+		BPose* p = pass == 0 ? fArmedPose : pose;
+		const uint32 attribute = pass == 0 ? fArmedAttrHash : hash;
+		const int32 index = p != NULL ? IndexOfPose(p) : -1;
+		if (index < 0 || ViewMode() != kListMode)
+			continue;		// (the file is not in the list any more)
+		BTextWidget* w = p->WidgetFor(attribute);
+		BColumn* column = ColumnFor(attribute);
+		if (w == NULL || column == NULL)
+			continue;
+		w->SetArmed(pass == 1);
+		Invalidate(w->CalcCellRect(BPoint(0, index * fListElemHeight), column, this));
+	}
+
+	fArmedPose = pose;
+	fArmedAttrHash = hash;
+}
+
+
+void
 BPoseView::MouseUp(BPoint where)
 {
 	ASSERT(Window() != NULL);
@@ -7774,6 +7830,8 @@ BPoseView::MouseUp(BPoint where)
 
 	bool wasDragging = fDragMessage != NULL;
 	bool wasRectSelecting = fSelectionRectInfo.isDragging;
+	if (wasDragging || wasRectSelecting)
+		SetArmedWidget(NULL, NULL);
 	if (wasRectSelecting)
 		_EndSelectionRect();
 
@@ -7781,7 +7839,7 @@ BPoseView::MouseUp(BPoint where)
 	DragStop();
 
 	int32 index;
-	BPose* clickedPose = FindPose(where, &index);
+	BPose* clickedPose = FindPose(where, &index, true);
 	if (clickedPose != NULL && fLastClickedPose != NULL) {
 		// This handy field has been added by the tracking filter.
 		// We need to know last buttons for context-click mouse up tracking,
@@ -8489,7 +8547,7 @@ BPoseView::FindZombie(const node_ref* itemNode, int32* resultIndex)
 // return pose at location h,v (search list starting from bottom so
 // drawing and hit detection reflect the same pose ordering)
 BPose*
-BPoseView::FindPose(BPoint where, int32* poseIndex) const
+BPoseView::FindPose(BPoint where, int32* poseIndex, bool forClick) const
 {
 	const PoseList* poseList = CurrentPoseList();
 	const int32 poseCount = poseList->CountItems();
@@ -8502,7 +8560,7 @@ BPoseView::FindPose(BPoint where, int32* poseIndex) const
 
 		BPoint poseLoc(0, index * fListElemHeight);
 		pose = poseList->ItemAt(index);
-		if (pose != NULL && pose->PointInPose(poseLoc, this, where))
+		if (pose != NULL && pose->PointInPose(poseLoc, this, where, NULL, forClick))
 			return pose;
 	} else {
 		for (int32 index = poseCount - 1; index >= 0; index--) {

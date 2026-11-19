@@ -67,6 +67,9 @@ All rights reserved.
 
 const float kWidthMargin = 20;
 
+// SEN: the pause between a click on an attribute cell and the edit (a double click still opens the file when it is faster)
+const bigtime_t kCellEditDelay = 200000;
+
 
 //	#pragma mark - BTextWidget
 
@@ -80,9 +83,11 @@ BTextWidget::BTextWidget(Model* model, BColumn* column, BPoseView* view)
 	fVisible(true),
 	fActive(false),
 	fSymLink(model->IsSymLink()),
+	fArmed(false),
 	fMaxWidth(0),
 	fFilterMenu(NULL),
-	fLastClickedTime(0)
+	fLastClickedTime(0),
+	fEditDelay(0)
 {
 }
 
@@ -247,17 +252,36 @@ BTextWidget::CalcClickRect(BPoint poseLoc, const BColumn* column, const BPoseVie
 }
 
 
+BRect
+BTextWidget::CalcCellRect(BPoint poseLoc, const BColumn* column, const BPoseView* view)
+{
+	BRect rect;
+	rect.left = roundf(poseLoc.x) + column->Offset();
+	rect.right = rect.left + column->Width() - 1;
+	rect.top = roundf(poseLoc.y);
+	rect.bottom = rect.top + view->ListElemHeight() - 1;
+	return rect;
+}
+
+
+BRect
+BTextWidget::CalcHitRect(BPoint poseLoc, const BColumn* column, const BPoseView* view)
+{
+	if (view->ViewMode() == kListMode && column != NULL && column != view->FirstColumn() && IsEditable() && IsVisible())
+		return CalcCellRect(poseLoc, column, view);
+
+	return CalcClickRect(poseLoc, column, view);
+}
+
+
 void
 BTextWidget::CheckExpiration()
 {
 	if (fLastClickedTime > 0 && IsEditable() && fParams.pose->IsSelected()) {
-		bigtime_t doubleClickSpeed;
-		get_click_speed(&doubleClickSpeed);
-
 		bigtime_t delta = system_time() - fLastClickedTime;
 
-		if (delta > doubleClickSpeed) {
-			// at least 'doubleClickSpeed' microseconds elapsed with no click
+		if (delta >= fEditDelay) {
+			// the pause elapsed with no other click
 			fLastClickedTime = 0;
 			BColumn* column = fParams.poseView->ColumnFor(fAttrHash);
 			StartEdit(fParams.poseView, fParams.pose, column);
@@ -273,22 +297,33 @@ BTextWidget::CancelWait()
 {
 	fLastClickedTime = 0;
 	fParams.poseView->SetTextWidgetToCheck(NULL);
+	// SEN: no edit is coming: the outline of the cell goes
+	fParams.poseView->SetArmedWidget(NULL, NULL);
 }
 
 
 void
 BTextWidget::DoMouseUp(BPoseView* view, BPose* pose)
 {
-	// Register the time of that click.  The PoseView, through its Pulse()
-	// will allow us to StartEdit() if no other click have been registered since
-	// then.
+	// Register the time of that click. The edit starts when the pause has elapsed with no other click (a timer of the PoseView, see StartTextWidgetCheck()).
 
-	// TODO: re-enable modifiers, one should be enough
 	view->SetTextWidgetToCheck(NULL);
-	if (IsEditable() && pose->IsSelected()) {
-		bigtime_t doubleClickSpeed;
-		get_click_speed(&doubleClickSpeed);
+	if (!IsEditable() || !pose->IsSelected() || view->ExtendSelection()) {
+		fLastClickedTime = 0;
+		return;
+	}
 
+	bigtime_t doubleClickSpeed;
+	get_click_speed(&doubleClickSpeed);
+
+	BColumn* column = view->ColumnFor(fAttrHash);
+	if (view->ViewMode() == kListMode && column != NULL && column != view->FirstColumn()) {
+		// SEN: an attribute cell: one click is enough (it selects the file and outlines the cell at once), and the edit follows after a short pause: a click that is part of a
+		// double click, which opens the file, is a faster one
+		fLastClickedTime = system_time();
+		fEditDelay = std::min(doubleClickSpeed, kCellEditDelay);
+	} else {
+		// the name: the first click selects, a second one (after the double click time) renames
 		if (fLastClickedTime == 0) {
 			fLastClickedTime = system_time();
 			if (fLastClickedTime - doubleClickSpeed < pose->SelectionTime())
@@ -296,15 +331,16 @@ BTextWidget::DoMouseUp(BPoseView* view, BPose* pose)
 		} else
 			fLastClickedTime = 0;
 
-		if (fLastClickedTime == 0)
-			return;
+		fEditDelay = doubleClickSpeed;
+	}
 
-		view->SetTextWidgetToCheck(this);
+	if (fLastClickedTime == 0)
+		return;
 
-		fParams.pose = pose;
-		fParams.poseView = view;
-	} else
-		fLastClickedTime = 0;
+	view->StartTextWidgetCheck(this, fEditDelay);
+
+	fParams.pose = pose;
+	fParams.poseView = view;
 }
 
 
@@ -466,6 +502,7 @@ BTextWidget::StartEdit(BPoseView* view, BPose* pose, BColumn* column)
 	ASSERT(pose != NULL);
 
 	view->SetTextWidgetToCheck(NULL, this);
+	view->SetArmedWidget(NULL, NULL);
 	if (!IsEditable() || IsActive())
 		return;
 
@@ -558,6 +595,15 @@ BTextWidget::StartEdit(BPoseView* view, BPose* pose, BColumn* column)
 			const float wanted = std::min(fMaxWidth, widest + ceilf(textView->LineHeight() * 1.1f) + 12);
 			if (rect.Width() < wanted)
 				rect.right = rect.left + wanted - 1;
+		}
+	}
+
+	// SEN: the field of an attribute fills its cell (an empty value would be a field that is hard to see and to hit)
+	if (view->ViewMode() == kListMode && column != NULL && column != view->FirstColumn()) {
+		const BRect cell(CalcCellRect(poseLoc, column, view));
+		if (cell.Width() - 3 > rect.Width()) {
+			rect.left = cell.left + 2;
+			rect.right = cell.right - 2;
 		}
 	}
 
