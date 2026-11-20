@@ -975,6 +975,10 @@ BTextWidget::Draw(BRect eraseRect, BRect textRect, BPoseView* view, BView* drawV
 		drawView->SetHighColor(textColor);
 	}
 
+	// (not applicable: the attribute is none of the type of the file: n/a in the grey of a disabled label)
+	if (fText->IsNotApplicable())
+		drawView->SetHighColor(disable_color(drawView->HighColor(), drawView->LowColor()));
+
 	drawView->DrawString(fittingText, location);
 
 	if (fSymLink && (fAttrHash == view->FirstColumn()->AttrHash())) {

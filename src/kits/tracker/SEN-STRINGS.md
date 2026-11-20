@@ -24,3 +24,4 @@ Localisation has low priority for now. These strings were added or changed for S
 | All day | TextWidget | box in the calendar of a time that is edited in the list: the time of day is left out (the same text is not shown in the Find window, whose calendar is for days) |
 | Custom… | TextWidget | last item of the list of Repeats: opens the window for a repeat cycle |
 | Repeat | PoseView | title of that window (the other texts of it: Every, days, weeks, months, years, Ends, Never, After, times, On (comment: the last day of a repeat), Doesn't repeat, OK, Cancel, and the note that a repeat says more than can be set there) |
+| n/a | WidgetAttributeText | text of a cell (greyed, not editable) whose attribute is none of the type of the file (the Event Type of a calendar); comment: not applicable |

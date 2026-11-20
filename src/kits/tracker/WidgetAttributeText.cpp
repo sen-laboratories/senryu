@@ -37,6 +37,8 @@ All rights reserved.
 
 #include <algorithm>
 #include <map>
+#include <set>
+#include <string>
 #include <string>
 #include <ctype.h>
 #include <stdlib.h>
@@ -48,6 +50,10 @@ All rights reserved.
 #include <Alert.h>
 #include <AppFileInfo.h>
 #include <Catalog.h>
+#include <sen/SenAttributes.h>
+#include <MimeType.h>
+#include <Locker.h>
+#include <Autolock.h>
 #include <DateTime.h>
 #include <DateFormat.h>
 #include <DateTimeFormat.h>
@@ -1196,6 +1202,84 @@ ModificationTimeAttributeText::ReadValue()
 //	#pragma mark - GenericAttributeText
 
 
+// SEN: the attributes that the types of a file define (the attribute infos of its type and of its semantic type META:TYPE, with those of the supertype), by type, kept for a few seconds (the
+// types change when ontologies are installed). A type that defines none says nothing about the attribute: the cell is edited as before.
+namespace {
+
+struct TypeAttributes {
+	bigtime_t				read;
+	std::set<std::string>	names;
+};
+
+static BLocker sTypeAttributesLock("type attributes");
+static std::map<std::string, TypeAttributes> sTypeAttributes;
+static const bigtime_t kTypeAttributesLifetime = 10 * 1000000LL;
+
+void
+AddAttributeNames(BMimeType& type, std::set<std::string>* names)
+{
+	BMessage info;
+	if (type.GetAttrInfo(&info) != B_OK)
+		return;
+	const char* name;
+	for (int32 i = 0; info.FindString("attr:name", i, &name) == B_OK; i++)
+		names->insert(name);
+}
+
+// the attributes of the type and of its supertype
+std::set<std::string>
+AttributesOfType(const char* typeName)
+{
+	BAutolock locker(sTypeAttributesLock);
+	const bigtime_t now = system_time();
+	auto found = sTypeAttributes.find(typeName);
+	if (found != sTypeAttributes.end() && now - found->second.read < kTypeAttributesLifetime)
+		return found->second.names;
+
+	TypeAttributes entry;
+	entry.read = now;
+	BMimeType type(typeName);
+	if (type.InitCheck() == B_OK) {
+		AddAttributeNames(type, &entry.names);
+		BMimeType super;
+		if (type.GetSupertype(&super) == B_OK)
+			AddAttributeNames(super, &entry.names);
+	}
+	sTypeAttributes[typeName] = entry;
+	return entry.names;
+}
+
+}	// namespace
+
+
+// Whether the attribute is part of what the file is: false if the types of the file (its type and META:TYPE) define attributes but not this one. A type that defines no attributes, and the
+// properties of a relation (SEN:REL:...), which belong to the relation and not to the type of the file, leave the cell as it was.
+static bool
+AttributeBelongsToFile(Model* model, const char* attribute)
+{
+	if (model == NULL || attribute == NULL || strncmp(attribute, "SEN:REL:", 8) == 0)
+		return true;
+
+	std::set<std::string> types;
+	if (model->MimeType() != NULL && model->MimeType()[0] != '\0')
+		types.insert(model->MimeType());
+	if (model->Node() != NULL) {
+		BString semanticType;
+		if (model->Node()->ReadAttrString(::sen::attr::kType, &semanticType) == B_OK && !semanticType.IsEmpty())
+			types.insert(semanticType.String());
+	}
+
+	bool typesDefineAttributes = false;
+	for (const std::string& type : types) {
+		const std::set<std::string> names = AttributesOfType(type.c_str());
+		if (names.count(attribute) > 0)
+			return true;
+		typesDefineAttributes = typesDefineAttributes || !names.empty();
+	}
+	return !typesDefineAttributes;
+}
+
+
 // The start and the end of a thing (`schema:startDate`, `schema:endDate`) keep the text of a fuzzy value beside the time; they are shown and edited through sen::timeattr (SenTimeAttributes.h),
 // as in Shoji. Other times are edited as `YYYY-MM-DD hh:mm[:ss]`; what parsedate() makes of a text it does not know (a year before 1970 or after 2037, a month alone) is wrong, so it is
 // only the way to read what people write in words (12 Nov 2026 9:30), and the result is taken only if its year is the year in the text.
@@ -1259,7 +1343,8 @@ GenericAttributeText::GenericAttributeText(const Model* model,
 	const BColumn* column)
 	:
 	StringAttributeText(model, column),
-	fReadOnlyFile(false)
+	fReadOnlyFile(false),
+	fNotApplicable(false)
 {
 }
 
@@ -1297,6 +1382,7 @@ GenericAttributeText::ReadValue(BString* outString)
 	fFullValueText = "-";
 	fFuzzyText = "";
 	fReadOnlyFile = false;
+	fNotApplicable = false;
 	if (fModel->NodeRef() != NULL) {
 		BVolume volume(fModel->NodeRef()->device);
 		fReadOnlyFile = volume.InitCheck() == B_OK && volume.IsReadOnly();
@@ -1414,6 +1500,12 @@ GenericAttributeText::ReadValue(BString* outString)
 			}
 			break;
 		}
+	}
+
+	// no value, and the type of the file does not have the attribute: n/a (the Event Type of a calendar), not a "-" that looks as if it could be set
+	if (!fValueIsDefined && !AttributeBelongsToFile(fModel, fColumn->AttrName())) {
+		fNotApplicable = true;
+		fFullValueText = B_TRANSLATE_COMMENT("n/a", "not applicable: the attribute of the column is none of the file's type");
 	}
 
 	// a start or an end that was said fuzzily (1994-05~) is shown as it was said, not as the moment that is stored for it
@@ -1716,9 +1808,16 @@ GenericAttributeText::CommitEditedText(BTextView* textView)
 
 
 bool
+GenericAttributeText::IsEditable() const
+{
+	return !fNotApplicable && StringAttributeText::IsEditable();
+}
+
+
+bool
 GenericAttributeText::IsCheckbox() const
 {
-	return fColumn->AttrType() == B_BOOL_TYPE;
+	return !fNotApplicable && fColumn->AttrType() == B_BOOL_TYPE;
 }
 
 
@@ -1739,7 +1838,7 @@ GenericAttributeText::IsReadOnlyFile() const
 int32
 GenericAttributeText::TimeKind() const
 {
-	if (fColumn->AttrType() != B_TIME_TYPE)
+	if (fNotApplicable || fColumn->AttrType() != B_TIME_TYPE)
 		return 0;
 
 	const char* displayAs = fColumn->DisplayAs();
