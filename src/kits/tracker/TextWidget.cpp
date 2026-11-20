@@ -975,11 +975,16 @@ BTextWidget::Draw(BRect eraseRect, BRect textRect, BPoseView* view, BView* drawV
 		drawView->SetHighColor(textColor);
 	}
 
-	// (not applicable: the attribute is none of the type of the file: n/a in the grey of a disabled label)
-	if (fText->IsNotApplicable())
-		drawView->SetHighColor(disable_color(drawView->HighColor(), drawView->LowColor()));
+	// (not applicable: the attribute is none of the type of the file: n/a in the grey of a disabled label. The pen of the view is shared with the cells that are drawn next: it is put back)
+	const rgb_color penColor = drawView->HighColor();
+	const bool notApplicable = fText->IsNotApplicable();
+	if (notApplicable)
+		drawView->SetHighColor(disable_color(penColor, drawView->LowColor()));
 
 	drawView->DrawString(fittingText, location);
+
+	if (notApplicable)
+		drawView->SetHighColor(penColor);
 
 	if (fSymLink && (fAttrHash == view->FirstColumn()->AttrHash())) {
 		// TODO:
