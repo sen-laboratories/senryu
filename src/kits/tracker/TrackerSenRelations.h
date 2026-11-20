@@ -43,6 +43,13 @@ public:
 	 * @param destination NULL: the entities are those of the Library (one that is kept is found). A folder: they are made there, a copy of one that is kept elsewhere too (what was dropped in it).
 	 */
 	static status_t		MaterialiseItems(const std::vector<entry_ref>& items, std::vector<entry_ref>* entities, const entry_ref* destination = NULL);
+
+	/**
+	 * An item of the menu of a relation whose items stand for entities (an event of a calendar) is opened as the entity: it is made, or found if it is there already (in the temporary folder of the
+	 * relation), and handed to Akita to open with the default application of its type. It is done in a thread of its own (the plugin may have to read a calendar of years), the menu goes away at once.
+	 * @param properties the item as the menu has it (what the plugin said of it)
+	 */
+	static void			OpenItemAsEntity(const entry_ref& source, const char* relationType, const BMessage& properties);
 	/** The relations of SEN are for files and folders: not for the Trash and what is in it, and not for the Desktop folder itself.
 	 *  (The folders are those of find_directory(), on the volume of the item.) */
 	static bool			HasNoRelations(const entry_ref* ref);

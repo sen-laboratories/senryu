@@ -30,6 +30,7 @@
 
 #include <sen/Sen.h>
 #include <sen/SenOntoCore.h>
+#include <sen/SenOntoTemporal.h>
 #include <sen/SenIdList.h>
 #include <sen/SenLookup.h>
 #include <sen/Sensei.h>
@@ -932,6 +933,68 @@ TrackerSenRelations::MaterialiseItems(const std::vector<entry_ref>& items, std::
 		}
 	}
 	return status;
+}
+
+
+namespace {
+
+struct ItemToOpen {
+	entry_ref	source;
+	BString		relationType;
+	BMessage	properties;
+};
+
+int32
+OpenItemThread(void* data)
+{
+	ItemToOpen* item = static_cast<ItemToOpen*>(data);
+
+	BMessenger server(sen::kServerSignature);
+	if (server.IsValid()) {
+		BMessage request(sen::cmd::kRelationsMaterialise);
+		request.AddRef(sen::key::kSourceRef, &item->source);
+		request.AddString(sen::key::kRelationType, item->relationType);
+		request.AddMessage(sen::key::kRelationProperties, &item->properties);
+
+		BMessage reply;
+		// (the plugin is started and may read a calendar of years: the server gives up on it after 90 s)
+		status_t result = server.SendMessage(&request, &reply, 100000000, 100000000);
+		if (result == B_OK)
+			result = reply.GetInt32(sen::key::kResult, B_ERROR);
+		BMessage target;
+		entry_ref entity;
+		if (result == B_OK && reply.FindMessage(sensei::key::kTargets, 0, &target) == B_OK && target.FindRef(sen::key::kTargetRef, &entity) == B_OK) {
+			// (as any file that is opened: with the default application of its type)
+			BMessage* open = new BMessage(B_REFS_RECEIVED);
+			open->AddRef("refs", &entity);
+			be_app_messenger.SendMessage(open);
+		} else
+			ERROR("the SEN server could not make the entity of an item of %s: %s\n", item->relationType.String(), strerror(result));
+	}
+	delete item;
+	return 0;
+}
+
+}	// namespace
+
+
+void
+TrackerSenRelations::OpenItemAsEntity(const entry_ref& source, const char* relationType, const BMessage& properties)
+{
+	ItemToOpen* item = new ItemToOpen();
+	item->source = source;
+	item->relationType = relationType;
+	item->properties = properties;
+	// (the id of the item as the files of the items have it, which is what the plugin gives back with the entity)
+	if (!item->properties.HasString(sen::key::kItemId) && item->properties.HasString(sensei::key::kItemId))
+		item->properties.AddString(sen::key::kItemId, item->properties.GetString(sensei::key::kItemId, ""));
+	// (what makes the item the same one again, its identifier, as the plugin of the calendar says it in a listing: `uid`)
+	if (!item->properties.HasString(sen::onto::temporal::attr::kUid) && item->properties.HasString("uid"))
+		item->properties.AddString(sen::onto::temporal::attr::kUid, item->properties.GetString("uid", ""));
+
+	thread_id thread = spawn_thread(OpenItemThread, "open item as entity", B_NORMAL_PRIORITY, item);
+	if (thread < B_OK || resume_thread(thread) != B_OK)
+		delete item;
 }
 
 
