@@ -8,7 +8,7 @@ resource app_version {
 	middle     = 0,
 	minor      = 0,
 	variety    = B_APPV_BETA,
-	internal   = 8,
+	internal   = 9,
 	short_info = "Akita",
 	long_info  = "Akita 1.0.0-beta.8, the Tracker of SEN\n"
 		"©1991-2001 Be, Inc.,\n"
