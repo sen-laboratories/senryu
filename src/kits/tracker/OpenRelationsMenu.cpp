@@ -20,6 +20,7 @@
 #include "TrackerSenRelations.h"
 
 #include <Alert.h>
+#include <Bitmap.h>
 #include <Button.h>
 #include <Catalog.h>
 #include <Debug.h>
@@ -43,6 +44,23 @@
 #include <strings.h>
 #include "TrackerSenLog.h"
 
+/**
+ * The entry of a relation in a menu: a relation is a folder of what it relates, so it has the icon of the folder of its type (the folder of the system if the type has none). The items
+ * inside the menu are what is related and have the icons of their own types (an event the calendar).
+ */
+static BMenuItem*
+FolderIconItem(BMenu* menu, BMessage* message, const char* relationType)
+{
+	BBitmap* icon = TrackerSenRelations::FolderIconBitmap(relationType, B_MINI_ICON);
+	BMenuItem* item = icon != NULL ? new IconMenuItem(menu, message, icon, B_MINI_ICON) : new IconMenuItem(menu, message, relationType);
+	delete icon;
+	return item;
+}
+
+
+const char* const OpenRelationsMenu::kMaterialiseItems = "SEN:materialiseItems";
+
+
 OpenRelationsMenu::OpenRelationsMenu(const char* label, const BMessage* entriesToOpen,
 	BWindow* parentWindow, const BMessenger& target)
 	:
@@ -62,14 +80,49 @@ OpenRelationsMenu::OpenRelationsMenu(const char* label, const BMessage* entriesT
 	fEntriesToOpen.FindRef("refs", &fSourceRef);
 }
 
+void
+OpenRelationsMenu::MaterialiseSources()
+{
+	std::vector<entry_ref> refs, items;
+	std::vector<size_t> itemAt;
+	entry_ref each;
+	for (int32 index = 0; fEntriesToOpen.FindRef("refs", index, &each) == B_OK; index++) {
+		refs.push_back(each);
+		if (TrackerSenRelations::IsMaterialisableItem(each)) {
+			items.push_back(each);
+			itemAt.push_back(refs.size() - 1);
+		}
+	}
+	if (items.empty())
+		return;
+
+	std::vector<entry_ref> entities;
+	TrackerSenRelations::MaterialiseItems(items, &entities);
+	for (size_t i = 0; i < items.size(); i++) {
+		// (an item that could not be made an entity is its target again: the relations of the calendar, as before)
+		refs[itemAt[i]] = entities[i].name != NULL ? entities[i] : TrackerSenRelations::RelationTargetOrSelf(&items[i]);
+	}
+	fEntriesToOpen.RemoveName("refs");
+	for (const entry_ref& ref : refs)
+		fEntriesToOpen.AddRef("refs", &ref);
+	fEntriesToOpen.FindRef("refs", &fSourceRef);
+}
+
+
 bool
 OpenRelationsMenu::StartBuildingItemList()
 {
+	// a menu that is greyed out shows nothing and asks nothing of the server (the plugins are not started to work out what nobody can open)
+	if (!IsEnabled())
+		return false;
     if (! be_roster->IsRunning(sen::kServerSignature)) {
         PRINT(("failed to reach SEN server, please start process '%s' first.\n", sen::kServerSignature));
         return false;
     }
 	fSenMessenger = BMessenger(sen::kServerSignature);
+
+	if (fEntriesToOpen.GetBool(kMaterialiseItems, false))
+		MaterialiseSources();
 
 	// get relations for all refs received, 'what' field contains relation type (ALL or SELF)
 	BMessage message(fEntriesToOpen);
@@ -301,9 +354,9 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 		// get label from relation config
 		BString label = ResolveRelationLabel(relationConfigs, typeName);
 
-        BMenuItem* item = new IconMenuItem(
+        BMenuItem* item = FolderIconItem(
             new OpenRelationTargetsMenu(label.String(), message, fParentWindow, fTrackerMessenger),
-										openRelationTargetsMsg, typeName);
+										openRelationTargetsMsg, typeName.String());
 
 		// redirect open relation targets message to Tracker app directly
 		item->SetTarget(be_app_messenger);
@@ -341,7 +394,7 @@ uint32 OpenRelationsMenu::AddRelationItems(const entry_ref* sourceRef) {
 		openGroup->AddString(sen::key::kSourceId, srcId);
 		openGroup->AddString(sen::conf::kGroup, std::get<0>(each));
 		RelationContexts::Tag(openGroup, contextId);
-		BMenuItem* groupItem = new IconMenuItem(std::get<1>(each), openGroup, std::get<2>(each).String());
+		BMenuItem* groupItem = FolderIconItem(std::get<1>(each), openGroup, std::get<2>(each).String());
 		groupItem->SetTarget(be_app_messenger);
 		AddItem(groupItem);
 	}
@@ -474,10 +527,10 @@ uint32 OpenRelationsMenu::AddSelfRelationItems(const entry_ref* sourceRef) {
 		// get label from relation config
 		BString label = ResolveRelationLabel(relationConfigs, defaultType);
 
-        BMenuItem* item = new IconMenuItem(
+        BMenuItem* item = FolderIconItem(
             new OpenRelationTargetsMenu(label.String(), new BMessage(message), fParentWindow, be_app_messenger),
             new BMessage(openRelationTargetsMsg),
-			defaultType
+			defaultType.String()
         );
 		// redirect open relation targets message to Tracker app directly
 		item->SetTarget(be_app_messenger);

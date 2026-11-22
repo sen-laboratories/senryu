@@ -97,6 +97,8 @@ All rights reserved.
 #undef B_TRANSLATION_CONTEXT
 #define B_TRANSLATION_CONTEXT "Tracker"
 
+void StartWatchingForAkitaUpdate();
+
 
 // prototypes for some private kernel calls that will some day be public
 #ifndef _IMPEXP_ROOT
@@ -1640,6 +1642,9 @@ TTracker::ReadyToRun()
 		// the mount_server will have mounted the previous volumes already.
 		_OpenPreviouslyOpenedWindows();
 	}
+
+	// SEN: a new package of Akita while this one runs: offer a restart (TrackerSen.cpp)
+	StartWatchingForAkitaUpdate();
 }
 
 

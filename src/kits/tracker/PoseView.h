@@ -48,6 +48,7 @@ All rights reserved.
 #include "PendingNodeMonitorCache.h"
 #include "PoseList.h"
 #include <sen/Sen.h>
+#include <vector>
 #include "TitleView.h"
 #include "Utilities.h"
 #include "ViewState.h"
@@ -83,6 +84,13 @@ const uint32 kCheckTypeahead = 'Tcty';
 
 const uint32 kMsgMouseDragged = 'Mdrg';
 const uint32 kMsgMouseLongDown = 'Mold';
+const uint32 kMsgCheckTextWidget = 'Tctw';
+// SEN: the calendar of a day or time that is edited (opened by the arrow of the field; its pick is the text of the field, which ends the edit)
+const uint32 kMsgOpenDatePicker = 'Tdpo';
+const uint32 kMsgOpenRepeatPicker = 'Trpo';
+const uint32 kMsgDatePicked = 'Tdpk';
+const uint32 kMsgDateChanged = 'Tdpc';
+	// SEN: the pause after a click on a cell is over: the edit may start
 
 
 class BPoseView : public BView {
@@ -262,7 +270,8 @@ public:
 	int32 IndexOfPose(const BPose*) const;
 	BPose* PoseAtIndex(int32 index) const;
 
-	BPose* FindPose(BPoint where, int32* index = NULL) const;
+	BPose* FindPose(BPoint where, int32* index = NULL, bool forClick = false) const;
+		// SEN: forClick: the whole cell of an editable attribute is part of the file (see BPose::PointInPose)
 		// return pose at location h, v (search list starting from
 		// bottom so drawing and hit detection reflect the same pose
 		// ordering)
@@ -343,6 +352,7 @@ public:
 	void SetActivePose(BPose*);
 	BPose* ActivePose() const;
 	void CommitActivePose(bool saveChanges = true);
+	void OpenRepeatPicker();
 	static bool PoseVisible(const Model*, const PoseInfo*);
 	bool FrameForPose(BPose* targetPose, bool convert, BRect* poseRect);
 	bool CreateSymlinkPoseTarget(Model* symlink);
@@ -438,6 +448,11 @@ public:
 	virtual void AdaptToDesktopIntegrationChange(BMessage*);
 
 	void SetTextWidgetToCheck(BTextWidget*, BTextWidget* = NULL);
+	void StartTextWidgetCheck(BTextWidget*, bigtime_t delay);
+		// SEN: the widget is checked once after the delay (a timer of its own, not the
+		// pulse of the window, which is slow: the edit starts when it is meant to)
+	void SetArmedWidget(BTextWidget*, BPose*);
+		// SEN: the cell that was clicked is outlined until its edit starts
 
 	BTextWidget* ActiveTextWidget() { return fActiveTextWidget; };
 	void SetActiveTextWidget(BTextWidget* w) { fActiveTextWidget = w; };
@@ -477,6 +492,13 @@ protected:
 	status_t RequestOpenRelations(uint32 what, OpenRelationsRequest* request);
 	status_t ExtractRefsFromSelection(BMessage* refs);
 	status_t EnrichRefsFromSelection(bool wipe = true);
+	/** The items of a relation whose items are entities (the events of a calendar) among the selected files become files of their own in the Library (kCopyToLibrary). */
+	status_t CopySelectionToLibrary();
+	/**
+	 * Makes the entities of the items of a relation whose items are entities (the events of a calendar) in @p folder, the place where they were dropped (a thread of its own: the plugin
+	 * is started). Tells when an item could not be made. The files appear in the folder as any file does.
+	 */
+	static void MaterialiseItemsInto(const std::vector<entry_ref>& items, const entry_ref& folder);
 	status_t EnrichRefWithPlugin(const entry_ref* ref, bool wipe = true);
 
 	bool SetProperty(BMessage* message, BMessage* specifier, int32 form,
@@ -822,6 +844,11 @@ private:
 
 	BTextWidget* fTextWidgetToCheck;
 	BTextWidget* fActiveTextWidget;
+	BPose* fArmedPose;
+	uint32 fArmedAttrHash;
+		// the cell that is outlined: of this file, the column of this attribute (looked up when needed:
+		// a pointer to the widget could be left behind by a file that goes)
+	BMessageRunner* fTextWidgetRunner;
 
 private:
 	mutable uint32 fCachedIconSizeFrom;

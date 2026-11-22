@@ -36,7 +36,10 @@ All rights reserved.
 
 #include "PoseView.h"
 
+#include <Roster.h>
+
 #include <sen/Sen.h>
+#include <sen/SenRepeatPicker.h>
 #include "RelationFolders.h"
 #include "SenCursors.h"
 #include "TrackerSenRelations.h"
@@ -45,6 +48,7 @@ All rights reserved.
 #include <algorithm>
 #include <functional>
 #include <map>
+#include <vector>
 
 #include <ctype.h>
 #include <errno.h>
@@ -265,6 +269,9 @@ BPoseView::BPoseView(Model* model, uint32 viewMode)
 	fDeskbarFrame(0, 0, -1, -1),
 	fTextWidgetToCheck(NULL),
 	fActiveTextWidget(NULL),
+	fArmedPose(NULL),
+	fArmedAttrHash(0),
+	fTextWidgetRunner(NULL),
 	fCachedIconSizeFrom(0),
 	fStateNeedsSaving(false),
 	fSavePoseLocations(true),
@@ -310,6 +317,7 @@ BPoseView::~BPoseView()
 	delete fViewState;
 	delete fModel;
 	delete fKeyRunner;
+	delete fTextWidgetRunner;
 	delete fBrokenLinks;
 	delete fDragMessage;
 	delete fCachedTypesList;
@@ -1176,6 +1184,43 @@ BPoseView::SetActivePose(BPose* pose)
 		CommitActivePose();
 		fActivePose = pose;
 	}
+}
+
+
+/**
+ * Opens the window for how a thing repeats (every N weeks, the weekdays, how long) for the file whose Repeats is edited: the edit ends without its text (the list of values said `Custom...`),
+ * the window writes the words and the rule itself. The attribute changes are seen by the node monitor as any other.
+ */
+void
+BPoseView::OpenRepeatPicker()
+{
+	BPose* pose = ActivePose();
+	BView* scrollView = FindView("BorderView");
+	BTextView* textView = scrollView != NULL ? dynamic_cast<BTextView*>(scrollView->FindView("WidgetTextView")) : NULL;
+	if (pose == NULL || pose->TargetModel() == NULL || textView == NULL)
+		return;
+
+	const entry_ref ref = *pose->TargetModel()->EntryRef();
+	const BPoint where = textView->ConvertToScreen(BPoint(textView->Bounds().left, textView->Bounds().bottom + 2));
+	CommitActivePose(false);
+
+	::sen::RepeatPickerLabels labels;
+	labels.title = B_TRANSLATE("Repeat");
+	labels.every = B_TRANSLATE("Every");
+	labels.units[0] = B_TRANSLATE("days");
+	labels.units[1] = B_TRANSLATE("weeks");
+	labels.units[2] = B_TRANSLATE("months");
+	labels.units[3] = B_TRANSLATE("years");
+	labels.ends = B_TRANSLATE("Ends");
+	labels.never = B_TRANSLATE("Never");
+	labels.after = B_TRANSLATE("After");
+	labels.times = B_TRANSLATE("times");
+	labels.on = B_TRANSLATE_COMMENT("On", "the last day of a repeat");
+	labels.doesNotRepeat = B_TRANSLATE("Doesn't repeat");
+	labels.ok = B_TRANSLATE("OK");
+	labels.cancel = B_TRANSLATE("Cancel");
+	labels.more = B_TRANSLATE("This repeat says more than can be set here; OK replaces it.");
+	new ::sen::RepeatPickerWindow(where, ref, BMessenger(this), NULL, labels);
 }
 
 
@@ -2392,6 +2437,48 @@ BPoseView::MessageReceived(BMessage* message)
 		case kMiniIconMode:
 			SetViewMode(message->what);
 			break;
+
+		case kMsgCheckTextWidget:
+			if (fTextWidgetToCheck != NULL)
+				fTextWidgetToCheck->CheckExpiration();
+			break;
+
+		case kMsgOpenDatePicker:
+			if (ActiveTextWidget() != NULL)
+				ActiveTextWidget()->ShowDatePicker(this);
+			break;
+
+		case kMsgOpenRepeatPicker:
+			OpenRepeatPicker();
+			break;
+
+		case kMsgDateChanged:
+		{
+			// the time of day or All day was changed in the calendar: the field has it at once, the edit is completed by Enter or by leaving the field
+			BString text;
+			BView* scrollView = FindView("BorderView");
+			BTextView* textView = scrollView != NULL
+				? dynamic_cast<BTextView*>(scrollView->FindView("WidgetTextView")) : NULL;
+			if (textView != NULL && message->FindString("text", &text) == B_OK) {
+				textView->SetText(text.String());
+				textView->Select(textView->TextLength(), textView->TextLength());
+			}
+			break;
+		}
+
+		case kMsgDatePicked:
+		{
+			// the day that was picked is the text of the field that is edited; the edit ends with it
+			BString text;
+			BView* scrollView = FindView("BorderView");
+			BTextView* textView = scrollView != NULL
+				? dynamic_cast<BTextView*>(scrollView->FindView("WidgetTextView")) : NULL;
+			if (textView != NULL && message->FindString("text", &text) == B_OK) {
+				textView->SetText(text.String());
+				CommitActivePose(true);
+			}
+			break;
+		}
 
 		case kMsgMouseDragged:
 			MouseDragged(message);
@@ -5403,6 +5490,37 @@ BPoseView::MoveSelectionInto(Model* destFolder, BContainerWindow* srcWindow,
 			moveMode = kCopySelectionTo;
 		}
 
+		// SEN: the items of a relation whose items are entities (the events of a calendar) are made as the entities, in the folder they were dropped in: a copy of the file of
+		// such an item would copy the relation. (The other files of the selection, and the links, are copied as before.)
+		if ((moveMode == kCopySelectionTo || moveMode == kMoveSelectionTo) && !destIsTrash && srcWindow->TargetModel() != NULL
+				&& TrackerSenRelations::IsInRelationView(srcWindow->TargetModel()->EntryRef())
+				&& !TrackerSenRelations::IsInRelationView(destFolder->EntryRef())) {
+			std::vector<entry_ref> items;
+			const int32 listed = srcList->CountItems();
+			const bool parallel = pointList != NULL && pointList->CountItems() == listed;
+			for (int32 i = listed - 1; i >= 0; i--) {
+				if (!TrackerSenRelations::IsMaterialisableItem(*srcList->ItemAt(i)))
+					continue;
+				items.insert(items.begin(), *srcList->ItemAt(i));
+				delete srcList->RemoveItemAt(i);
+				if (parallel)
+					delete (BPoint*)pointList->RemoveItem(i);
+			}
+			if (!items.empty()) {
+				MaterialiseItemsInto(items, *destFolder->EntryRef());
+				if (srcList->CountItems() == 0) {
+					delete srcList;
+					delete destEntry;
+					if (pointList != NULL) {
+						for (int32 i = 0; i < pointList->CountItems(); i++)
+							delete (BPoint*)pointList->ItemAt(i);
+						delete pointList;
+					}
+					return;
+				}
+			}
+		}
+
 		// move will replace current selection
 		if (moveMode == kMoveSelectionTo && destWindow != NULL && destWindow->LockLooper()) {
 			destWindow->PoseView()->ClearSelection();
@@ -7394,7 +7512,7 @@ BPoseView::ShowContextMenu(BPoint where)
 
 	// handle pose selection
 	int32 index;
-	BPose* clickedPose = FindPose(where, &index);
+	BPose* clickedPose = FindPose(where, &index, true);
 	if (clickedPose != NULL) {
 		if (!clickedPose->IsSelected()) {
 			ClearSelection();
@@ -7614,7 +7732,7 @@ BPoseView::MouseDragged(const BMessage* message)
 	bool extendSelection = (modifiers() & B_COMMAND_KEY) != 0 && fMultipleSelection;
 
 	int32 index;
-	BPose* clickedPose = FindPose(where, &index);
+	BPose* clickedPose = FindPose(where, &index, true);
 	if (clickedPose != NULL)
 		DragSelectedPoses(clickedPose, where, buttons);
 	else if (buttons == B_PRIMARY_MOUSE_BUTTON)
@@ -7686,7 +7804,7 @@ BPoseView::MouseDown(BPoint where)
 	CommitActivePose();
 
 	int32 index;
-	BPose* clickedPose = FindPose(where, &index);
+	BPose* clickedPose = FindPose(where, &index, true);
 	if (clickedPose != NULL) {
 		if (!clickedPose->IsSelected() || !secondaryMouseButtonDown)
 			AddRemoveSelectionRange(where, extendSelection, clickedPose);
@@ -7695,6 +7813,15 @@ BPoseView::MouseDown(BPoint where)
 			&& (clickedPose != fLastClickedPose || secondaryMouseButtonDown)) {
 			fTextWidgetToCheck->CancelWait();
 		}
+
+		// SEN: the cell that is clicked is outlined at once (an editable attribute of the list), the edit follows
+		BTextWidget* clickedWidget = NULL;
+		if (ViewMode() == kListMode && buttons == B_PRIMARY_MOUSE_BUTTON && !extendSelection)
+			clickedPose->PointInPose(BPoint(0, index * fListElemHeight), this, where, &clickedWidget, true);
+		if (clickedWidget != NULL && clickedWidget->IsEditable() && ColumnFor(clickedWidget->AttrHash()) != FirstColumn())
+			SetArmedWidget(clickedWidget, clickedPose);
+		else
+			SetArmedWidget(NULL, NULL);
 
 		if ((mods & B_COMMAND_KEY) != 0 && buttons == B_PRIMARY_MOUSE_BUTTON && WasDoubleClick(clickedPose, where)
 			&& fLastClickButtons == B_PRIMARY_MOUSE_BUTTON) {
@@ -7716,6 +7843,7 @@ BPoseView::MouseDown(BPoint where)
 	} else {
 		// click was not in any pose
 		fLastClickedPose = NULL;
+		SetArmedWidget(NULL, NULL);
 		if (fTextWidgetToCheck != NULL)
 			fTextWidgetToCheck->CancelWait();
 
@@ -7745,6 +7873,43 @@ BPoseView::SetTextWidgetToCheck(BTextWidget* widget, BTextWidget* old)
 
 
 void
+BPoseView::StartTextWidgetCheck(BTextWidget* widget, bigtime_t delay)
+{
+	fTextWidgetToCheck = widget;
+	delete fTextWidgetRunner;
+	// (a little more than the delay: the widget looks at the time itself)
+	fTextWidgetRunner = new BMessageRunner(BMessenger(this), new BMessage(kMsgCheckTextWidget), delay + 5000, 1);
+}
+
+
+void
+BPoseView::SetArmedWidget(BTextWidget* widget, BPose* pose)
+{
+	const uint32 hash = widget != NULL ? widget->AttrHash() : 0;
+	if (fArmedPose == pose && fArmedAttrHash == hash)
+		return;
+
+	// (the cell that was outlined and the one that is: both are drawn again)
+	for (int pass = 0; pass < 2; pass++) {
+		BPose* p = pass == 0 ? fArmedPose : pose;
+		const uint32 attribute = pass == 0 ? fArmedAttrHash : hash;
+		const int32 index = p != NULL ? IndexOfPose(p) : -1;
+		if (index < 0 || ViewMode() != kListMode)
+			continue;		// (the file is not in the list any more)
+		BTextWidget* w = p->WidgetFor(attribute);
+		BColumn* column = ColumnFor(attribute);
+		if (w == NULL || column == NULL)
+			continue;
+		w->SetArmed(pass == 1);
+		Invalidate(w->CalcCellRect(BPoint(0, index * fListElemHeight), column, this));
+	}
+
+	fArmedPose = pose;
+	fArmedAttrHash = hash;
+}
+
+
+void
 BPoseView::MouseUp(BPoint where)
 {
 	ASSERT(Window() != NULL);
@@ -7752,6 +7917,8 @@ BPoseView::MouseUp(BPoint where)
 
 	bool wasDragging = fDragMessage != NULL;
 	bool wasRectSelecting = fSelectionRectInfo.isDragging;
+	if (wasDragging || wasRectSelecting)
+		SetArmedWidget(NULL, NULL);
 	if (wasRectSelecting)
 		_EndSelectionRect();
 
@@ -7759,7 +7926,7 @@ BPoseView::MouseUp(BPoint where)
 	DragStop();
 
 	int32 index;
-	BPose* clickedPose = FindPose(where, &index);
+	BPose* clickedPose = FindPose(where, &index, true);
 	if (clickedPose != NULL && fLastClickedPose != NULL) {
 		// This handy field has been added by the tracking filter.
 		// We need to know last buttons for context-click mouse up tracking,
@@ -8467,7 +8634,7 @@ BPoseView::FindZombie(const node_ref* itemNode, int32* resultIndex)
 // return pose at location h,v (search list starting from bottom so
 // drawing and hit detection reflect the same pose ordering)
 BPose*
-BPoseView::FindPose(BPoint where, int32* poseIndex) const
+BPoseView::FindPose(BPoint where, int32* poseIndex, bool forClick) const
 {
 	const PoseList* poseList = CurrentPoseList();
 	const int32 poseCount = poseList->CountItems();
@@ -8480,7 +8647,7 @@ BPoseView::FindPose(BPoint where, int32* poseIndex) const
 
 		BPoint poseLoc(0, index * fListElemHeight);
 		pose = poseList->ItemAt(index);
-		if (pose != NULL && pose->PointInPose(poseLoc, this, where))
+		if (pose != NULL && pose->PointInPose(poseLoc, this, where, NULL, forClick))
 			return pose;
 	} else {
 		for (int32 index = poseCount - 1; index >= 0; index--) {
@@ -8570,9 +8737,32 @@ BPoseView::OpenSelectionCommon(BPose* clickedPose, int32* poseIndex, bool openWi
 
 	BMessage message(B_REFS_RECEIVED);
 
+	// SEN: an item of a relation whose items stand for entities (an event of a calendar: the file of the relation has the calendar as its target) opens as the entity, which is
+	// made if it is not there yet; the target stays what it is if the entity cannot be made
+	std::vector<entry_ref> refs;
+	for (int32 index = 0; index < selectCount; index++)
+		refs.push_back(*fSelectionList->ItemAt(index)->TargetModel()->EntryRef());
+	{
+		std::vector<entry_ref> items;
+		std::vector<size_t> itemAt;
+		for (size_t index = 0; index < refs.size(); index++) {
+			if (TrackerSenRelations::IsMaterialisableItem(refs[index])) {
+				items.push_back(refs[index]);
+				itemAt.push_back(index);
+			}
+		}
+		if (!items.empty() && be_roster->IsRunning(sen::kServerSignature)) {
+			std::vector<entry_ref> entities;
+			TrackerSenRelations::MaterialiseItems(items, &entities);
+			for (size_t index = 0; index < items.size(); index++) {
+				if (entities[index].name != NULL)
+					refs[itemAt[index]] = entities[index];
+			}
+		}
+	}
+
 	for (int32 index = 0; index < selectCount; index++) {
-		BPose* pose = fSelectionList->ItemAt(index);
-		message.AddRef("refs", pose->TargetModel()->EntryRef());
+		message.AddRef("refs", &refs[index]);
 
 		// close parent window if option down and we're not the desktop
 		// and we're not in single window mode

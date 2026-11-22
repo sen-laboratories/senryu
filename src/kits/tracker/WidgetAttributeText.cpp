@@ -35,6 +35,11 @@ All rights reserved.
 
 #include "WidgetAttributeText.h"
 
+#include <algorithm>
+#include <map>
+#include <set>
+#include <string>
+#include <string>
 #include <ctype.h>
 #include <stdlib.h>
 #include <strings.h>
@@ -45,6 +50,11 @@ All rights reserved.
 #include <Alert.h>
 #include <AppFileInfo.h>
 #include <Catalog.h>
+#include <sen/SenAttributes.h>
+#include <MimeType.h>
+#include <Locker.h>
+#include <Autolock.h>
+#include <DateTime.h>
 #include <DateFormat.h>
 #include <DateTimeFormat.h>
 #include <Debug.h>
@@ -68,6 +78,9 @@ All rights reserved.
 #include "SettingsViews.h"
 #include "Utilities.h"
 #include "ViewState.h"
+
+#include <sen/SenRecurrence.h>
+#include <sen/SenTimeAttributes.h>
 
 
 #undef B_TRANSLATION_CONTEXT
@@ -152,6 +165,48 @@ TruncStringBase(BString* outString, const char* inString, int32 length,
 }
 
 
+// The width of the widest text that a format of date and time can make with the font of a view: the longest month name and weekday, at the widest time of day. It does not change while the
+// font and the locale do not, so it is kept (the file manager asks for it for every row that it draws).
+template <class View>
+static float
+WidestTimeText(BDateTimeFormat& formatter, BDateFormatStyle dateStyle, BTimeFormatStyle timeStyle, const View* view)
+{
+	BFont font;
+	view->GetFont(&font);
+	font_family family;
+	font_style style;
+	font.GetFamilyAndStyle(&family, &style);
+	BString key;
+	key.SetToFormat("%s/%s/%.2f/%d/%d/%s", family, style, font.Size(), (int)dateStyle, (int)timeStyle, BLocale::Default() != NULL ? "l" : "-");
+	static std::map<std::string, float> kept;
+	auto found = kept.find(key.String());
+	if (found != kept.end())
+		return found->second;
+
+	float widest = 0;
+	BString text;
+	// (a day in each month, and several in a week: the longest names)
+	for (int month = 1; month <= 12; month++) {
+		for (int day = 21; day <= 27; day += 2) {
+			struct tm parts;
+			memset(&parts, 0, sizeof(parts));
+			parts.tm_year = 126;
+			parts.tm_mon = month - 1;
+			parts.tm_mday = day;
+			parts.tm_hour = 20;
+			parts.tm_min = 38;
+			parts.tm_sec = 38;
+			parts.tm_isdst = -1;
+			const time_t sample = mktime(&parts);
+			if (sample != (time_t)-1 && formatter.Format(text, sample, dateStyle, timeStyle) == B_OK)
+				widest = std::max(widest, view->StringWidth(text.String(), text.Length()));
+		}
+	}
+	kept[key.String()] = widest;
+	return widest;
+}
+
+
 template <class View>
 float
 TruncTimeBase(BString* outString, int64 value, const View* view, float width)
@@ -174,10 +229,15 @@ TruncTimeBase(BString* outString, int64 value, const View* view, float width)
 	BString date;
 	BDateTimeFormat formatter;
 	for (unsigned int i = 0; i < B_COUNT_OF(formats); ++i) {
+		// SEN: the format is chosen by the widest text that the format can make (the longest month, the widest digits), not by this value: every row of a column then has the
+		// same format. The value that fits ("5. Mai 1939 um 00:00") would be shown beside the ones that do not ("28.11.2024, 00:00")
+		const float widest = WidestTimeText(formatter, formats[i].dateStyle, formats[i].timeStyle, view);
+		if (widest > width && i + 1 < B_COUNT_OF(formats))
+			continue;
 		if (formatter.Format(date, timeValue, formats[i].dateStyle,
 				formats[i].timeStyle) == B_OK) {
 			resultWidth = view->StringWidth(date.String(), date.Length());
-			if (resultWidth <= width) {
+			if (resultWidth <= width || i + 1 == B_COUNT_OF(formats)) {
 				// Found a format that fits the available space, stop searching
 				break;
 			}
@@ -1142,10 +1202,149 @@ ModificationTimeAttributeText::ReadValue()
 //	#pragma mark - GenericAttributeText
 
 
+// SEN: the attributes that the types of a file define (the attribute infos of its type and of its semantic type META:TYPE, with those of the supertype), by type, kept for a few seconds (the
+// types change when ontologies are installed). A type that defines none says nothing about the attribute: the cell is edited as before.
+namespace {
+
+struct TypeAttributes {
+	bigtime_t				read;
+	std::set<std::string>	names;
+};
+
+static BLocker sTypeAttributesLock("type attributes");
+static std::map<std::string, TypeAttributes> sTypeAttributes;
+static const bigtime_t kTypeAttributesLifetime = 10 * 1000000LL;
+
+void
+AddAttributeNames(BMimeType& type, std::set<std::string>* names)
+{
+	BMessage info;
+	if (type.GetAttrInfo(&info) != B_OK)
+		return;
+	const char* name;
+	for (int32 i = 0; info.FindString("attr:name", i, &name) == B_OK; i++)
+		names->insert(name);
+}
+
+// the attributes of the type and of its supertype
+std::set<std::string>
+AttributesOfType(const char* typeName)
+{
+	BAutolock locker(sTypeAttributesLock);
+	const bigtime_t now = system_time();
+	auto found = sTypeAttributes.find(typeName);
+	if (found != sTypeAttributes.end() && now - found->second.read < kTypeAttributesLifetime)
+		return found->second.names;
+
+	TypeAttributes entry;
+	entry.read = now;
+	BMimeType type(typeName);
+	if (type.InitCheck() == B_OK) {
+		AddAttributeNames(type, &entry.names);
+		BMimeType super;
+		if (type.GetSupertype(&super) == B_OK)
+			AddAttributeNames(super, &entry.names);
+	}
+	sTypeAttributes[typeName] = entry;
+	return entry.names;
+}
+
+}	// namespace
+
+
+// Whether the attribute is part of what the file is: false if the types of the file (its type and META:TYPE) define attributes but not this one. A type that defines no attributes, and the
+// properties of a relation (SEN:REL:...), which belong to the relation and not to the type of the file, leave the cell as it was.
+static bool
+AttributeBelongsToFile(Model* model, const char* attribute)
+{
+	if (model == NULL || attribute == NULL || strncmp(attribute, "SEN:REL:", 8) == 0)
+		return true;
+
+	std::set<std::string> types;
+	if (model->MimeType() != NULL && model->MimeType()[0] != '\0')
+		types.insert(model->MimeType());
+	if (model->Node() != NULL) {
+		BString semanticType;
+		if (model->Node()->ReadAttrString(::sen::attr::kType, &semanticType) == B_OK && !semanticType.IsEmpty())
+			types.insert(semanticType.String());
+	}
+
+	bool typesDefineAttributes = false;
+	for (const std::string& type : types) {
+		const std::set<std::string> names = AttributesOfType(type.c_str());
+		if (names.count(attribute) > 0)
+			return true;
+		typesDefineAttributes = typesDefineAttributes || !names.empty();
+	}
+	return !typesDefineAttributes;
+}
+
+
+// The start and the end of a thing (`schema:startDate`, `schema:endDate`) keep the text of a fuzzy value beside the time; they are shown and edited through sen::timeattr (SenTimeAttributes.h),
+// as in Shoji. Other times are edited as `YYYY-MM-DD hh:mm[:ss]`; what parsedate() makes of a text it does not know (a year before 1970 or after 2037, a month alone) is wrong, so it is
+// only the way to read what people write in words (12 Nov 2026 9:30), and the result is taken only if its year is the year in the text.
+static bool
+IsSenTime(const BColumn* column)
+{
+	return column->AttrType() == B_TIME_TYPE && sen::timeattr::Find(column->AttrName()) != NULL;
+}
+
+
+// A day is stored as the moment that it begins at in UTC (as Shoji does); it is shown as that day in the locale, whatever the zone of the clock is.
+static void
+DayText(BString* text, time_t stored)
+{
+	struct tm parts;
+	if (gmtime_r(&stored, &parts) == NULL) {
+		*text = "-";
+		return;
+	}
+	BDateFormat format;
+	if (format.Format(*text, BDate(parts.tm_year + 1900, parts.tm_mon + 1, parts.tm_mday), B_MEDIUM_DATE_FORMAT) != B_OK)
+		text->SetToFormat("%04d-%02d-%02d", parts.tm_year + 1900, parts.tm_mon + 1, parts.tm_mday);
+}
+
+
+// The room that the check box of a boolean needs (the text that is fitted under it is "[x]" or "[ ]", which can be narrower than the box when a font is narrow or the column is)
+static float
+CheckboxWidth(const BPoseView* view)
+{
+	if (view == NULL)
+		return 0;
+	const font_height height = view->FontInfo();
+	return ceilf(height.ascent + height.descent) + 4;
+}
+
+
+static bool
+ParseTimeInWords(const char* text, time_t* result)
+{
+	const time_t parsed = parsedate(text, time(NULL));
+	if (parsed <= 0)
+		return false;
+
+	struct tm parts;
+	if (localtime_r(&parsed, &parts) == NULL)
+		return false;
+
+	for (const char* at = text; *at != '\0'; at++) {
+		if (isdigit((unsigned char)at[0]) && isdigit((unsigned char)at[1]) && isdigit((unsigned char)at[2]) && isdigit((unsigned char)at[3])
+				&& !isdigit((unsigned char)at[4]) && (at == text || !isdigit((unsigned char)at[-1]))) {
+			if (atoi(at) != parts.tm_year + 1900)
+				return false;
+		}
+	}
+	*result = parsed;
+	return true;
+}
+
+
 GenericAttributeText::GenericAttributeText(const Model* model,
 	const BColumn* column)
 	:
-	StringAttributeText(model, column)
+	StringAttributeText(model, column),
+	fReadOnlyFile(false),
+	fNotApplicable(false)
 {
 }
 
@@ -1181,6 +1380,13 @@ GenericAttributeText::ReadValue(BString* outString)
 
 	ssize_t length = 0;
 	fFullValueText = "-";
+	fFuzzyText = "";
+	fReadOnlyFile = false;
+	fNotApplicable = false;
+	if (fModel->NodeRef() != NULL) {
+		BVolume volume(fModel->NodeRef()->device);
+		fReadOnlyFile = volume.InitCheck() == B_OK && volume.IsReadOnly();
+	}
 	fValue.int64t = 0;
 	fValueIsDefined = false;
 	fValueDirty = false;
@@ -1273,7 +1479,10 @@ GenericAttributeText::ReadValue(BString* outString)
 							case sizeof(int32):
 								// Takes care of time_t too.
 								fValueIsDefined = true;
-								fValue.int32t = tmp.int32t;
+								if (fColumn->AttrType() == B_TIME_TYPE)
+									fValue.int64t = tmp.int32t;
+								else
+									fValue.int32t = tmp.int32t;
 								break;
 
 							case sizeof(int64):
@@ -1292,6 +1501,19 @@ GenericAttributeText::ReadValue(BString* outString)
 			break;
 		}
 	}
+
+	// no value, and the type of the file does not have the attribute: n/a (the Event Type of a calendar), not a "-" that looks as if it could be set
+	if (!fValueIsDefined && !AttributeBelongsToFile(fModel, fColumn->AttrName())) {
+		fNotApplicable = true;
+		fFullValueText = B_TRANSLATE_COMMENT("n/a", "not applicable: the attribute of the column is none of the file's type");
+	}
+
+	// a start or an end that was said fuzzily (1994-05~) is shown as it was said, not as the moment that is stored for it
+	if (fValueIsDefined && IsSenTime(fColumn)) {
+		std::string said;
+		if (sen::timeattr::FuzzyText(*fModel->Node(), fColumn->AttrName(), fValue.int64t, &said))
+			fFuzzyText = said.c_str();
+	}
 }
 
 
@@ -1304,9 +1526,11 @@ GenericAttributeText::FitValue(BString* outString, const BPoseView* view)
 	fOldWidth = fColumn->Width();
 
 	if (!fValueIsDefined) {
-		*outString = "-";
+		*outString = IsCheckbox() ? "[ ]" : "-";	// (a check box that is not checked: the control is drawn over it)
 		fTruncatedWidth = TruncString(outString, fFullValueText.String(),
 			fFullValueText.Length(), view, fOldWidth);
+		if (IsCheckbox())
+			fTruncatedWidth = std::max(fTruncatedWidth, CheckboxWidth(view));
 		fDirty = false;
 		return;
 	}
@@ -1343,6 +1567,21 @@ GenericAttributeText::FitValue(BString* outString, const BPoseView* view)
 			return;
 
 		case B_TIME_TYPE:
+			if (fFuzzyText.Length() > 0) {
+				fFullValueText = fFuzzyText;
+				fTruncatedWidth = TruncString(outString, fFullValueText.String(),
+					fFullValueText.Length(), view, fOldWidth);
+				fDirty = false;
+				return;
+			}
+			if (TimeKind() == 1) {
+				// a day (the ontology says the attribute is a date): the day that is stored, without a time of day
+				DayText(&fFullValueText, fValue.time_tt);
+				fTruncatedWidth = TruncString(outString, fFullValueText.String(),
+					fFullValueText.Length(), view, fOldWidth);
+				fDirty = false;
+				return;
+			}
 			// As a side effect update the fFullValueText to the string
 			// representation of value
 			TruncTime(&fFullValueText, fValue.time_tt, view, 100000);
@@ -1357,6 +1596,8 @@ GenericAttributeText::FitValue(BString* outString, const BPoseView* view)
 
  			sprintf(buffer, "%s", fValue.boolt ? "true" : "false");
 			fFullValueText = buffer;
+			// (the text that is fitted is "[x]" or "[ ]", so that a change of the value changes the text and the cell is drawn again; BTextWidget draws a check box over it)
+			strcpy(buffer, fValue.boolt ? "[x]" : "[ ]");
 			break;
 
 		case B_CHAR_TYPE:
@@ -1432,6 +1673,8 @@ GenericAttributeText::FitValue(BString* outString, const BPoseView* view)
 	}
 	fTruncatedWidth = TruncString(outString, buffer, (ssize_t)strlen(buffer),
 		view, fOldWidth);
+	if (IsCheckbox())
+		fTruncatedWidth = std::max(fTruncatedWidth, CheckboxWidth(view));
 	fDirty = false;
 }
 
@@ -1517,7 +1760,10 @@ GenericAttributeText::Compare(WidgetAttributeText& attr, BPoseView*)
 				(fValue.uint32t == compareTo->fValue.uint32t ? 0 : 1) : -1;
 
 		case B_TIME_TYPE:
-			// time_t typedef'd to a long, i.e. a int32
+			// (the value is read as 64 bits: a time before 1902 or after 2037 does not fit 32)
+			return fValue.int64t >= compareTo->fValue.int64t ?
+				(fValue.int64t == compareTo->fValue.int64t ? 0 : 1) : -1;
+
 		case B_INT32_TYPE:
 			return fValue.int32t >= compareTo->fValue.int32t ?
 				(fValue.int32t == compareTo->fValue.int32t ? 0 : 1) : -1;
@@ -1561,11 +1807,152 @@ GenericAttributeText::CommitEditedText(BTextView* textView)
 }
 
 
+bool
+GenericAttributeText::IsEditable() const
+{
+	return !fNotApplicable && StringAttributeText::IsEditable();
+}
+
+
+bool
+GenericAttributeText::IsCheckbox() const
+{
+	return !fNotApplicable && fColumn->AttrType() == B_BOOL_TYPE;
+}
+
+
+bool
+GenericAttributeText::IsChecked() const
+{
+	return fValueIsDefined && fValue.boolt;
+}
+
+
+bool
+GenericAttributeText::IsReadOnlyFile() const
+{
+	return fReadOnlyFile;
+}
+
+
+int32
+GenericAttributeText::TimeKind() const
+{
+	if (fNotApplicable || fColumn->AttrType() != B_TIME_TYPE)
+		return 0;
+
+	const char* displayAs = fColumn->DisplayAs();
+	return displayAs != NULL && strncmp(displayAs, "date", 4) == 0 ? 1 : 2;
+}
+
+
+/** Turns a boolean attribute over (an attribute that is not there yet becomes true). */
+bool
+GenericAttributeText::ToggleValue()
+{
+	if (!IsCheckbox() || fReadOnlyFile || !fColumn->Editable())
+		return false;
+
+	BNode node(fModel->EntryRef());
+	if (node.InitCheck() != B_OK)
+		return false;
+
+	bool value = false;
+	if (node.ReadAttr(fColumn->AttrName(), B_BOOL_TYPE, 0, &value, sizeof(bool)) != (ssize_t)sizeof(bool))
+		value = false;
+	value = !value;
+	return node.WriteAttr(fColumn->AttrName(), B_BOOL_TYPE, 0, &value, sizeof(bool)) == (ssize_t)sizeof(bool);
+}
+
+
 void
 GenericAttributeText::SetupEditing(BTextView* textView)
 {
 	textView->SetMaxBytes(kGenericReadBufferSize - 1);
+
+	if (fColumn->AttrType() == B_TIME_TYPE) {
+		// a time is edited as `YYYY-MM-DD hh:mm` (or the fuzzy text that was said), which reads back the same in every locale; no time yet: an empty field
+		BString text;
+		if (fValueIsDefined && TimeKind() == 1) {
+			struct tm parts;
+			time_t stored = fValue.time_tt;
+			if (gmtime_r(&stored, &parts) != NULL)
+				text.SetToFormat("%04d-%02d-%02d", parts.tm_year + 1900, parts.tm_mon + 1, parts.tm_mday);
+		} else if (fValueIsDefined) {
+			BNode node(fModel->EntryRef());
+			text = sen::timeattr::EditText(node, fColumn->AttrName(), fValue.int64t).c_str();
+		}
+		textView->SetText(text.String(), text.Length());
+		return;
+	}
+
 	textView->SetText(fFullValueText.String(), fFullValueText.Length());
+}
+
+
+/**
+ * Commits an edited time. A start or an end goes through sen::timeattr (a day, a time, a fuzzy value; the end is never before the start); another time must be exact. An empty text takes the
+ * attribute away. A text that is none of these is read as words (12 Nov 2026 9:30) or refused: nothing is written then.
+ */
+bool
+GenericAttributeText::CommitEditedTime(BTextView* textView)
+{
+	BNode node(fModel->EntryRef());
+	if (node.InitCheck() != B_OK)
+		return false;
+
+	const char* name = fColumn->AttrName();
+	const std::string text(textView->Text());
+	const bool senTime = IsSenTime(fColumn);
+	status_t status = B_BAD_VALUE;
+	time_t parsed;
+
+	if (text.find_first_not_of(" \t") == std::string::npos) {
+		status = node.RemoveAttr(name);
+		if (status == B_ENTRY_NOT_FOUND)
+			status = B_OK;
+		if (status == B_OK && senTime)
+			node.RemoveAttr(sen::timeattr::Find(name)->edtf);
+		if (status == B_OK)
+			fValueIsDefined = false;
+	} else {
+		if (senTime)
+			status = sen::timeattr::StoreKeepingOrder(node, name, text);
+		else {
+			// (an exact time, or a day: the moment that the day begins at in UTC, as the date control of Shoji stores it)
+			sen::edtf::Value value;
+			if (sen::edtf::Parse(text, &value, sen::timeattr::LocalOffsetAt)
+					&& (value.IsExact() || (value.IsPeriod() && value.precision == sen::edtf::Precision::Day && !value.uncertain
+						&& !value.approximate && !value.unspecified))) {
+				const time_t moment = (time_t)value.earliest;
+				status = node.WriteAttr(name, B_TIME_TYPE, 0, &moment, sizeof(moment)) == (ssize_t)sizeof(moment) ? B_OK : B_IO_ERROR;
+			}
+		}
+
+		if (status == B_BAD_VALUE && ParseTimeInWords(text.c_str(), &parsed)) {
+			if (senTime)
+				status = sen::timeattr::StoreKeepingOrder(node, name, sen::timeattr::EditText(node, name, parsed));
+			else
+				status = node.WriteAttr(name, B_TIME_TYPE, 0, &parsed, sizeof(parsed)) == (ssize_t)sizeof(parsed) ? B_OK : B_IO_ERROR;
+		}
+		if (status == B_OK)
+			fValueIsDefined = true;
+	}
+
+	if (status == B_OK)
+		return true;
+
+	BAlert* alert = new BAlert("",
+		status == B_BAD_VALUE
+			? (senTime
+				? B_TRANSLATE("Sorry, that is not a time. Type a day and time such as 2026-11-12 09:30, "
+					"or a time that is not exact such as 1994-05~.")
+				: B_TRANSLATE("Sorry, that is not a time. Type a day and time such as 2026-11-12 09:30."))
+			: B_TRANSLATE("There was an error writing the attribute."),
+		B_TRANSLATE("Cancel"), 0, 0, B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+	alert->SetFlags(alert->Flags() | B_CLOSE_ON_ESCAPE);
+	alert->Go();
+	return false;
 }
 
 
@@ -1578,6 +1965,9 @@ GenericAttributeText::CommitEditedTextFlavor(BTextView* textView)
 		return false;
 
 	uint32 type = fColumn->AttrType();
+
+	if (type == B_TIME_TYPE)
+		return CommitEditedTime(textView);
 
 	if (type != B_STRING_TYPE
 		&& type != B_UINT64_TYPE
@@ -1610,6 +2000,9 @@ GenericAttributeText::CommitEditedTextFlavor(BTextView* textView)
 		case B_STRING_TYPE:
 			size = fModel->WriteAttr(columnName, type, 0, textView->Text(),
 				(size_t)textView->TextLength() + 1);
+			// how a thing repeats is said in words (Repeats) and as a rule that programs read: the rule follows the words (SenRecurrence.h)
+			if (size >= 0 && sen::recurrence::IsWordsAttribute(columnName))
+				sen::recurrence::SyncFromText(node, textView->Text());
 			break;
 
 		case B_BOOL_TYPE:

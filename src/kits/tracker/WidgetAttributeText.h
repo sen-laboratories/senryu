@@ -105,6 +105,17 @@ public:
 
 	virtual bool IsEditable() const;
 
+	//! SEN: attributes that are shown and edited with a control of their own (see BTextWidget): a boolean is a check box, a time or a day gets a calendar
+	virtual bool IsCheckbox() const { return false; }
+	virtual bool IsChecked() const { return false; }
+	virtual bool ToggleValue() { return false; }
+	//! 0: no time, 1: a day (the attribute is displayed as a date), 2: a time (day and time of day)
+	virtual int32 TimeKind() const { return 0; }
+	//! the file is on a volume that cannot be written: nothing of it can be edited, the controls are greyed
+	virtual bool IsReadOnlyFile() const { return false; }
+	//! the attribute is not part of the type of the file (the event type of a calendar): "n/a" is shown, greyed, and the cell cannot be edited
+	virtual bool IsNotApplicable() const { return false; }
+
 	void SetDirty(bool);
 
 protected:
@@ -225,8 +236,17 @@ public:
 
 	virtual const char* ValueAsText(const BPoseView* view);
 
+	virtual bool IsEditable() const;
+	virtual bool IsCheckbox() const;
+	virtual bool IsChecked() const;
+	virtual bool ToggleValue();
+	virtual int32 TimeKind() const;
+	virtual bool IsReadOnlyFile() const;
+	virtual bool IsNotApplicable() const { return fNotApplicable; }
+
 protected:
 	virtual bool CommitEditedTextFlavor(BTextView* view);
+	bool CommitEditedTime(BTextView* view);
 
 	virtual void FitValue(BString* result, const BPoseView* view);
 	virtual void ReadValue(BString* result);
@@ -235,6 +255,12 @@ protected:
 	// TODO: split this up into a scalar flavor and string flavor
 	// to save memory
 	GenericValueStruct fValue;
+	//! the text of a start or an end that was said fuzzily (1994-05~), shown instead of the time
+	BString fFuzzyText;
+	//! the volume of the file cannot be written (read when the value is read)
+	bool fReadOnlyFile;
+	//! there is no value and the type of the file does not have the attribute (read when the value is read)
+	bool fNotApplicable;
 };
 
 

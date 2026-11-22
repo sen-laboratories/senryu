@@ -36,8 +36,10 @@ All rights reserved.
 
 
 #include <ByteOrder.h>
+#include <Messenger.h>
 #include <FilePanel.h>
 #include <ObjectList.h>
+#include <vector>
 #include <View.h>
 #include <Window.h>
 
@@ -58,6 +60,10 @@ class BFile;
 class BPopUpMenu;
 class BGroupView;
 class BGridLayout;
+
+namespace sen {
+class FilterPopUpMenu;
+}
 
 namespace BPrivate {
 
@@ -260,6 +266,9 @@ private:
 
 			// add one more attribute item to the attr view
 			void 				AddAttrRow();
+			void				UpdateDatePickers();
+			void				ClearDatePickers();
+			void				ShowDatePicker(int32 row);
 			// remove the last attribute item
 			void 				RemoveAttrRow();
 			void 				AddFirstAttr();
@@ -315,6 +324,9 @@ public:
 private:
 			uint32 				fMode;
 			BGridLayout*		fAttrGrid;
+			// SEN: a row that asks for a time has the arrow of a calendar (see UpdateDatePickers())
+			std::vector< ::sen::FilterPopUpMenu*> fDatePickers;
+			BMessenger			fDatePicker;
 			BPopUpMenu* 		fMimeTypeMenu;
 			BMenuField* 		fMimeTypeField;
 			BPopUpMenu*			fSearchModeMenu;

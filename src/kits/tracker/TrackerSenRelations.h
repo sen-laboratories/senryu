@@ -7,6 +7,7 @@
 
 #include <vector>
 #include <Entry.h>
+#include <InterfaceDefs.h>
 #include <Message.h>
 #include <ObjectList.h>
 #include <functional>
@@ -17,6 +18,8 @@
 // Stateless SEN relation attribute/filesystem I/O, factored out of TTracker
 // so it can be exercised without a live Tracker instance (see TemplateUtils
 // for the reference pattern).
+class BBitmap;
+
 class TrackerSenRelations {
 public:
 	static bool		ResolveRelation(const entry_ref* ref, BString* srcId,
@@ -27,6 +30,26 @@ public:
 	 * with one (the attribute SEN:REL:TRG), else the file itself. A folder (a nested relation) is the relation itself.
 	 */
 	static entry_ref	RelationTargetOrSelf(const entry_ref* ref);
+	/**
+	 * Whether the file is the item of a relation whose items stand for entities (the events of a calendar: the relation type has `SEN:materialiseAs`, see sen::conf::kMaterialiseAs),
+	 * and which entity type that is. The file is a relation file of a view (it has the type of the relation and a target, the file that holds the items). Cheap: it reads the file and the
+	 * MIME database, so that a menu can ask it. A relation without it is a link (a reference into a PDF): what is done with its file is done with the target.
+	 */
+	static bool			IsMaterialisableItem(const entry_ref& ref, BString* entityType = NULL);
+	/**
+	 * Asks the SEN server (the plugin of the relation) for the entities of the items: a file of its own for each, found by its identifier if it was made before. @p entities has an
+	 * entry for each of @p items, in the same order; one that has no entity (the calendar has changed, the plugin could not make it) is left empty (name NULL). Runs the server's calls and
+	 * may take a while (the plugin is started): not in the thread of a window. @return B_OK if the server answered.
+	 * @param destination NULL: the entities are those of the Library (one that is kept is found). A folder: they are made there, a copy of one that is kept elsewhere too (what was dropped in it).
+	 */
+	static status_t		MaterialiseItems(const std::vector<entry_ref>& items, std::vector<entry_ref>* entities, const entry_ref* destination = NULL);
+
+	/**
+	 * An item of the menu of a relation whose items stand for entities (an event of a calendar) is opened as the entity: it is made, or found if it is there already (in the temporary folder of the
+	 * relation), and handed to Akita to open with the default application of its type. It is done in a thread of its own (the plugin may have to read a calendar of years), the menu goes away at once.
+	 * @param properties the item as the menu has it (what the plugin said of it)
+	 */
+	static void			OpenItemAsEntity(const entry_ref& source, const char* relationType, const BMessage& properties);
 	/** The relations of SEN are for files and folders: not for the Trash and what is in it, and not for the Desktop folder itself.
 	 *  (The folders are those of find_directory(), on the volume of the item.) */
 	static bool			HasNoRelations(const entry_ref* ref);
@@ -62,6 +85,11 @@ public:
 	static void		ApplySticky(const entry_ref& ref);
 	static status_t	GetSenIcon(const char* mimeType, const char* iconType,
 						void** icon, size_t* iconSize);
+	/**
+	 * The icon of the folder of the relations of a type, for a menu: SEN:ICON:FOLDER of its MIME type, the folder of the system if it has none. A relation is shown as the folder that
+	 * it is (its items are what is related and have the icons of their own types). The caller owns the bitmap; NULL if there is not even the folder of the system.
+	 */
+	static BBitmap*	FolderIconBitmap(const char* relationType, icon_size which = B_MINI_ICON);
 	static status_t	GetInodeForRef(const entry_ref* srcRef, BString* inode);
 	static status_t	WriteTargetRelations(BMessage* relations,
 						BMessage* relationConf, entry_ref* workingDirRef,

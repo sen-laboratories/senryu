@@ -35,6 +35,7 @@ All rights reserved.
 
 #include "ContainerWindow.h"
 #include "OpenRelationsMenu.h"
+#include <algorithm>
 #include "TrackerSenRelations.h"
 
 #include <Alert.h>
@@ -2166,6 +2167,11 @@ HasNoRelations(const entry_ref* ref)
 }
 
 
+// the separators around "Copy to Library" (the one after it is only added if no separator follows anyway): they go with the item
+class LibrarySeparatorItem : public BSeparatorItem {
+};
+
+
 // The relation items are built new whenever a menu is shown, and the same window shows them in the File menu and in the context
 // menus of the poses. Every menu takes the items of the same kind out of itself before it adds new ones, so that none is shown twice.
 // Only the items that are in this menu itself are looked at: not the stored pointers (an item that is in another menu can be gone
@@ -2185,7 +2191,16 @@ RemoveRelationItems(BMenu* parent, uint32 command, BMenuItem** stored)
 				&& dynamic_cast<BSeparatorItem*>(parent->ItemAt(index + 1)) != NULL) {
 			delete parent->RemoveItem(index + 1);
 		}
+		// (the separators of "Copy to Library" go with it: the one after it first, so that the index of the one before stays right)
+		if (command == kCopyToLibrary && index + 1 < parent->CountItems()
+				&& dynamic_cast<LibrarySeparatorItem*>(parent->ItemAt(index + 1)) != NULL) {
+			delete parent->RemoveItem(index + 1);
+		}
 		parent->RemoveItem(item);
+		if (command == kCopyToLibrary && index > 0
+				&& dynamic_cast<LibrarySeparatorItem*>(parent->ItemAt(index - 1)) != NULL) {
+			delete parent->RemoveItem(index - 1);
+		}
 		if (stored != NULL && *stored == item)
 			*stored = NULL;
 		delete item;
@@ -2327,6 +2342,7 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 	// remove existing relation items from old menu, same for self relations
 	RemoveRelationItems(parent, kOpenRelations, &fOpenRelationsItem);
 	RemoveRelationItems(parent, kOpenSelfRelations, &fOpenSelfRelationsItem);
+	RemoveRelationItems(parent, kCopyToLibrary, NULL);
 
 	int32 count = PoseView()->CountSelected();
 	if (count == 0) {
@@ -2356,12 +2372,21 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 	// build a list of all selected files to show relations for: the SEN server answers with what any of them has as far as it fits all of them
 	BMessage message(B_REFS_RECEIVED);
 
+	bool anyItem = false;
 	for (int32 index = 0; index < count; index++) {
 		BPose* pose = PoseView()->SelectionList()->ItemAt(index);
-		// a file in a view of relations stands for its relation: it is about the target
-		entry_ref relatedRef = TrackerSenRelations::RelationTargetOrSelf(pose->TargetModel()->EntryRef());
-		message.AddRef("refs", &relatedRef);
+		// a file in a view of relations stands for its relation: it is about the target. The item of a relation whose items are entities (an event of a calendar) is
+		// about its entity: the menu makes or finds it, in the thread that builds it, and needs the item for that
+		if (TrackerSenRelations::IsMaterialisableItem(*pose->TargetModel()->EntryRef())) {
+			message.AddRef("refs", pose->TargetModel()->EntryRef());
+			anyItem = true;
+		} else {
+			entry_ref relatedRef = TrackerSenRelations::RelationTargetOrSelf(pose->TargetModel()->EntryRef());
+			message.AddRef("refs", &relatedRef);
+		}
 	}
+	if (anyItem)
+		message.AddBool(OpenRelationsMenu::kMaterialiseItems, true);
 
 	// add Tracker token so that refs received recipients can script us
 	message.AddMessenger("TrackerViewToken", BMessenger(PoseView()));
@@ -2376,34 +2401,53 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 	parent->AddItem(fOpenRelationsItem, menuIndex + 1);
 	Shortcuts()->UpdateOpenRelationsItem(fOpenRelationsItem);
 
-	// self relations, take over from above but adapt to self relations
-	BMessage messageSelf(message);
-	messageSelf.ReplaceUInt32(sen::key::kAction, sen::cmd::kRelationsGetAllSelf);
-	// a node of a view of contained relations (a bookmark) contains what is below it, of the document: the menu shows only that
-	messageSelf.RemoveName("refs");
-	for (int32 index = 0; index < count; index++) {
-		BPose* pose = PoseView()->SelectionList()->ItemAt(index);
-		entry_ref nodeRef = *pose->TargetModel()->EntryRef();
-		entry_ref source;
-		BMessage nodeRelations;
-		if (TrackerSenRelations::SelfRelationNode(&nodeRef, &source, &nodeRelations)) {
-			messageSelf.AddRef("refs", &source);
-			messageSelf.AddRef(sen::key::kRelationNode, &nodeRef);
-		} else {
-			entry_ref relatedRef = TrackerSenRelations::RelationTargetOrSelf(&nodeRef);
-			messageSelf.AddRef("refs", &relatedRef);
+	// what a document contains is that of one document: for several files it means nothing. Nor for an event of a calendar: it contains nothing, the calendar does.
+	// The item is only shown then, as the plain item that it is (greyed out): a submenu that is not available is not opened and asks nothing of the server
+	if (count > 1 || anyItem) {
+		fOpenSelfRelationsItem = Shortcuts()->OpenSelfRelationsItem();
+		parent->AddItem(fOpenSelfRelationsItem, menuIndex + 2);
+		Shortcuts()->UpdateOpenSelfRelationsItem(fOpenSelfRelationsItem);
+		fOpenSelfRelationsItem->SetEnabled(false);
+	} else {
+		// self relations, take over from above but adapt to self relations
+		BMessage messageSelf(message);
+		messageSelf.ReplaceUInt32(sen::key::kAction, sen::cmd::kRelationsGetAllSelf);
+		// a node of a view of contained relations (a bookmark) contains what is below it, of the document: the menu shows only that
+		messageSelf.RemoveName("refs");
+		messageSelf.RemoveName(OpenRelationsMenu::kMaterialiseItems);
+		for (int32 index = 0; index < count; index++) {
+			BPose* pose = PoseView()->SelectionList()->ItemAt(index);
+			entry_ref nodeRef = *pose->TargetModel()->EntryRef();
+			entry_ref source;
+			BMessage nodeRelations;
+			if (TrackerSenRelations::SelfRelationNode(&nodeRef, &source, &nodeRelations)) {
+				messageSelf.AddRef("refs", &source);
+				messageSelf.AddRef(sen::key::kRelationNode, &nodeRef);
+			} else {
+				entry_ref relatedRef = TrackerSenRelations::RelationTargetOrSelf(&nodeRef);
+				messageSelf.AddRef("refs", &relatedRef);
+			}
 		}
+
+		// Note: the menu itself targets Tracker, same as for fOpenRelationsItem above
+		fOpenSelfRelationsItem = Shortcuts()->OpenSelfRelationsItem(
+			new OpenRelationsMenu(Shortcuts()->OpenSelfRelationsLabel(), &messageSelf, this, BMessenger(PoseView())) );
+
+		parent->AddItem(fOpenSelfRelationsItem, menuIndex + 2);
+		Shortcuts()->UpdateOpenSelfRelationsItem(fOpenSelfRelationsItem);
 	}
 
-	// Note: the menu itself targets Tracker, same as for fOpenRelationsItem above
-	fOpenSelfRelationsItem = Shortcuts()->OpenSelfRelationsItem(
-		new OpenRelationsMenu(Shortcuts()->OpenSelfRelationsLabel(), &messageSelf, this, BMessenger(PoseView())) );
-
-	parent->AddItem(fOpenSelfRelationsItem, menuIndex + 2);
-	Shortcuts()->UpdateOpenSelfRelationsItem(fOpenSelfRelationsItem);
-	// what a document contains is that of one document: for several files it means nothing
-	if (count > 1)
-		fOpenSelfRelationsItem->SetEnabled(false);
+	// the items of a relation whose items are entities (the events of a calendar) are kept as the entities: a copy of the file would copy the relation
+	if (anyItem) {
+		// it is a group of its own, after the relations: a separator before it, and one after it unless one follows already
+		BMenuItem* copyItem = new BMenuItem(B_TRANSLATE("Copy to Library"), new BMessage(kCopyToLibrary));
+		copyItem->SetTarget(PoseView());
+		int32 copyIndex = std::min(menuIndex + 3, parent->CountItems());
+		parent->AddItem(new LibrarySeparatorItem(), copyIndex);
+		parent->AddItem(copyItem, copyIndex + 1);
+		if (dynamic_cast<BSeparatorItem*>(parent->ItemAt(copyIndex + 2)) == NULL)
+			parent->AddItem(new LibrarySeparatorItem(), copyIndex + 2);
+	}
 }
 
 

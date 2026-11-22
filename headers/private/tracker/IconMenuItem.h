@@ -59,6 +59,9 @@ class IconMenuItem : public PositionPassingMenuItem {
 			const BNodeInfo* nodeInfo, icon_size which);
 		IconMenuItem(BMenu*, BMessage*, const char* iconType,
 			icon_size which = B_MINI_ICON);
+		// a submenu with an icon that is made by the caller (copied; the caller keeps its bitmap)
+		IconMenuItem(BMenu*, BMessage*, BBitmap* icon,
+			icon_size which = B_MINI_ICON);
 		IconMenuItem(BMessage* data);
 		virtual ~IconMenuItem();
 

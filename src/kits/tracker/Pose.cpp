@@ -199,7 +199,7 @@ inline bool
 OneMouseUp(BTextWidget* widget, BPose* pose, BPoseView* poseView, BColumn* column,
 	BPoint poseLoc, BPoint where)
 {
-	BRect rect(widget->CalcClickRect(poseLoc, column, poseView));
+	BRect rect(widget->CalcHitRect(poseLoc, column, poseView));
 	if (rect.Contains(where)) {
 		widget->DoMouseUp(poseView, pose);
 		return true;
@@ -465,7 +465,7 @@ BPose::PointInPose(const BPoseView* poseView, BPoint where) const
 
 bool
 BPose::PointInPose(BPoint poseLoc, const BPoseView* poseView, BPoint where,
-	BTextWidget** hitWidget) const
+	BTextWidget** hitWidget, bool forClick) const
 {
 	ASSERT(poseView != NULL);
 	ASSERT(poseView->ViewMode() == kListMode);
@@ -484,7 +484,9 @@ BPose::PointInPose(BPoint poseLoc, const BPoseView* poseView, BPoint where,
 			break;
 
 		BTextWidget* widget = WidgetFor(column->AttrHash());
-		if (widget != NULL && widget->CalcClickRect(poseLoc, column, poseView).Contains(where)) {
+		if (widget != NULL
+			&& (forClick ? widget->CalcHitRect(poseLoc, column, poseView)
+				: widget->CalcClickRect(poseLoc, column, poseView)).Contains(where)) {
 			if (hitWidget != NULL)
 				*hitWidget = widget;
 
@@ -588,6 +590,20 @@ BPose::Draw(BRect rect, const BRect& updateRect, BPoseView* poseView, BView* dra
 					// draw text
 					DrawTextWidget(columnRect, widgetRect, widget, poseView, drawView, selected,
 						fClipboardMode, offset);
+				}
+
+				// SEN: the cell that was clicked is outlined (dotted, in grey) until its edit starts
+				if (widget->IsArmed() && IsSelected() && index > 0) {
+					BRect cell(widget->CalcCellRect(rect.LeftTop(), column, poseView));
+					if (cell.Intersects(updateRect)) {
+						cell.OffsetBy(offset);
+						static const pattern kDotted = {{0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55}};
+						drawView->PushState();
+						drawView->SetDrawingMode(B_OP_COPY);
+						drawView->SetHighColor(tint_color(drawView->LowColor(), B_DARKEN_2_TINT));
+						drawView->StrokeRect(cell, kDotted);
+						drawView->PopState();
+					}
 				}
 			}
 		}

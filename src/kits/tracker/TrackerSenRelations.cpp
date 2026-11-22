@@ -19,6 +19,9 @@
 #include <Path.h>
 #include <StringList.h>
 #include <Autolock.h>
+#include <Bitmap.h>
+#include <ControlLook.h>
+#include <IconUtils.h>
 #include <InterfaceDefs.h>
 #include <Locker.h>
 #include <Volume.h>
@@ -27,6 +30,7 @@
 
 #include <sen/Sen.h>
 #include <sen/SenOntoCore.h>
+#include <sen/SenOntoTemporal.h>
 #include <sen/SenIdList.h>
 #include <sen/SenLookup.h>
 #include <sen/Sensei.h>
@@ -91,6 +95,12 @@ CopyTargetIcon(BNode& relationNode, const entry_ref& target)
 {
 	BNode targetNode(&target);
 	if (targetNode.InitCheck() != B_OK)
+		return;
+
+	// a type of the MIME database (what an ontology defines, what a package depends on): the file is the entry of the type, whose icon is the one that the files of the type have, not its own.
+	// All the relations to types look alike, with the icon of their relation (one type that has an icon of its own, or a supertype that has one, must not stand out among them)
+	BPath targetPath(&target);
+	if (targetPath.InitCheck() == B_OK && strstr(targetPath.Path(), "/mime_db/") != NULL)
 		return;
 
 	uint8* data = NULL;
@@ -813,6 +823,182 @@ TrackerSenRelations::RelationTargetOrSelf(const entry_ref* ref)
 
 
 bool
+TrackerSenRelations::IsMaterialisableItem(const entry_ref& ref, BString* entityType)
+{
+	BEntry entry(&ref);
+	if (entry.InitCheck() != B_OK || entry.IsDirectory())
+		return false;
+	BNode node(&ref);
+	char type[B_MIME_TYPE_LENGTH];
+	type[0] = '\0';
+	if (node.InitCheck() != B_OK || BNodeInfo(&node).GetType(type) != B_OK || strncmp(type, "relation/", 9) != 0)
+		return false;
+	entry_ref target;
+	if (!ReadTargetRef(node, &target))
+		return false;
+
+	// the configuration of the relation type: a resource of its MIME type, which is an attribute in the MIME database of the user (what the server reads, too)
+	BPath path;
+	if (find_directory(B_USER_SETTINGS_DIRECTORY, &path) != B_OK || path.Append("mime_db") != B_OK || path.Append(type) != B_OK)
+		return false;
+	BNode mime(path.Path());
+	attr_info info;
+	if (mime.InitCheck() != B_OK || mime.GetAttrInfo(sen::attr::kRelationConfig, &info) != B_OK || info.size <= 0)
+		return false;
+	char* buffer = new char[info.size];
+	BMessage config;
+	bool found = false;
+	if (mime.ReadAttr(sen::attr::kRelationConfig, B_MESSAGE_TYPE, 0, buffer, info.size) == info.size && config.Unflatten(buffer) == B_OK) {
+		BString materialiseAs;
+		if (config.FindString(sen::conf::kMaterialiseAs, &materialiseAs) == B_OK && !materialiseAs.IsEmpty()) {
+			if (entityType != NULL)
+				*entityType = materialiseAs;
+			found = true;
+		}
+	}
+	delete[] buffer;
+	return found;
+}
+
+
+status_t
+TrackerSenRelations::MaterialiseItems(const std::vector<entry_ref>& items, std::vector<entry_ref>* entities, const entry_ref* destination)
+{
+	entities->assign(items.size(), entry_ref());
+	BMessenger server(sen::kServerSignature);
+	if (!server.IsValid())
+		return B_ERROR;
+
+	// the items that hold the same file (the events of one calendar) are asked for at once
+	std::vector<bool> done(items.size(), false);
+	status_t status = B_OK;
+	for (size_t first = 0; first < items.size(); first++) {
+		if (done[first])
+			continue;
+		BNode node(&items[first]);
+		entry_ref source;
+		char type[B_MIME_TYPE_LENGTH];
+		type[0] = '\0';
+		if (node.InitCheck() != B_OK || BNodeInfo(&node).GetType(type) != B_OK || !ReadTargetRef(node, &source)) {
+			done[first] = true;
+			continue;
+		}
+		BMessage request(sen::cmd::kRelationsMaterialise);
+		request.AddRef(sen::key::kSourceRef, &source);
+		request.AddString(sen::key::kRelationType, type);
+		if (destination != NULL)
+			request.AddRef(sen::key::kDestinationRef, destination);
+		std::vector<size_t> group;
+		std::vector<BString> ids;
+		for (size_t each = first; each < items.size(); each++) {
+			if (done[each])
+				continue;
+			BNode other(&items[each]);
+			entry_ref otherSource;
+			char otherType[B_MIME_TYPE_LENGTH];
+			otherType[0] = '\0';
+			if (other.InitCheck() != B_OK || BNodeInfo(&other).GetType(otherType) != B_OK || strcmp(otherType, type) != 0
+					|| !ReadTargetRef(other, &otherSource) || !(otherSource == source))
+				continue;
+			BMessage properties;
+			ConvertAttributesToMessage(&items[each], &properties);
+			request.AddMessage(sen::key::kRelationProperties, &properties);
+			ids.push_back(BString(properties.GetString(sen::key::kItemId, "")));
+			group.push_back(each);
+			done[each] = true;
+		}
+
+		BMessage reply;
+		// (the plugin is started and may read a calendar of years: the server gives up on it after 90 s)
+		status_t result = server.SendMessage(&request, &reply, 100000000, 100000000);
+		if (result == B_OK)
+			result = reply.GetInt32(sen::key::kResult, B_ERROR);
+		if (result != B_OK) {
+			ERROR("the SEN server could not make the entities of the items of %s: %s\n", type, strerror(result));
+			status = result;
+			continue;
+		}
+		BMessage target;
+		for (int32 index = 0; reply.FindMessage(sensei::key::kTargets, index, &target) == B_OK; index++) {
+			entry_ref entity;
+			const char* itemId = target.GetString(sen::key::kItemId, "");
+			if (target.FindRef(sen::key::kTargetRef, &entity) != B_OK)
+				continue;
+			for (size_t i = 0; i < group.size(); i++) {
+				if (ids[i] == itemId) {
+					(*entities)[group[i]] = entity;
+					break;
+				}
+			}
+		}
+	}
+	return status;
+}
+
+
+namespace {
+
+struct ItemToOpen {
+	entry_ref	source;
+	BString		relationType;
+	BMessage	properties;
+};
+
+int32
+OpenItemThread(void* data)
+{
+	ItemToOpen* item = static_cast<ItemToOpen*>(data);
+
+	BMessenger server(sen::kServerSignature);
+	if (server.IsValid()) {
+		BMessage request(sen::cmd::kRelationsMaterialise);
+		request.AddRef(sen::key::kSourceRef, &item->source);
+		request.AddString(sen::key::kRelationType, item->relationType);
+		request.AddMessage(sen::key::kRelationProperties, &item->properties);
+
+		BMessage reply;
+		// (the plugin is started and may read a calendar of years: the server gives up on it after 90 s)
+		status_t result = server.SendMessage(&request, &reply, 100000000, 100000000);
+		if (result == B_OK)
+			result = reply.GetInt32(sen::key::kResult, B_ERROR);
+		BMessage target;
+		entry_ref entity;
+		if (result == B_OK && reply.FindMessage(sensei::key::kTargets, 0, &target) == B_OK && target.FindRef(sen::key::kTargetRef, &entity) == B_OK) {
+			// (as any file that is opened: with the default application of its type)
+			BMessage* open = new BMessage(B_REFS_RECEIVED);
+			open->AddRef("refs", &entity);
+			be_app_messenger.SendMessage(open);
+		} else
+			ERROR("the SEN server could not make the entity of an item of %s: %s\n", item->relationType.String(), strerror(result));
+	}
+	delete item;
+	return 0;
+}
+
+}	// namespace
+
+
+void
+TrackerSenRelations::OpenItemAsEntity(const entry_ref& source, const char* relationType, const BMessage& properties)
+{
+	ItemToOpen* item = new ItemToOpen();
+	item->source = source;
+	item->relationType = relationType;
+	item->properties = properties;
+	// (the id of the item as the files of the items have it, which is what the plugin gives back with the entity)
+	if (!item->properties.HasString(sen::key::kItemId) && item->properties.HasString(sensei::key::kItemId))
+		item->properties.AddString(sen::key::kItemId, item->properties.GetString(sensei::key::kItemId, ""));
+	// (what makes the item the same one again, its identifier, as the plugin of the calendar says it in a listing: `uid`)
+	if (!item->properties.HasString(sen::onto::temporal::attr::kUid) && item->properties.HasString("uid"))
+		item->properties.AddString(sen::onto::temporal::attr::kUid, item->properties.GetString("uid", ""));
+
+	thread_id thread = spawn_thread(OpenItemThread, "open item as entity", B_NORMAL_PRIORITY, item);
+	if (thread < B_OK || resume_thread(thread) != B_OK)
+		delete item;
+}
+
+
+bool
 TrackerSenRelations::SelfRelationNode(const entry_ref* ref, entry_ref* source, BMessage* relations)
 {
 	BNode node(ref);
@@ -1069,6 +1255,36 @@ TrackerSenRelations::GetSenIcon(const char* mimeType, const char* iconType, void
 }
 
 
+BBitmap*
+TrackerSenRelations::FolderIconBitmap(const char* relationType, icon_size which)
+{
+	BBitmap* bitmap = new BBitmap(BRect(BPoint(0, 0), be_control_look->ComposeIconSize(which)), B_RGBA32);
+	if (bitmap->InitCheck() != B_OK) {
+		delete bitmap;
+		return NULL;
+	}
+
+	// the folder of the relations of the type (a type that has none is not told: most have none yet)
+	void* buffer = NULL;
+	size_t size = 0;
+	if (relationType != NULL && relationType[0] != '\0'
+			&& GetSenIcon(relationType, sen::attr::kRelationFolderIcon, &buffer, &size) == B_OK && buffer != NULL) {
+		const status_t drawn = BIconUtils::GetVectorIcon((const uint8*)buffer, size, bitmap);
+		delete[] (char*)buffer;
+		if (drawn == B_OK)
+			return bitmap;
+	} else if (buffer != NULL) {
+		delete[] (char*)buffer;
+	}
+
+	// else the folder of the system: a relation is a folder of what it relates
+	if (BMimeType("application/x-vnd.Be-directory").GetIcon(bitmap, which) == B_OK)
+		return bitmap;
+	delete bitmap;
+	return NULL;
+}
+
+
 void
 TrackerSenRelations::NewViewId(BString* viewId)
 {
@@ -1112,6 +1328,12 @@ TrackerSenRelations::RelationsToList(const BMessage& relations, const BMessage& 
 				properties.RemoveName(sen::key::kTargetMissing);
 				properties.AddBool(sen::key::kTargetMissing, true);
 			}
+			// a relation that has a title of its own (a place inside its target: an event of a calendar file, a page of a document) is named by it: the title of the target is that of
+			// the whole file and is the same for all of them. This holds for any relation type: nothing here knows what the relation is about.
+			BString itemTitle(properties.GetString("dc:title", ""));
+			itemTitle.Trim();
+			if (!itemTitle.IsEmpty())
+				name = itemTitle;
 			properties.RemoveName(sensei::key::kName);
 			properties.AddString(sensei::key::kName, name);
 
@@ -1704,6 +1926,9 @@ TrackerSenRelations::FetchInto(const entry_ref& sourceRef, const char* viewId, c
 			snooze((bigtime_t)(atof(delay) * 1000000));
 		BMessage reply;
 		status_t result = AskServerForType(sourceRef, typeCopy.String(), false, &reply);
+		// (a relation that has no targets, as an older server says it, is an empty folder: no file says that something failed)
+		if (result == B_ENTRY_NOT_FOUND)
+			result = B_OK;
 
 		BDirectory folder(&folderRef);
 		if (result == B_OK) {
@@ -1724,8 +1949,11 @@ TrackerSenRelations::FetchInto(const entry_ref& sourceRef, const char* viewId, c
 		}
 		if (result != B_OK) {
 			ERROR("could not get the relations of type %s from the SEN server: %s\n", typeCopy.String(), strerror(result));
+			// the one file that stays: it says in the folder itself that the relations could not be resolved (a time out of a web service, no answer), with the icon of a broken link, so that
+			// the message is not one that is easy to miss or one that blocks the window
 			BFile failed;
-			folder.CreateFile((BString(kFailedPrefix) << " (" << strerror(result) << ")").String(), &failed, true);
+			if (folder.CreateFile((BString(kFailedPrefix) << " (" << strerror(result) << ")").String(), &failed, true) == B_OK)
+				BNodeInfo(&failed).SetType(B_LINK_MIMETYPE);
 		}
 		RelationFolders::Instance().FetchFinished(folderNode);
 	}).detach();

@@ -208,6 +208,13 @@ TTracker::HandleSenMessage(BMessage* message)
 			PRINT(("relationConfig is:\n"));
 			relationConfig.PrintToStream();
 
+			// an item of a relation whose items stand for entities (an event of a calendar) is opened as that entity, as the item of a relation folder is: not the calendar that it is a part of
+			BString materialiseAs;
+			if (selfRelation && relationConfig.FindString(sen::conf::kMaterialiseAs, &materialiseAs) == B_OK && !materialiseAs.IsEmpty()) {
+				TrackerSenRelations::OpenItemAsEntity(srcRef, relationType.String(), relationProperties);
+				return true;
+			}
+
 			if (selfRelation) {
 				PRINT(("resolving SELF relation...\n"));
 
@@ -1050,4 +1057,17 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 		BPath(relationDirRef).Path() ));
 
 	return result;
+}
+
+
+#include "AkitaUpdateWatcher.h"
+
+void
+StartWatchingForAkitaUpdate()
+{
+	static AkitaUpdateWatcher* watcher = NULL;
+	if (watcher != NULL)
+		return;
+	watcher = new AkitaUpdateWatcher();
+	watcher->Start();
 }
