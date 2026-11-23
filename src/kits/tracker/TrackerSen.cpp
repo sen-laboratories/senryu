@@ -7,6 +7,7 @@
 
 #include <AppFileInfo.h>
 #include <Debug.h>
+#include <Directory.h>
 #include <Entry.h>
 #include <File.h>
 #include <FindDirectory.h>
@@ -200,7 +201,8 @@ TTracker::HandleSenMessage(BMessage* message)
 				return true;	// abort
 			}
 
-			bool selfRelation = relationConfig.GetBool(sen::conf::kSelf, false);
+			// (an item of a list of targets that a menu made from the answer of the server is the target itself, whatever the relation says about itself: Composition)
+			bool selfRelation = relationConfig.GetBool(sen::conf::kSelf, false) && !message->GetBool(TrackerSenRelations::kTargetItem, false);
 
 			PRINT(("got relation config for type %s (is %s)\n",
 				relationType.String(), (selfRelation ? "SELF" : "NORMAL") ));
@@ -266,19 +268,36 @@ TTracker::HandleSenMessage(BMessage* message)
 					targetRef = srcRef;
 				}
 
+				// The type of the target: what the relation says its items stand for (SEN:materialiseAs), else the one that the file of the relation carries in META:TYPE (its technical
+				// type is the relation, it carries the properties; its META:TYPE is the type of the target, see WriteTargetRelations), else the target says it itself. It is passed on, so
+				// that the navigator opens the target as that type, not as the format of its file.
+				BString targetType;
+				if (relationConfig.FindString(sen::conf::kMaterialiseAs, &targetType) != B_OK || targetType.IsEmpty()) {
+					targetType.SetTo("");
+					BNode fileOfRelation(&srcRef);
+					char srcType[B_MIME_TYPE_LENGTH];
+					if (fileOfRelation.InitCheck() == B_OK && BNodeInfo(&fileOfRelation).GetType(srcType) == B_OK && strncmp(srcType, "relation/", 9) == 0)
+						fileOfRelation.ReadAttrString(sen::attr::kType, &targetType);
+				}
+				if (!targetType.IsEmpty()) {
+					message->RemoveName(sen::key::kTargetType);
+					message->AddString(sen::key::kTargetType, targetType);
+				}
+
 				// the navigator of the relation type if it has one (not Tracker: that is what opens any file),
-				// else the default app of the file, which should be a SEN relation navigator (for a target that is opened from a menu: the app
-				// of the target)
+				// else the default app of the target, of the type that it is opened as
 				char navigatorSig[B_MIME_TYPE_LENGTH];
 				result = B_ERROR;
 				if (BMimeType(relationType.String()).GetPreferredApp(navigatorSig) == B_OK
 						&& strcasecmp(navigatorSig, kTrackerSignature) != 0) {
 					result = be_roster->FindApp(navigatorSig, &senHandlerRef);
 				}
+				if (result != B_OK && !targetType.IsEmpty() && BMimeType(targetType.String()).IsInstalled())
+					result = be_roster->FindApp(targetType.String(), &senHandlerRef);
 				if (result != B_OK)
-					result = be_roster->FindApp(&srcRef, &senHandlerRef);
+					result = be_roster->FindApp(&targetRef, &senHandlerRef);
 				if (result != B_OK) {
-					PRINT(("failed to find default app for ref %s: %s\n", srcRef.name, strerror(result)));
+					PRINT(("failed to find default app for ref %s: %s\n", targetRef.name, strerror(result)));
 					return true;
 				}
 			}
@@ -731,7 +750,7 @@ TTracker::OpenOntologyAsFolder(const entry_ref* ref)
 /**
  * A file of an entity type of SEN (its semantic type in META:TYPE, entity/x-vnd.sen-labs.entity.person) opens with the application of that type, also when its file type is another one:
  * a person that was made by the People of Haiku is application/x-person, and People shows its own attributes only, none of those of SEN. Returns false (nothing is done) for any other
- * file, for one that has the same type in both, and for a type that has no application: it is opened as any file then.
+ * file, for one that has the same type in both, for the file of a relation (its navigator opens the target), and for a type that has no application: it is opened as any file then.
  */
 bool
 TTracker::OpenBySemanticType(const entry_ref* ref)
@@ -741,8 +760,8 @@ TTracker::OpenBySemanticType(const entry_ref* ref)
 	if (node.InitCheck() != B_OK || node.ReadAttrString(sen::attr::kType, &semanticType) != B_OK || !semanticType.StartsWith("entity/"))
 		return false;
 	char fileType[B_MIME_TYPE_LENGTH];
-	if (BNodeInfo(&node).GetType(fileType) == B_OK && strcasecmp(fileType, semanticType.String()) == 0)
-		return false;
+	if (BNodeInfo(&node).GetType(fileType) == B_OK && (strcasecmp(fileType, semanticType.String()) == 0 || strncmp(fileType, "relation/", 9) == 0))
+		return false;		// (the file of a relation has the type of its target in META:TYPE, but it is opened by the navigator of the relation, which opens the target)
 
 	// (the application that the roster finds for the type: its preferred one, else one that says it handles the type: the type of an entity has no preferred application, Shoji handles it)
 	BMimeType type(semanticType.String());
@@ -1031,6 +1050,18 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 		BString storedViewId;
 		TrackerSenRelations::NewViewId(&storedViewId);
 		result = TrackerSenRelations::MaterializeType(srcRef, storedViewId.String(), relationType, relationDirRef, menuAnswer);
+		if (result == B_OK) {
+			// the item of a direction ("contains") opens its folder, which is in the folder of the relation
+			const char* direction = message->GetString(sen::key::kItemId, "");
+			BString directionName(direction);
+			directionName.ReplaceAll('/', '\\');
+			BDirectory relationDir(relationDirRef);
+			BEntry directionEntry;
+			entry_ref directionRef;
+			if (direction[0] != '\0' && relationDir.InitCheck() == B_OK && relationDir.FindEntry(directionName.String(), &directionEntry) == B_OK
+					&& directionEntry.IsDirectory() && directionEntry.GetRef(&directionRef) == B_OK)
+				*relationDirRef = directionRef;
+		}
 		if (result != B_NOT_SUPPORTED)
 			return result;
 		// not made as a folder of files (the answer has the tree): as it is
