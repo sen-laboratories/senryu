@@ -591,14 +591,24 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 				BString name;
 				if (idToName.FindString(idKey, &name) != B_OK || name.IsEmpty())
 					name = ref.name;
-				ModelMenuItem* item = new ModelMenuItem(new Model(&ref, true, true), name.String(), new BMessage(itemMessage));
-				item->SetTarget(be_app_messenger);
-
 				BString kind(itemProps.GetString(sen::attr::kRelationKind, ""));
-				if (TrackerSenRelations::IsDirectionKind(directionConfig, kind.String()))
-					_DirectionMenu(&directions, kind, relationType)->AddItem(item);
-				else
-					AddItem(item);
+				BMenu* itemMenu = TrackerSenRelations::IsDirectionKind(directionConfig, kind.String())
+					? _DirectionMenu(&directions, kind, relationType) : this;
+
+				// (the item makes its own copy of the model, which throws when the file is not there: it can be gone, or be a link that leads nowhere, since the answer was made)
+				Model model(&ref, true, true);
+				if (model.InitCheck() != B_OK) {
+					PRINT(("target of relation vanished: %s\n", strerror(model.InitCheck())));
+					IconMenuItem* goneItem = new IconMenuItem(name.String(), new BMessage(), B_LINK_MIMETYPE);
+					goneItem->SetEnabled(false);
+					itemMenu->AddItem(goneItem);
+					(*targetCount)++;
+					continue;
+				}
+
+				ModelMenuItem* item = new ModelMenuItem(&model, name.String(), new BMessage(itemMessage));
+				item->SetTarget(be_app_messenger);
+				itemMenu->AddItem(item);
 
 				(*targetCount)++;
 			}
