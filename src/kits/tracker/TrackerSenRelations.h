@@ -179,6 +179,16 @@ public:
 	 * item per relation with the target ID, the name of the target (from the resolved targets) and the properties.
 	 */
 	static void		RelationsToList(const BMessage& relations, const BMessage& idToRef, const BMessage& idToName, BMessage* list);
+	/**
+	 * A kind that says which way a relation goes: the label of the relation or the one of its inverse ("contains", "contained in"). Other kinds say what the relation is
+	 * (the kinds of a spatial relation, the roles of a contribution) and are not a level of their own.
+	 */
+	static bool		IsDirectionKind(const BMessage& relationConfig, const char* kind);
+	/**
+	 * The list of RelationsToList() with the relations of a direction ("contains") below a node of that name, as the folders of the other levels of a relation are: the relation, what it
+	 * says, then the targets. What has no direction kind stays where it is.
+	 */
+	static void		GroupByDirection(const BMessage& relationConfig, BMessage* list);
 	static status_t	ConvertAttributesToMessage(const entry_ref* ref,
 						BMessage* params);
 	static status_t	GetRelationAttributeInfo(const char* relationType,

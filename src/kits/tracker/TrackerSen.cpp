@@ -932,7 +932,9 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 	}
 
 	const char* relationName = relationConf.GetString(sen::key::kRelationName);
-	bool isSelf    = relationConf.GetBool(sen::conf::kSelf);
+	// (a relation that says that it is a self relation, but that the menu "Open related" listed from the answer of the server, as Composition, is shown as that list)
+	bool isSelf    = relationConf.GetBool(sen::conf::kSelf)
+		&& !(message->HasMessage(sen::key::kRelations) && message->HasMessage(sen::key::kIdToRefMap));
 	bool isDynamic = relationConf.GetBool(sen::conf::kDynamic);
 
 	PRINT(("selected relation '%s' of type '%s' is %s and %s.\n",

@@ -20,8 +20,10 @@
 #include "StopWatch.h"
 #include "Tracker.h"
 #include "TemplateUtils.h"
+#include "TrackerSenRelations.h"
 
 #include <Alert.h>
+#include <Bitmap.h>
 #include <Button.h>
 #include <Catalog.h>
 #include <Debug.h>
@@ -40,8 +42,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <thread>
+#include <utility>
 #include <strings.h>
 #include <vector>
+
+/** set on the nodes below the top level of a self relation: they are not grouped by kind again */
+static const char* const kNestedLevel = "SEN:nestedLevel";
 
 OpenRelationTargetsMenu::OpenRelationTargetsMenu(const char* label, const BMessage* entriesToOpen,
 	BWindow* parentWindow, const BMessenger &messenger)
@@ -469,6 +475,25 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 	return result;
 }
 
+/** the submenu of a direction or kind in this menu (made, with its item, when the first target of it is added) */
+BMenu*
+OpenRelationTargetsMenu::_DirectionMenu(std::vector<std::pair<BString, BMenu*>>* menus, const BString& kind, const BString& relationType)
+{
+	for (const auto& each : *menus) {
+		if (each.first == kind)
+			return each.second;
+	}
+	BMenu* menu = new BMenu(kind.String());
+	menus->push_back(std::make_pair(kind, menu));
+	// (the icon of the folder of the relation, as its item in the menu above)
+	BBitmap* icon = TrackerSenRelations::FolderIconBitmap(relationType.String(), B_MINI_ICON);
+	BMenuItem* item = icon != NULL ? new IconMenuItem(menu, NULL, icon, B_MINI_ICON) : new IconMenuItem(menu, NULL, relationType.String());
+	delete icon;
+	AddItem(item);
+	return menu;
+}
+
+
 status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 {
 	status_t result;
@@ -515,6 +540,18 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 			result = relationConfigMap.FindMessage(relationType.String(), &relationConfig);
 	}
 
+	// The relation is the level of the menu, what it says the next one when it goes both ways: Composition is "contains" for the parts of a file and "contained in" for what the file
+	// is a part of. The targets of a direction are in a submenu of its name, as the relations of a group (spatial, temporal) are in the one of their name.
+	BMessage directionConfig;
+	if (hasContext) {
+		RelationContextRef context = RelationContexts::Find(contextId);
+		if (context != NULL)
+			context->FindConfig(relationType.String(), &directionConfig);
+	} else {
+		directionConfig = relationConfig;
+	}
+	std::vector<std::pair<BString, BMenu*>> directions;	// kind, menu
+
 	char*       idKey;
     type_code   typeCode;
     int32       refCount;
@@ -554,7 +591,12 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 					name = ref.name;
 				ModelMenuItem* item = new ModelMenuItem(new Model(&ref, true, true), name.String(), new BMessage(itemMessage));
 				item->SetTarget(be_app_messenger);
-				AddItem(item);
+
+				BString kind(itemProps.GetString(sen::attr::kRelationKind, ""));
+				if (TrackerSenRelations::IsDirectionKind(directionConfig, kind.String()))
+					_DirectionMenu(&directions, kind, relationType)->AddItem(item);
+				else
+					AddItem(item);
 
 				(*targetCount)++;
 			}
@@ -669,6 +711,28 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 
 	PRINT(("* building self relation target menu items for %d relations...\n", relationCount));
 
+	// The relation is the level of the menu, what it says is the next one: the items that the server gave a kind (the label of the relation: "contains"
+	// for the parts of a file, "contained in" for what a file is a part of) are in a submenu of their kind, as the relations of a group (spatial, temporal)
+	// are in the one of their name. Only the top level is: the nodes below it (the sections of a document) have the kind of their parent.
+	// (and only if the items say more than one: what a file contains, the events of a calendar, is all "contains", and the menu says "contains" already)
+	bool groupKinds = false;
+	if (!fEntriesToOpen.GetBool(kNestedLevel, false)) {
+		BString firstKind;
+		for (int32 itemIndex = 0; itemIndex < relationCount; itemIndex++) {
+			BMessage each;
+			if (fRelationTargetsReply->FindMessage(sen::key::kRelations, itemIndex, &each) != B_OK)
+				continue;
+			BString kind(each.GetString(sen::attr::kRelationKind, ""));
+			if (kind.IsEmpty())
+				continue;
+			if (firstKind.IsEmpty())
+				firstKind = kind;
+			else if (kind != firstKind)
+				groupKinds = true;
+		}
+	}
+	std::vector<std::pair<BString, BMenu*>> kinds;	// kind, menu
+
 	// process all items of this level
 	for (int32 itemIndex = 0; itemIndex < relationCount; itemIndex++) {
 		BString label, type;
@@ -752,6 +816,7 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 			childNode.what = sensei::cmd::kResult;
 			childNode.AddRef(sen::key::kSourceRef, &ref);
 			childNode.AddString(sen::key::kRelationType, relationOfItem.String());
+			childNode.AddBool(kNestedLevel, true);
 			// the configs and the tree are in the context, whatever the depth: a sub menu is only a node of the tree
 			RelationContexts::Tag(&childNode, contextId);
 
@@ -767,7 +832,12 @@ OpenRelationTargetsMenu::AddSelfRelationTargetItems(uint32* targetCount)
 		}  // for
 
 		item->SetTarget(be_app_messenger);
-		AddItem(item);
+
+		BString kind(groupKinds ? relationProperties.GetString(sen::attr::kRelationKind, "") : "");
+		if (kind.IsEmpty())
+			AddItem(item);
+		else
+			_DirectionMenu(&kinds, kind, fDefaultType)->AddItem(item);
 
 		(*targetCount)++;
 	}	// for

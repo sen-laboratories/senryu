@@ -39,6 +39,7 @@
 #include <Catalog.h>
 #include <Messenger.h>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "Attributes.h"
@@ -1292,6 +1293,58 @@ TrackerSenRelations::NewViewId(BString* viewId)
 }
 
 
+bool
+TrackerSenRelations::IsDirectionKind(const BMessage& relationConfig, const char* kind)
+{
+	if (kind == NULL || kind[0] == '\0')
+		return false;
+	BMessage direction;
+	for (const char* name : { sen::conf::kRelation, sen::conf::kInverse }) {
+		if (relationConfig.FindMessage(name, &direction) == B_OK && strcmp(direction.GetString(sen::attr::kRelationLabel, ""), kind) == 0)
+			return true;
+	}
+	return false;
+}
+
+
+void
+TrackerSenRelations::GroupByDirection(const BMessage& relationConfig, BMessage* list)
+{
+	std::vector<std::pair<BString, BMessage>> directions;	// kind, the relations of it
+	BMessage grouped;
+	BMessage item;
+	for (int32 index = 0; list->FindMessage(sen::key::kRelations, index, &item) == B_OK; index++) {
+		BString kind(item.GetString(sen::attr::kRelationKind, ""));
+		if (!IsDirectionKind(relationConfig, kind.String())) {
+			grouped.AddMessage(sen::key::kRelations, &item);
+			continue;
+		}
+		BMessage* children = NULL;
+		for (auto& each : directions) {
+			if (each.first == kind)
+				children = &each.second;
+		}
+		if (children == NULL) {
+			directions.push_back(std::make_pair(kind, BMessage()));
+			children = &directions.back().second;
+		}
+		children->AddMessage(sen::key::kRelations, &item);
+	}
+	if (directions.empty())
+		return;
+
+	for (const auto& each : directions) {
+		BMessage node;
+		node.AddString(sensei::key::kName, each.first);
+		node.AddString(sen::attr::kRelationLabel, each.first);
+		node.AddString(sen::attr::kRelationKind, each.first);
+		node.AddMessage(sen::key::kRelations, &each.second);
+		grouped.AddMessage(sen::key::kRelations, &node);
+	}
+	*list = grouped;
+}
+
+
 void
 TrackerSenRelations::RelationsToList(const BMessage& relations, const BMessage& idToRef, const BMessage& idToName,
 	BMessage* list)
@@ -1776,6 +1829,9 @@ TrackerSenRelations::FillTypeFolder(const BMessage& reply, const entry_ref& sour
 
 	BMessage list;
 	RelationsToList(relations, idToRef, idToName, &list);
+	// (the folders of the directions can only be made for a relation that is worked out: what it says is not stored, so nothing is done to a file of it)
+	if (relationConfig.GetBool(sen::conf::kDynamic, false))
+		GroupByDirection(relationConfig, &list);
 
 	BMessage config(relationConfig);
 	config.AddString(sen::key::kSourceId, sourceId);
@@ -1997,7 +2053,8 @@ TrackerSenRelations::MaterializeType(const entry_ref& sourceRef, const char* vie
 	// a self relation (what a document contains), dynamic or not, is a tree that its menu hands over (PrepareRelationTargetFolder, MaterializeSelfRelations). Any other relation is made
 	// into a folder of what the server answers now: if it is dynamic (worked out by a plugin or a query, whether remote or not) its files cannot be changed, and asked again later the
 	// folder is made again.
-	if (relationConfig.GetBool(sen::conf::kSelf, false))
+	// (unless the menu has handed over its answer: a relation of the menu "Open related" is a list of what the server answered, whatever it says about itself: Composition)
+	if (answer == NULL && relationConfig.GetBool(sen::conf::kSelf, false))
 		return B_NOT_SUPPORTED;
 
 	BString sourceId(reply.GetString(sen::key::kSourceId, ""));
