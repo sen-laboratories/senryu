@@ -91,8 +91,30 @@ WriteBrokenLinkIcon(BNode& relationNode)
 }
 
 
+
+/**
+ * The type that the target of a relation is: what the relation says its items stand for (`SEN:materialiseAs`), else the semantic type that the target has (its META:TYPE), else the
+ * technical type of its file: every relation file says what its target is.
+ */
+static BString
+TypeOfTarget(const BMessage& relationConfig, const entry_ref& target)
+{
+	BString type;
+	if (relationConfig.FindString(sen::conf::kMaterialiseAs, &type) == B_OK && !type.IsEmpty())
+		return type;
+	type.SetTo("");
+	BNode node(&target);
+	if (node.InitCheck() == B_OK && (node.ReadAttrString(sen::attr::kType, &type) != B_OK || type.IsEmpty())) {
+		char fileType[B_MIME_TYPE_LENGTH];
+		if (BNodeInfo(&node).GetType(fileType) == B_OK)
+			type.SetTo(fileType);
+	}
+	return type;
+}
+
+
 static void
-CopyTargetIcon(BNode& relationNode, const entry_ref& target)
+CopyTargetIcon(BNode& relationNode, const entry_ref& target, const BString& targetType)
 {
 	BNode targetNode(&target);
 	if (targetNode.InitCheck() != B_OK)
@@ -108,7 +130,13 @@ CopyTargetIcon(BNode& relationNode, const entry_ref& target)
 	size_t size = 0;
 	type_code type = 0;
 	BNodeInfo info(&targetNode);
-	if (info.GetIcon(&data, &size, &type) != B_OK || type != B_VECTOR_ICON_TYPE) {
+	// The file of a relation stands for its target, which is what its META:TYPE says it is (an event in a text/calendar file): the icon is the one of that type, unless the target has an icon or a
+	// thumbnail of its own (the cover of a book, the picture of a person)
+	attr_info ownIcon;
+	if (!targetType.IsEmpty() && targetNode.GetAttrInfo("BEOS:ICON", &ownIcon) != B_OK && targetNode.GetAttrInfo(kAttrThumbnailCreationTime, &ownIcon) != B_OK
+			&& BMimeType(targetType.String()).GetIcon(&data, &size) == B_OK) {
+		type = B_VECTOR_ICON_TYPE;
+	} else if (info.GetIcon(&data, &size, &type) != B_OK || type != B_VECTOR_ICON_TYPE) {
 		delete[] data;
 		data = NULL;
 		char mimeType[B_MIME_TYPE_LENGTH];
@@ -495,8 +523,19 @@ TrackerSenRelations::WriteTargetRelations(
 		}   // properties loop
 		// (a folder is a nested relation: it keeps the icon that it got above)
 		entry_ref targetRef;
-		if (!hasRelations && properties.FindRef(sen::attr::kRelationTargetRef, &targetRef) == B_OK)
-			CopyTargetIcon(relationNode, targetRef);
+		const bool ofTarget = !hasRelations && properties.FindRef(sen::attr::kRelationTargetRef, &targetRef) == B_OK;
+		// the item of a self relation is a place in the file of the source: that file is its target (see PrepareRelationTargetFolder)
+		const bool inSource = !hasRelations && !ofTarget && relationConf->FindRef(sen::key::kTargetRef, &targetRef) == B_OK;
+		if (ofTarget || inSource) {
+			// The file has the type of the relation (it carries the properties of the relation as attributes), and says what its target is in META:TYPE, for every relation file whether the
+			// relation is a self relation or not: the navigator opens the target as that type, and the icon and the column Type show it
+			BString targetType = TypeOfTarget(*relationConf, targetRef);
+			if (!targetType.IsEmpty())
+				relationNode.WriteAttrString(sen::attr::kType, &targetType);
+			// (the icon of what is in the source file is the one of the relation, but for what it stands for: an event of a calendar)
+			if (ofTarget || relationConf->HasString(sen::conf::kMaterialiseAs))
+				CopyTargetIcon(relationNode, targetRef, targetType);
+		}
 		else if (!hasRelations && properties.GetBool(sen::key::kTargetMissing, false))
 			WriteBrokenLinkIcon(relationNode);
 

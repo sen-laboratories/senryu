@@ -569,6 +569,8 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 				BMessage itemMessage(sen::cmd::kOpenRelationTarget);
 				itemMessage.AddRef(sen::key::kSourceRef, &ref);
 				itemMessage.AddString(sen::key::kRelationType, relationType);
+				// (the item is the target itself, also if the relation says that it is a self relation: Composition)
+				itemMessage.AddBool(TrackerSenRelations::kTargetItem, true);
 
 				// the config applicable to this item
 				if (hasContext)
@@ -644,6 +646,17 @@ status_t OpenRelationTargetsMenu::AddRelationTargetItems(uint32* targetCount)
 		openRelationTargetsItemMsg->AddMessage(sen::key::kRelations, &relations);
 		openRelationTargetsItemMsg->AddMessage(sen::key::kIdToRefMap, &idToRef);
 		openRelationTargetsItemMsg->AddMessage(sen::key::kIdToNameMap, &idToName);
+
+		// the item of a direction opens the folder of that direction, below the folder of the relation (it has what the item of the relation has, and says which one)
+		for (const auto& each : directions) {
+			BMenuItem* directionItem = each.second->Superitem();
+			if (directionItem == NULL)
+				continue;
+			BMessage* openDirection = new BMessage(*openRelationTargetsItemMsg);
+			openDirection->AddString(sen::key::kItemId, each.first);
+			directionItem->SetMessage(openDirection);
+			directionItem->SetTarget(be_app_messenger);
+		}
 
 		PRINT(("openRelationTargetsItemMsg is:\n"));
 		openRelationTargetsItemMsg->PrintToStream();

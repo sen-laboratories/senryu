@@ -36,6 +36,8 @@ public:
 	 * MIME database, so that a menu can ask it. A relation without it is a link (a reference into a PDF): what is done with its file is done with the target.
 	 */
 	static bool			IsMaterialisableItem(const entry_ref& ref, BString* entityType = NULL);
+	/** set in the message of an item of a menu that lists the targets of a relation: the item stands for the target itself, whatever the relation says about itself (Composition) */
+	static constexpr char	kTargetItem[] = "SEN:menuTarget";
 	/**
 	 * Asks the SEN server (the plugin of the relation) for the entities of the items: a file of its own for each, found by its identifier if it was made before. @p entities has an
 	 * entry for each of @p items, in the same order; one that has no entity (the calendar has changed, the plugin could not make it) is left empty (name NULL). Runs the server's calls and
