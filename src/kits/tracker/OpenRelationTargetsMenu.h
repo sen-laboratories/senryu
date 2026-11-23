@@ -8,6 +8,8 @@
 
 #include <atomic>
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include <sen/Sen.h>
 #include "SlowMenu.h"
@@ -55,6 +57,8 @@ private:
 	status_t	 AddRelationTargetItems(uint32* targetCount);
 	status_t	 AddCompatibleRelationTargetItems(uint32* targetCount);
 	status_t	 AddSelfRelationTargetItems(uint32* targetCount);
+	/** the submenu of a direction ("contains", "contained in") of the relation, made with its item when the first target is added */
+	BMenu*		 _DirectionMenu(std::vector<std::pair<BString, BMenu*>>* menus, const BString& kind, const BString& relationType);
 
 	BMessage	fEntriesToOpen;
 	BMessenger	fMessenger;
