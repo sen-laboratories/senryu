@@ -93,8 +93,10 @@ All rights reserved.
 #include "PoseView.h"
 #include "QueryContainerWindow.h"
 #include "SelectionWindow.h"
+#include <set>
 #include <sen/Sen.h>
 #include <sen/SenContexts.h>
+#include <sen/SenLookup.h>
 #include "Shortcuts.h"
 #include "TemplatesMenu.h"
 #include "Thread.h"
@@ -2203,6 +2205,47 @@ HasNoRelations(const entry_ref* ref)
 }
 
 
+// The contexts that all of these entities belong to already: the `SEN:META` of an entity lists the contexts that it is associated with (what is made while a context is current is
+// related to it), the folder of a context has its `SEN:ID`. The default context has none (it is every file and never applied): it is never listed, the command finds out.
+static std::set<std::string>
+ContextsHolding(const std::vector<entry_ref>& entities, const std::vector<std::string>& contexts)
+{
+	std::set<std::string> holding;
+	if (entities.empty())
+		return holding;
+
+	BPath folder;
+	if (find_directory(B_USER_SETTINGS_DIRECTORY, &folder) != B_OK || folder.Append("sen") != B_OK
+			|| folder.Append(sen::config::kContextsDir) != B_OK)
+		return holding;
+
+	std::vector<std::set<std::string> > associated;
+	for (const entry_ref& entity : entities) {
+		BNode node(&entity);
+		std::vector<std::string> ids;
+		sen::lookup::TargetIds(node, &ids, sen::attr::kMeta);
+		associated.push_back(std::set<std::string>(ids.begin(), ids.end()));
+	}
+	for (const std::string& name : contexts) {
+		BPath path(folder);
+		BNode node;
+		BString id;
+		if (path.Append(name.c_str()) != B_OK || node.SetTo(path.Path()) != B_OK || node.ReadAttrString(sen::attr::kId, &id) != B_OK || id.IsEmpty())
+			continue;
+		bool all = true;
+		for (const std::set<std::string>& ids : associated) {
+			if (ids.count(id.String()) == 0) {
+				all = false;
+				break;
+			}
+		}
+		if (all)
+			holding.insert(name);
+	}
+	return holding;
+}
+
+
 // a context in the list of "Add to Library": the current one is in bold
 class ContextMenuItem : public BMenuItem {
 public:
@@ -2445,6 +2488,7 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 
 	bool anyItem = false;
 	bool anyEntity = false;
+	std::vector<entry_ref> entities;		// (what is selected and is an entity: the contexts that have them all are greyed out in "Add to Library")
 	for (int32 index = 0; index < count; index++) {
 		BPose* pose = PoseView()->SelectionList()->ItemAt(index);
 		// a file in a view of relations stands for its relation: it is about the target. The item of a relation whose items are entities (an event of a calendar) is
@@ -2456,8 +2500,10 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 			entry_ref relatedRef = TrackerSenRelations::RelationTargetOrSelf(pose->TargetModel()->EntryRef());
 			message.AddRef("refs", &relatedRef);
 			// (a person, a book, ...: can be added to a Library, also from the view of a relation that lists it)
-			if (TrackerSenRelations::IsEntityFile(relatedRef))
+			if (TrackerSenRelations::IsEntityFile(relatedRef)) {
 				anyEntity = true;
+				entities.push_back(relatedRef);
+			}
 		}
 	}
 	if (anyItem)
@@ -2520,11 +2566,14 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 		std::string current;
 		sen::contexts::List(&names, &current);
 		BMenu* contexts = new BMenu(B_TRANSLATE("Add to Library"));
+		// (a context that has all the selected entities already is greyed out; the items of a relation, which are not entities yet, are not known to be anywhere)
+		const std::set<std::string> holding = anyItem ? std::set<std::string>() : ContextsHolding(entities, names);
 		for (const std::string& name : names) {
 			BMessage* add = new BMessage(kCopyToLibrary);
 			add->AddString(sen::key::kContext, name.c_str());
 			BMenuItem* contextItem = new ContextMenuItem(name.c_str(), add, name == current);
 			contextItem->SetTarget(PoseView());
+			contextItem->SetEnabled(holding.count(name) == 0);
 			contexts->AddItem(contextItem);
 		}
 		// (choosing the menu itself adds to the current context, as the menus of Tracker do)
