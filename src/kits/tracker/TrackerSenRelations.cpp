@@ -13,6 +13,8 @@
 #include <File.h>
 #include <FindDirectory.h>
 #include <MimeType.h>
+#include <algorithm>
+#include <set>
 #include <Messenger.h>
 #include <Node.h>
 #include <NodeInfo.h>
@@ -1135,19 +1137,20 @@ TrackerSenRelations::HasNoRelations(const entry_ref* ref)
 }
 
 
-// Whether another file lists this one as the target of a relation that is stored only with that other file (a one-way relation: the Affiliation of a person with an institution): `SEN:TO` of the
-// other file names the `SEN:ID` of this one. That is a relation that somebody may want to keep, so it is asked about. An association (a label, a context: `SEN:META`) is only a tag on the other
-// file: deleting the label or the context takes it off, there is nothing to ask. The file that has no `SEN:ID` is the target of nothing.
-static bool
-HasIncomingFrom(const entry_ref& ref, const char* list)
+// How many other files list this one as the target of a relation that they keep only with themselves: in `SEN:TO` a one-way relation (the Affiliation of a person with an institution), in `SEN:META`
+// an association (a label, a context, a topic: the file that is referred to is a meta entity). The files are counted once, whatever the query reports. The file that has no `SEN:ID` is the
+// target of nothing.
+static int32
+CountIncomingFrom(const entry_ref& ref, const char* list)
 {
 	BNode node(&ref);
 	BString id;
 	if (node.InitCheck() != B_OK || node.ReadAttrString(sen::attr::kId, &id) != B_OK || id.IsEmpty())
-		return false;
+		return 0;
 
 	BString predicate("(");
 	predicate << sen::idlist::ContainsPredicate(list, id.String()).c_str() << ")";
+	std::set<std::string> files;
 	BVolumeRoster roster;
 	BVolume volume;
 	while (roster.GetNextVolume(&volume) == B_OK) {
@@ -1158,11 +1161,14 @@ HasIncomingFrom(const entry_ref& ref, const char* list)
 			continue;
 		entry_ref hit;
 		while (query.GetNextRef(&hit) == B_OK) {
-			if (!(hit == ref))
-				return true;
+			if (hit == ref)
+				continue;
+			BString key;
+			key << (int64)hit.device << ":" << (int64)hit.directory << ":" << hit.name;
+			files.insert(key.String());
 		}
 	}
-	return false;
+	return (int32)files.size();
 }
 
 
@@ -1170,24 +1176,27 @@ bool
 TrackerSenRelations::ConfirmDeletion(const BObjectList<entry_ref, true>& refs, std::function<void(const entry_ref&)> showRelations)
 {
 	std::vector<entry_ref> related;		// the files that have relations to files that are there
-	std::vector<entry_ref> stale;		// those that only have relations to files that are gone, or that other files only have as a label or context
+	std::vector<entry_ref> stale;		// those that only have relations to files that are gone
+	std::vector<entry_ref> referenced;	// meta entities (a context, a topic, a label) that other files refer to
+	int32 referencingFiles = 0;			// how many files refer to them
 
 	for (int32 index = 0; index < refs.CountItems(); index++) {
 		const entry_ref* ref = refs.ItemAt(index);
 		if (ref == NULL || HasNoRelations(ref))
 			continue;
 
+		// A file that has a label or a context is deleted right away: the tag is with the file. It is the other way round that asks: a meta entity that files refer to.
+		const int32 tags = CountIncomingFrom(*ref, sen::attr::kMeta);
+		if (tags > 0) {
+			referenced.push_back(*ref);
+			referencingFiles += tags;
+		}
+
 		BNode node(ref);
 		std::vector<std::string> ids;
 		const bool outgoing = node.InitCheck() == B_OK && sen::lookup::TargetIds(node, &ids) == B_OK && !ids.empty();
-		// (what other files have to this one and keep only with themselves: the file is the target of relations that its own lists do not show; the tags that other files have of it are taken
-		// off without asking)
-		const bool incoming = HasIncomingFrom(*ref, sen::attr::kTo);
-		const bool tagged = !outgoing && !incoming && HasIncomingFrom(*ref, sen::attr::kMeta);
-		if (tagged) {
-			stale.push_back(*ref);
-			continue;
-		}
+		// (what other files have to this one and keep only with themselves: the file is the target of relations that its own lists do not show)
+		const bool incoming = CountIncomingFrom(*ref, sen::attr::kTo) > 0;
 		if (!outgoing && !incoming)
 			continue;
 
@@ -1202,16 +1211,40 @@ TrackerSenRelations::ConfirmDeletion(const BObjectList<entry_ref, true>& refs, s
 		(anyThere ? related : stale).push_back(*ref);
 	}
 
-	if (!related.empty()) {
+	if (!related.empty() || !referenced.empty()) {
 		BString message;
-		if (related.size() == 1)
-			message << "This file still has relations.\n\nIf you delete it, the relations are removed, too. Do you want to delete it?";
-		else
-			message << "These files still have relations.\n\nIf you delete them, the relations are removed, too. Do you want to delete them?";
+		if (referenced.empty()) {
+			if (related.size() == 1)
+				message << "This file still has relations.\n\nIf you delete it, the relations are removed, too. Do you want to delete it?";
+			else
+				message << "These files still have relations.\n\nIf you delete them, the relations are removed, too. Do you want to delete them?";
+		} else {
+			// what is said once for everything that is deleted: the relations, and the files that refer to a meta entity
+			bool several = (related.size() + referenced.size()) > 1;
+			if (!related.empty()) {
+				message << (related.size() == 1 ? "This file still has relations. If you delete it, the relations are removed, too." :
+					"These files still have relations. If you delete them, the relations are removed, too.");
+				message << "\n\n";
+			}
+			if (referenced.size() == 1) {
+				BNode node(&referenced[0]);
+				char type[B_MIME_TYPE_LENGTH], description[B_MIME_TYPE_LENGTH];
+				type[0] = description[0] = '\0';
+				BNodeInfo(&node).GetType(type);
+				BMimeType mime(type);
+				mime.GetShortDescription(description);
+				message << "This " << (description[0] != '\0' ? description : "item") << " is referenced by " << referencingFiles
+					<< (referencingFiles == 1 ? " file." : " files.");
+			} else {
+				message << "These " << (int32)referenced.size() << " items are referenced by " << referencingFiles << " files in total.";
+			}
+			message << " Do you really want to delete " << (several ? "them?" : "it?");
+		}
 
+		const bool offerShow = showRelations && !related.empty();
 		for (;;) {
 			BAlert* alert;
-			if (showRelations) {
+			if (offerShow) {
 				alert = new BAlert("", message.String(), "Show in Tracker", "Cancel", "Delete", B_WIDTH_AS_USUAL, B_OFFSET_SPACING, B_WARNING_ALERT);
 				alert->SetShortcut(1, B_ESCAPE);
 			} else {
@@ -1219,13 +1252,13 @@ TrackerSenRelations::ConfirmDeletion(const BObjectList<entry_ref, true>& refs, s
 				alert->SetShortcut(0, B_ESCAPE);
 			}
 			int32 button = alert->Go();
-			if (showRelations && button == 0) {
+			if (offerShow && button == 0) {
 				// (the windows are opened by the file manager; the question is asked again)
 				for (size_t i = 0; i < related.size() && i < 5; i++)
 					showRelations(related[i]);
 				continue;
 			}
-			if (button != (showRelations ? 2 : 1))
+			if (button != (offerShow ? 2 : 1))
 				return false;
 			break;
 		}
@@ -1237,6 +1270,10 @@ TrackerSenRelations::ConfirmDeletion(const BObjectList<entry_ref, true>& refs, s
 		return true;
 	std::vector<entry_ref> all(stale);
 	all.insert(all.end(), related.begin(), related.end());
+	for (const entry_ref& meta : referenced) {
+		if (std::find(all.begin(), all.end(), meta) == all.end())
+			all.push_back(meta);
+	}
 	for (const entry_ref& ref : all) {
 		BMessage remove(sen::cmd::kRelationsRemoveAll);
 		remove.AddRef(sen::key::kSourceRef, &ref);
