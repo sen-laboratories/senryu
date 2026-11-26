@@ -1135,6 +1135,39 @@ TrackerSenRelations::HasNoRelations(const entry_ref* ref)
 }
 
 
+// Whether another file lists this one as the target of a relation that is stored only with that other file (a one-way relation: the Affiliation of a person with an institution) or of an
+// association (a context, a label): `SEN:TO` and `SEN:META` of the other file name the `SEN:ID` of this one. The file that has no `SEN:ID` is the target of nothing.
+static bool
+HasIncomingRelations(const entry_ref& ref)
+{
+	BNode node(&ref);
+	BString id;
+	if (node.InitCheck() != B_OK || node.ReadAttrString(sen::attr::kId, &id) != B_OK || id.IsEmpty())
+		return false;
+
+	BVolumeRoster roster;
+	for (const char* list : {sen::attr::kTo, sen::attr::kMeta}) {
+		BString predicate("(");
+		predicate << sen::idlist::ContainsPredicate(list, id.String()).c_str() << ")";
+		roster.Rewind();
+		BVolume volume;
+		while (roster.GetNextVolume(&volume) == B_OK) {
+			if (!volume.KnowsQuery() || !volume.KnowsAttr())
+				continue;
+			BQuery query;
+			if (query.SetVolume(&volume) != B_OK || query.SetPredicate(predicate.String()) != B_OK || query.Fetch() != B_OK)
+				continue;
+			entry_ref hit;
+			while (query.GetNextRef(&hit) == B_OK) {
+				if (!(hit == ref))
+					return true;
+			}
+		}
+	}
+	return false;
+}
+
+
 bool
 TrackerSenRelations::ConfirmDeletion(const BObjectList<entry_ref, true>& refs, std::function<void(const entry_ref&)> showRelations)
 {
@@ -1148,10 +1181,13 @@ TrackerSenRelations::ConfirmDeletion(const BObjectList<entry_ref, true>& refs, s
 
 		BNode node(ref);
 		std::vector<std::string> ids;
-		if (node.InitCheck() != B_OK || sen::lookup::TargetIds(node, &ids) != B_OK || ids.empty())
+		const bool outgoing = node.InitCheck() == B_OK && sen::lookup::TargetIds(node, &ids) == B_OK && !ids.empty();
+		// (what other files have to this one and keep only with themselves: the file is the target of relations that its own lists do not show)
+		const bool incoming = HasIncomingRelations(*ref);
+		if (!outgoing && !incoming)
 			continue;
 
-		bool anyThere = false;
+		bool anyThere = incoming;		// (the files that point to it are there)
 		for (const std::string& id : ids) {
 			entry_ref target;
 			if (sen::lookup::EntryForId(id, &target) == B_OK) {
