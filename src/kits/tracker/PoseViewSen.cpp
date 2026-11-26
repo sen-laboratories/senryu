@@ -45,6 +45,7 @@ All rights reserved.
 #include <Alert.h>
 #include <Catalog.h>
 #include <Directory.h>
+#include <File.h>
 #include <Entry.h>
 #include <MimeType.h>
 #include <Path.h>
@@ -66,6 +67,7 @@ All rights reserved.
 #include "RelationFolders.h"
 #include "RelationLabelWindow.h"
 #include "TrackerSenRelations.h"
+#include <map>
 #include <set>
 #include <string>
 #include <thread>
@@ -73,6 +75,7 @@ All rights reserved.
 #include <vector>
 
 #include <sen/Sen.h>
+#include <sen/SenLibrary.h>
 #include <sen/Sensei.h>
 
 #undef B_TRANSLATION_CONTEXT
@@ -355,7 +358,8 @@ BPoseView::HandleSenMessage(BMessage* message)
 			break;
 		}
 		case kCopyToLibrary:
-			result = CopySelectionToLibrary();
+			// (no context: the current one; the submenu of the item names one)
+			result = AddSelectionToLibrary(message->GetString(sen::key::kContext, (const char*)NULL));
 			break;
 
 		case sensei::cmd::kExtract:
@@ -394,44 +398,152 @@ BPoseView::HandleSenMessage(BMessage* message)
 }
 
 
-status_t
-BPoseView::CopySelectionToLibrary()
+/** copies an entity file into a folder, with its attributes (the SEN server gives the copy an identity of its own); B_FILE_EXISTS if there is a file of that name there */
+static status_t
+CopyEntityInto(const entry_ref& entity, const entry_ref& folder, entry_ref* copy)
 {
-	std::vector<entry_ref> items;
+	BDirectory directory(&folder);
+	BFile source(&entity, B_READ_ONLY);
+	if (directory.InitCheck() != B_OK || source.InitCheck() != B_OK)
+		return B_ERROR;
+	if (directory.Contains(entity.name))
+		return B_FILE_EXISTS;
+
+	BFile target;
+	status_t result = directory.CreateFile(entity.name, &target, true);
+	if (result != B_OK)
+		return result;
+	char buffer[16384];
+	for (;;) {
+		const ssize_t read = source.Read(buffer, sizeof(buffer));
+		if (read < 0)
+			result = (status_t)read;
+		if (read <= 0)
+			break;
+		if (target.Write(buffer, (size_t)read) != read) {
+			result = B_IO_ERROR;
+			break;
+		}
+	}
+	if (result == B_OK)
+		result = FSCopyAttributesAndStats(&source, &target, true);
+	if (result != B_OK) {
+		BEntry partial(&directory, entity.name);
+		partial.Remove();
+		return result;
+	}
+	BEntry made(&directory, entity.name);
+	return made.GetRef(copy);
+}
+
+
+status_t
+BPoseView::AddSelectionToLibrary(const char* context)
+{
+	std::vector<entry_ref> items, entities;
 	for (int32 index = 0; index < CountSelected(); index++) {
 		const entry_ref* ref = fSelectionList->ItemAt(index)->TargetModel()->ResolveIfLink()->EntryRef();
-		if (TrackerSenRelations::IsMaterialisableItem(*ref))
+		if (TrackerSenRelations::IsMaterialisableItem(*ref)) {
 			items.push_back(*ref);
+			continue;
+		}
+		// (a file in a view of relations stands for its relation: it is the target that is added)
+		const entry_ref target = TrackerSenRelations::RelationTargetOrSelf(ref);
+		if (TrackerSenRelations::IsEntityFile(target))
+			entities.push_back(target);
 	}
-	if (items.empty())
+	if (items.empty() && entities.empty())
 		return B_NOT_SUPPORTED;
 	if (!be_roster->IsRunning(sen::kServerSignature))
 		return B_NOT_ALLOWED;
 
 	// the plugin is started and the files are made: not in the thread of the window
-	std::thread([items]() {
-		std::vector<entry_ref> entities;
-		TrackerSenRelations::MaterialiseItems(items, &entities);
-		int32 made = 0;
-		BString folder;
+	const BString contextName(context != NULL ? context : "");
+	std::thread([items, entities, contextName]() {
+		const char* named = contextName.IsEmpty() ? NULL : contextName.String();
+		BString used, folderPath;
+		int32 added = 0, already = 0, failed = 0;
+		const int32 total = (int32)(items.size() + entities.size());
+
+		// the events of a calendar and the like are made as files of their type in the Library: the server puts them into the current context, a folder says where else
+		std::map<std::string, std::vector<entry_ref> > byType;
+		for (const entry_ref& item : items) {
+			BString type;
+			TrackerSenRelations::IsMaterialisableItem(item, &type);
+			byType[type.String()].push_back(item);
+		}
+		for (const auto& group : byType) {
+			std::vector<entry_ref> made;
+			status_t result = B_OK;
+			if (named == NULL) {
+				result = TrackerSenRelations::MaterialiseItems(group.second, &made);
+			} else {
+				entry_ref folder;
+				result = sen::library::FolderFor(group.first.c_str(), &folder, named, true, &used);
+				if (result == B_OK)
+					result = TrackerSenRelations::MaterialiseItems(group.second, &made, &folder);
+			}
+			int32 groupAdded = 0;
+			for (const entry_ref& entity : made) {
+				if (entity.name == NULL)
+					continue;
+				groupAdded++;
+				if (folderPath.IsEmpty()) {
+					BPath path(&entity);
+					if (path.GetParent(&path) == B_OK)
+						folderPath = path.Path();
+				}
+			}
+			added += groupAdded;
+			failed += (int32)group.second.size() - groupAdded;
+		}
+
+		// an entity is copied into the folder of its type, unless it is there (or a file of that name is)
 		for (const entry_ref& entity : entities) {
-			if (entity.name == NULL)
+			BString type;
+			TrackerSenRelations::IsEntityFile(entity, &type);
+			entry_ref folder;
+			if (sen::library::FolderFor(type.String(), &folder, named, true, &used) != B_OK) {
+				failed++;
 				continue;
-			made++;
-			if (folder.IsEmpty()) {
-				BPath path(&entity);
-				if (path.GetParent(&path) == B_OK)
-					folder = path.Path();
+			}
+			BEntry parent;
+			BEntry(&entity).GetParent(&parent);
+			entry_ref parentRef;
+			if (parent.GetRef(&parentRef) == B_OK && parentRef == folder) {
+				already++;
+				continue;
+			}
+			entry_ref copy;
+			const status_t result = CopyEntityInto(entity, folder, &copy);
+			if (result == B_FILE_EXISTS) {
+				already++;
+			} else if (result == B_OK) {
+				added++;
+				if (folderPath.IsEmpty()) {
+					BPath path(&folder);
+					folderPath = path.Path();
+				}
+			} else {
+				failed++;
 			}
 		}
-		BNotification notification(made == (int32)items.size() ? B_INFORMATION_NOTIFICATION : B_ERROR_NOTIFICATION);
+
+		BNotification notification(failed == 0 ? B_INFORMATION_NOTIFICATION : B_ERROR_NOTIFICATION);
 		notification.SetGroup("Akita");
-		notification.SetTitle(B_TRANSLATE("Copy to Library"));
+		notification.SetTitle(B_TRANSLATE("Add to Library"));
 		BString text;
-		if (made == 0) {
-			text = B_TRANSLATE("The items could not be copied.");
+		if (added > 0) {
+			text.SetToFormat(B_TRANSLATE("%d of %d added to %s."), (int)added, (int)total, folderPath.String());
+			if (already > 0) {
+				BString more;
+				more.SetToFormat(B_TRANSLATE(" %d were there already."), (int)already);
+				text << more;
+			}
+		} else if (already > 0 && failed == 0) {
+			text = already == 1 ? B_TRANSLATE("It is in that Library already.") : B_TRANSLATE("They are in that Library already.");
 		} else {
-			text.SetToFormat(B_TRANSLATE("%d of %d copied to %s."), (int)made, (int)items.size(), folder.String());
+			text = B_TRANSLATE("The items could not be added.");
 		}
 		notification.SetContent(text);
 		notification.Send();
@@ -457,9 +569,9 @@ BPoseView::MaterialiseItemsInto(const std::vector<entry_ref>& items, const entry
 			return;		// (the files are there: nothing to tell)
 		BNotification notification(B_ERROR_NOTIFICATION);
 		notification.SetGroup("Akita");
-		notification.SetTitle(B_TRANSLATE("Copy to Library"));
+		notification.SetTitle(B_TRANSLATE("Add to Library"));
 		BString text;
-		text.SetToFormat(B_TRANSLATE("%d of %d could not be copied."), (int)(items.size() - made), (int)items.size());
+		text.SetToFormat(B_TRANSLATE("%d of %d could not be added."), (int)(items.size() - made), (int)items.size());
 		notification.SetContent(text);
 		notification.Send();
 	}).detach();

@@ -492,8 +492,12 @@ protected:
 	status_t RequestOpenRelations(uint32 what, OpenRelationsRequest* request);
 	status_t ExtractRefsFromSelection(BMessage* refs);
 	status_t EnrichRefsFromSelection(bool wipe = true);
-	/** The items of a relation whose items are entities (the events of a calendar) among the selected files become files of their own in the Library (kCopyToLibrary). */
-	status_t CopySelectionToLibrary();
+	/**
+	 * The selected files are added to the Library of a context (kCopyToLibrary, "Add to Library"): the items of a relation whose items are entities (the events of a calendar) become files of
+	 * their own there, an entity (a person, a book) is copied into the folder of its type. @p context is the name of the context, NULL for the current one. What is there already is left
+	 * alone, and so are the copies that are in other Libraries.
+	 */
+	status_t AddSelectionToLibrary(const char* context);
 	/**
 	 * Makes the entities of the items of a relation whose items are entities (the events of a calendar) in @p folder, the place where they were dropped (a thread of its own: the plugin
 	 * is started). Tells when an item could not be made. The files appear in the folder as any file does.

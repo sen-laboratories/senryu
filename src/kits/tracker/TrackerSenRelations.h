@@ -36,6 +36,8 @@ public:
 	 * MIME database, so that a menu can ask it. A relation without it is a link (a reference into a PDF): what is done with its file is done with the target.
 	 */
 	static bool			IsMaterialisableItem(const entry_ref& ref, BString* entityType = NULL);
+	/** a file of an entity type (a person, a book, an event: `entity/...`); its type is @p type */
+	static bool			IsEntityFile(const entry_ref& ref, BString* type = NULL);
 	/** set in the message of an item of a menu that lists the targets of a relation: the item stands for the target itself, whatever the relation says about itself (Composition) */
 	static constexpr char	kTargetItem[] = "SEN:menuTarget";
 	/**

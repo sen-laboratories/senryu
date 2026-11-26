@@ -266,6 +266,10 @@ protected:
 	virtual void SetupNewRelationMenu(BMenu*, const entry_ref* ref = NULL);
 	virtual void SetupOpenRelationsMenu(BMenu*, const entry_ref* ref = NULL);
 	virtual void SetupOpenWithMenu(BMenu*, const entry_ref* ref);
+	/** Puts "Open" back in the place of "Open with..." (which is taken out of its menu). */
+	void RestoreOpenItem();
+	/** The place of "Open" in the menu, or of "Open with..." that is in its place; B_ERROR if there is neither. */
+	int32 OpenItemIndex(BMenu* parent) const;
 	virtual void SetupNewTemplatesMenu(BMenu*, MenuContext context);
 	virtual void SetupEditQueryItem(BMenu*, const entry_ref* ref);
 	virtual void SetupDiskMenu(BMenu*);
@@ -333,6 +337,8 @@ protected:
 	BMenuItem* fCopyToItem;
 	BMenuItem* fCreateLinkItem;
 	BMenuItem* fOpenWithItem;
+	BMenuItem* fParkedOpenItem;		///< the Open item while "Open with..." is in its place (Shift held, see SetupOpenWithMenu())
+	bool fOpenAnchorValid;			///< the menu that is built has an Open item (or "Open with..." in its place) that the relation items follow
 	BMenuItem* fOpenRelationsItem;
 	BMenuItem* fOpenSelfRelationsItem;
 	BMenuItem* fNewAssociationItem;

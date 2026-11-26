@@ -94,6 +94,7 @@ All rights reserved.
 #include "QueryContainerWindow.h"
 #include "SelectionWindow.h"
 #include <sen/Sen.h>
+#include <sen/SenContexts.h>
 #include "Shortcuts.h"
 #include "TemplatesMenu.h"
 #include "Thread.h"
@@ -409,6 +410,8 @@ BContainerWindow::BContainerWindow(LockingList<BWindow>* list, uint32 openFlags,
 	fCopyToItem(NULL),
 	fCreateLinkItem(NULL),
 	fOpenWithItem(NULL),
+	fParkedOpenItem(NULL),
+	fOpenAnchorValid(false),
 	fOpenRelationsItem(NULL),
 	fOpenSelfRelationsItem(NULL),
 	fNewAssociationItem(NULL),
@@ -575,6 +578,8 @@ BContainerWindow::Quit()
 
 	if (fOpenWithItem != NULL && fOpenWithItem->Menu() == NULL)
 		delete fOpenWithItem;
+	if (fParkedOpenItem != NULL && fParkedOpenItem->Menu() == NULL)
+		delete fParkedOpenItem;
 	if (fEditQueryItem != NULL && fEditQueryItem->Menu() == NULL)
 		delete fEditQueryItem;
 
@@ -699,8 +704,7 @@ BContainerWindow::DetachSubmenus()
 	if (fMountItem != NULL && fMountItem->Menu() != NULL)
 		fMountItem = DetachMountMenu();
 
-	if (fOpenWithItem != NULL && fOpenWithItem->Menu() != NULL)
-		fOpenWithItem->Menu()->RemoveItem(fOpenWithItem);
+	RestoreOpenItem();
 	if (fEditQueryItem != NULL && fEditQueryItem->Menu() != NULL)
 		fEditQueryItem->Menu()->RemoveItem(fEditQueryItem);
 
@@ -2088,13 +2092,12 @@ BContainerWindow::SetupEditQueryItem(BMenu* parent, const entry_ref* ref)
 
 	ASSERT(ref);
 
-	// bail out if "Open" item or index not found
-	BMenuItem* openItem = parent->FindItem(kOpenSelection);
-	int32 openIndex = parent->IndexOf(openItem);
-	if (openItem == NULL || openIndex == B_ERROR)
+	// bail out if "Open" item (or "Open with..." in its place) or index not found
+	const int32 openIndex = OpenItemIndex(parent);
+	if (openIndex == B_ERROR)
 		return;
 
-	// add "Edit query" item between "Open" and "Open with..."
+	// add "Edit query" item after "Open"
 	parent->AddItem(fEditQueryItem, openIndex + 1);
 
 	Shortcuts()->UpdateEditQueryItem(fEditQueryItem);
@@ -2102,13 +2105,40 @@ BContainerWindow::SetupEditQueryItem(BMenu* parent, const entry_ref* ref)
 
 
 void
+BContainerWindow::RestoreOpenItem()
+{
+	if (fOpenWithItem == NULL || fOpenWithItem->Menu() == NULL)
+		return;
+	BMenu* menu = fOpenWithItem->Menu();
+	const int32 index = menu->IndexOf(fOpenWithItem);
+	menu->RemoveItem(fOpenWithItem);
+	// (Open goes back where it was taken out: the menu that has "Open with..." is the one that has its place)
+	if (fParkedOpenItem != NULL) {
+		menu->AddItem(fParkedOpenItem, index);
+		fParkedOpenItem = NULL;
+	}
+}
+
+
+int32
+BContainerWindow::OpenItemIndex(BMenu* parent) const
+{
+	BMenuItem* item = parent->FindItem(kOpenSelection);
+	if (item == NULL && fOpenWithItem != NULL && fOpenWithItem->Menu() == parent)
+		item = fOpenWithItem;
+	return item == NULL ? B_ERROR : parent->IndexOf(item);
+}
+
+
+// "Open" and "Open with..." are one place in the menu: it is "Open", and "Open with..." instead of it while Shift is held when the menu is built (as "Enrich" is
+// "Enrich (Overwrite)"). "Open with..." keeps what it has been: choosing it asks for the application, its submenu lists them.
+void
 BContainerWindow::SetupOpenWithMenu(BMenu* parent, const entry_ref* ref)
 {
 	ASSERT(parent != NULL);
 
-	// start by removing "Open with..." item from old menu
-	if (fOpenWithItem != NULL && fOpenWithItem->Menu() != NULL)
-		fOpenWithItem->Menu()->RemoveItem(fOpenWithItem);
+	// start by taking "Open with..." out of the old menu, and putting "Open" back
+	RestoreOpenItem();
 
 	if (TargetModel()->IsRoot()) {
 		// don't add ourselves if we are root
@@ -2123,6 +2153,10 @@ BContainerWindow::SetupOpenWithMenu(BMenu* parent, const entry_ref* ref)
 
 	// bail out if we shouldn't have an "Open with..." menu
 	if (!ShouldHaveOpenWithMenu(ref))
+		return;
+
+	// "Open", unless Shift is held
+	if ((modifiers() & B_SHIFT_KEY) == 0)
 		return;
 
 	// bail out if "Open" item not found
@@ -2153,7 +2187,10 @@ BContainerWindow::SetupOpenWithMenu(BMenu* parent, const entry_ref* ref)
 	fOpenWithItem = Shortcuts()->OpenWithItem(
 		new OpenWithMenu(Shortcuts()->OpenWithLabel(), &message, this, be_app));
 
-	parent->AddItem(fOpenWithItem, openIndex + 1);
+	// in the place of "Open", which waits outside the menu until the next time
+	parent->RemoveItem(openItem);
+	fParkedOpenItem = openItem;
+	parent->AddItem(fOpenWithItem, openIndex);
 	Shortcuts()->UpdateOpenWithItem(fOpenWithItem);
 }
 
@@ -2166,7 +2203,41 @@ HasNoRelations(const entry_ref* ref)
 }
 
 
-// the separators around "Copy to Library" (the one after it is only added if no separator follows anyway): they go with the item
+// a context in the list of "Add to Library": the current one is in bold
+class ContextMenuItem : public BMenuItem {
+public:
+	ContextMenuItem(const char* label, BMessage* message, bool current)
+		:
+		BMenuItem(label, message),
+		fCurrent(current)
+	{
+	}
+
+	virtual void GetContentSize(float* width, float* height)
+	{
+		BMenuItem::GetContentSize(width, height);
+		if (fCurrent && Label() != NULL)
+			*width = std::max(*width, be_bold_font->StringWidth(Label()));
+	}
+
+	virtual void DrawContent()
+	{
+		if (fCurrent && Menu() != NULL) {
+			BFont normal;
+			Menu()->GetFont(&normal);
+			Menu()->SetFont(be_bold_font);
+			BMenuItem::DrawContent();
+			Menu()->SetFont(&normal);
+		} else
+			BMenuItem::DrawContent();
+	}
+
+private:
+	bool	fCurrent;
+};
+
+
+// the separators around "Add to Library" (the one after it is only added if no separator follows anyway): they go with the item
 class LibrarySeparatorItem : public BSeparatorItem {
 };
 
@@ -2190,7 +2261,7 @@ RemoveRelationItems(BMenu* parent, uint32 command, BMenuItem** stored)
 				&& dynamic_cast<BSeparatorItem*>(parent->ItemAt(index + 1)) != NULL) {
 			delete parent->RemoveItem(index + 1);
 		}
-		// (the separators of "Copy to Library" go with it: the one after it first, so that the index of the one before stays right)
+		// (the separators of "Add to Library" go with it: the one after it first, so that the index of the one before stays right)
 		if (command == kCopyToLibrary && index + 1 < parent->CountItems()
 				&& dynamic_cast<LibrarySeparatorItem*>(parent->ItemAt(index + 1)) != NULL) {
 			delete parent->RemoveItem(index + 1);
@@ -2237,12 +2308,11 @@ BContainerWindow::SetupNewRelationMenu(BMenu* parent, const entry_ref* ref)
 	if (HasNoRelations(ref))
 		return;
 
-	// bail out if index of "Open" item not found
-	BMenuItem* openItem = parent->FindItem(kOpenSelection);
-	if (openItem == NULL) {
+	// bail out if "Open" item (or "Open with..." in its place) not found
+	const int32 openIndex = OpenItemIndex(parent);
+	if (openIndex == B_ERROR)
 		return;
-	}
-	int32 menuIndex = parent->IndexOf(openItem) - 1;	// insert before Open
+	int32 menuIndex = openIndex - 1;	// insert before Open
 
 	// build a list of all selected files to show relations for: the SEN server answers with what can be created at all of them
 	BMessage message(B_REFS_RECEIVED);
@@ -2363,8 +2433,10 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 	if (HasNoRelations(ref))
 		return;
 
-	// bail out if index of "Open With" item not found
-	int32 menuIndex = parent->IndexOf(fOpenWithItem);
+	// bail out if there is no "Open" item to follow (a menu that has none of "Open" and "Open with...")
+	if (!fOpenAnchorValid)
+		return;
+	int32 menuIndex = OpenItemIndex(parent);
 	if (menuIndex == B_ERROR)
 		return;
 
@@ -2372,6 +2444,7 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 	BMessage message(B_REFS_RECEIVED);
 
 	bool anyItem = false;
+	bool anyEntity = false;
 	for (int32 index = 0; index < count; index++) {
 		BPose* pose = PoseView()->SelectionList()->ItemAt(index);
 		// a file in a view of relations stands for its relation: it is about the target. The item of a relation whose items are entities (an event of a calendar) is
@@ -2382,6 +2455,9 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 		} else {
 			entry_ref relatedRef = TrackerSenRelations::RelationTargetOrSelf(pose->TargetModel()->EntryRef());
 			message.AddRef("refs", &relatedRef);
+			// (a person, a book, ...: can be added to a Library, also from the view of a relation that lists it)
+			if (TrackerSenRelations::IsEntityFile(relatedRef))
+				anyEntity = true;
 		}
 	}
 	if (anyItem)
@@ -2436,10 +2512,23 @@ BContainerWindow::SetupOpenRelationsMenu(BMenu* parent, const entry_ref* ref)
 		Shortcuts()->UpdateOpenSelfRelationsItem(fOpenSelfRelationsItem);
 	}
 
-	// the items of a relation whose items are entities (the events of a calendar) are kept as the entities: a copy of the file would copy the relation
-	if (anyItem) {
-		// it is a group of its own, after the relations: a separator before it, and one after it unless one follows already
-		BMenuItem* copyItem = new BMenuItem(B_TRANSLATE("Copy to Library"), new BMessage(kCopyToLibrary));
+	// What is an entity (a person, a book) or stands for one (the events of a calendar) can be added to the Library of a context. It is a group of its own, after the relations: a
+	// separator before it, and one after it unless one follows already. The item adds to the current context; its submenu lists the contexts (the current one in bold) to add
+	// to another one, and only there (the copies in other Libraries stay as they are).
+	if (anyItem || anyEntity) {
+		std::vector<std::string> names;
+		std::string current;
+		sen::contexts::List(&names, &current);
+		BMenu* contexts = new BMenu(B_TRANSLATE("Add to Library"));
+		for (const std::string& name : names) {
+			BMessage* add = new BMessage(kCopyToLibrary);
+			add->AddString(sen::key::kContext, name.c_str());
+			BMenuItem* contextItem = new ContextMenuItem(name.c_str(), add, name == current);
+			contextItem->SetTarget(PoseView());
+			contexts->AddItem(contextItem);
+		}
+		// (choosing the menu itself adds to the current context, as the menus of Tracker do)
+		BMenuItem* copyItem = new BMenuItem(contexts, new BMessage(kCopyToLibrary));
 		copyItem->SetTarget(PoseView());
 		int32 copyIndex = std::min(menuIndex + 3, parent->CountItems());
 		parent->AddItem(new LibrarySeparatorItem(), copyIndex);
@@ -3250,11 +3339,10 @@ BContainerWindow::UpdateFileMenuOrPoseContextMenu(BMenu* menu, MenuContext conte
 	if (ref == NULL)
 		ref = TargetModel()->EntryRef();
 
-	// "Open with..." menu inserted after Open
-	if (ShouldHaveOpenWithMenu(ref)
-		&& (context == kPosePopUpContext || context == kFileMenuContext)) {
+	// "Open with..." in the place of Open while Shift is held
+	fOpenAnchorValid = ShouldHaveOpenWithMenu(ref) && (context == kPosePopUpContext || context == kFileMenuContext);
+	if (fOpenAnchorValid)
 		SetupOpenWithMenu(menu, ref);
-	}
 
 	// "New related..." displayed on top after New / 1st menu, but needs OpenWith as reference
 	SetupNewRelationMenu(menu, ref);

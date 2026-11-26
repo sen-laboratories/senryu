@@ -863,6 +863,23 @@ TrackerSenRelations::RelationTargetOrSelf(const entry_ref* ref)
 
 
 bool
+TrackerSenRelations::IsEntityFile(const entry_ref& ref, BString* entityType)
+{
+	BEntry entry(&ref);
+	if (entry.InitCheck() != B_OK || entry.IsDirectory())
+		return false;
+	BNode node(&ref);
+	char type[B_MIME_TYPE_LENGTH];
+	type[0] = '\0';
+	if (node.InitCheck() != B_OK || BNodeInfo(&node).GetType(type) != B_OK || strncmp(type, "entity/", 7) != 0)
+		return false;
+	if (entityType != NULL)
+		*entityType = type;
+	return true;
+}
+
+
+bool
 TrackerSenRelations::IsMaterialisableItem(const entry_ref& ref, BString* entityType)
 {
 	BEntry entry(&ref);
