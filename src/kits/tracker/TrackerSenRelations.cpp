@@ -1135,33 +1135,31 @@ TrackerSenRelations::HasNoRelations(const entry_ref* ref)
 }
 
 
-// Whether another file lists this one as the target of a relation that is stored only with that other file (a one-way relation: the Affiliation of a person with an institution) or of an
-// association (a context, a label): `SEN:TO` and `SEN:META` of the other file name the `SEN:ID` of this one. The file that has no `SEN:ID` is the target of nothing.
+// Whether another file lists this one as the target of a relation that is stored only with that other file (a one-way relation: the Affiliation of a person with an institution): `SEN:TO` of the
+// other file names the `SEN:ID` of this one. That is a relation that somebody may want to keep, so it is asked about. An association (a label, a context: `SEN:META`) is only a tag on the other
+// file: deleting the label or the context takes it off, there is nothing to ask. The file that has no `SEN:ID` is the target of nothing.
 static bool
-HasIncomingRelations(const entry_ref& ref)
+HasIncomingFrom(const entry_ref& ref, const char* list)
 {
 	BNode node(&ref);
 	BString id;
 	if (node.InitCheck() != B_OK || node.ReadAttrString(sen::attr::kId, &id) != B_OK || id.IsEmpty())
 		return false;
 
+	BString predicate("(");
+	predicate << sen::idlist::ContainsPredicate(list, id.String()).c_str() << ")";
 	BVolumeRoster roster;
-	for (const char* list : {sen::attr::kTo, sen::attr::kMeta}) {
-		BString predicate("(");
-		predicate << sen::idlist::ContainsPredicate(list, id.String()).c_str() << ")";
-		roster.Rewind();
-		BVolume volume;
-		while (roster.GetNextVolume(&volume) == B_OK) {
-			if (!volume.KnowsQuery() || !volume.KnowsAttr())
-				continue;
-			BQuery query;
-			if (query.SetVolume(&volume) != B_OK || query.SetPredicate(predicate.String()) != B_OK || query.Fetch() != B_OK)
-				continue;
-			entry_ref hit;
-			while (query.GetNextRef(&hit) == B_OK) {
-				if (!(hit == ref))
-					return true;
-			}
+	BVolume volume;
+	while (roster.GetNextVolume(&volume) == B_OK) {
+		if (!volume.KnowsQuery() || !volume.KnowsAttr())
+			continue;
+		BQuery query;
+		if (query.SetVolume(&volume) != B_OK || query.SetPredicate(predicate.String()) != B_OK || query.Fetch() != B_OK)
+			continue;
+		entry_ref hit;
+		while (query.GetNextRef(&hit) == B_OK) {
+			if (!(hit == ref))
+				return true;
 		}
 	}
 	return false;
@@ -1172,7 +1170,7 @@ bool
 TrackerSenRelations::ConfirmDeletion(const BObjectList<entry_ref, true>& refs, std::function<void(const entry_ref&)> showRelations)
 {
 	std::vector<entry_ref> related;		// the files that have relations to files that are there
-	std::vector<entry_ref> stale;		// those that only have relations to files that are gone
+	std::vector<entry_ref> stale;		// those that only have relations to files that are gone, or that other files only have as a label or context
 
 	for (int32 index = 0; index < refs.CountItems(); index++) {
 		const entry_ref* ref = refs.ItemAt(index);
@@ -1182,8 +1180,14 @@ TrackerSenRelations::ConfirmDeletion(const BObjectList<entry_ref, true>& refs, s
 		BNode node(ref);
 		std::vector<std::string> ids;
 		const bool outgoing = node.InitCheck() == B_OK && sen::lookup::TargetIds(node, &ids) == B_OK && !ids.empty();
-		// (what other files have to this one and keep only with themselves: the file is the target of relations that its own lists do not show)
-		const bool incoming = HasIncomingRelations(*ref);
+		// (what other files have to this one and keep only with themselves: the file is the target of relations that its own lists do not show; the tags that other files have of it are taken
+		// off without asking)
+		const bool incoming = HasIncomingFrom(*ref, sen::attr::kTo);
+		const bool tagged = !outgoing && !incoming && HasIncomingFrom(*ref, sen::attr::kMeta);
+		if (tagged) {
+			stale.push_back(*ref);
+			continue;
+		}
 		if (!outgoing && !incoming)
 			continue;
 
