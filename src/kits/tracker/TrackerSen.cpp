@@ -649,7 +649,8 @@ status_t TTracker::CreateNewAssociationEntity(const char* associationEntityType,
 	BMessage msgClassReply;
 	BMessenger senMsgr(sen::kServerSignature);
 
-	result = senMsgr.SendMessage(&msgGetClassEntity, &msgClassReply);
+	// (every call to the server has a timeout: a server that is quitting or stuck must not hold up the thread of this one, which would then not answer the request to quit)
+	result = senMsgr.SendMessage(&msgGetClassEntity, &msgClassReply, 5000000, 5000000);
 	status_t status = msgClassReply.GetInt32(sen::key::kResult, B_OK);
 
 	if (result != B_OK || status != B_OK) {
@@ -789,7 +790,7 @@ status_t TTracker::PrepareLaunchTarget(
 	queryTargetRefMsg.AddString(sen::attr::kId, targetId);
 
 	BMessage reply;
-	senMessenger.SendMessage(&queryTargetRefMsg, &reply);
+	senMessenger.SendMessage(&queryTargetRefMsg, &reply, 5000000, 5000000);
 
 	status_t result = reply.FindRef("ref", targetRef);
 	if (result == B_OK) {
@@ -1001,7 +1002,8 @@ TTracker::PrepareRelationTargetFolder(BMessage *message, entry_ref* relationDirR
 
 			BMessenger server(sen::kServerSignature);
 			BMessage answer;
-			result = server.IsValid() ? server.SendMessage(&request, &answer) : B_ERROR;
+			// (the plugin that works the tree out may take its time: the server gives up on it after 90 s)
+			result = server.IsValid() ? server.SendMessage(&request, &answer, 100000000, 100000000) : B_ERROR;
 			if (result != B_OK) {
 				PRINT(("  X failed to get relation ROOT: %s\n", strerror(result) ));
 				return result;

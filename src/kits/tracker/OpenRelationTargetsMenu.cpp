@@ -138,7 +138,8 @@ OpenRelationTargetsMenu::StartBuildingItemList()
 	std::shared_ptr<Fetch> fetch = fFetch;
 	BMessenger self(this);
 	std::thread([fetch, self]() mutable {
-		fetch->result = fetch->server.SendMessage(&fetch->request, &fetch->reply);
+		// (a navigator can take half a minute, the server gives up on it after 90 s: the thread does not wait for ever for a server that does not answer)
+		fetch->result = fetch->server.SendMessage(&fetch->request, &fetch->reply, 100000000, 100000000);
 		fetch->done = true;
 		self.SendMessage(kFetched);
 	}).detach();
@@ -366,7 +367,7 @@ status_t OpenRelationTargetsMenu::AddCompatibleRelationTargetItems(uint32* targe
 		senFindClassMsg.AddString(sen::key::kType, targetType);
 
 		BMessage senFindClassReply;
-		result = fSenMessenger->SendMessage(&senFindClassMsg, &senFindClassReply);
+		result = fSenMessenger->SendMessage(&senFindClassMsg, &senFindClassReply, 5000000, 5000000);
 
 		if (result == B_OK) {
 			senFindClassReply.PrintToStream();

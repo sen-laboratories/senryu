@@ -166,7 +166,8 @@ OpenRelationsMenu::StartBuildingItemList()
 
 	message.PrintToStream();
 
-	fSenMessenger.SendMessage(new BMessage(message), &fRelationsReply);
+	// (with a timeout, as every call to the server: one that is quitting or stuck must not hold up the thread of this menu, or the quit of the program)
+	fSenMessenger.SendMessage(new BMessage(message), &fRelationsReply, 10000000, 10000000);
 
 	PRINT(("SEN->Tracker: received reply:\n"));
 	fRelationsReply.PrintToStream();
