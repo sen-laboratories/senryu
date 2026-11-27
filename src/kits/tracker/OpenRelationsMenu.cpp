@@ -246,9 +246,27 @@ OpenRelationsMenu::ResolveRelationLabel(const BMessage& relationConfigs, const B
 		label = relationConf.GetString(sen::key::kRelationName);
 	}
 	if (label.IsEmpty()) {
-		PRINT(("could not get relation config for type %s, falling back to type name.\n",
+		PRINT(("could not get relation config for type %s, falling back to its description.\n",
 			typeName.String() ));
-		label = typeName;
+		// The server gave no config for the type (it was busy, or the MIME database was being written): the name of the type in words is in the MIME database of this computer, too.
+		// Only if that has none either, the last part of the name, in capitals, is shown: never the MIME string with its slash.
+		char description[B_MIME_TYPE_LENGTH];
+		description[0] = '\0';
+		BMimeType(typeName.String()).GetShortDescription(description);
+		label = description;
+		if (label.IsEmpty()) {
+			const int32 dot = typeName.FindLast('.');
+			BString last;
+			typeName.CopyInto(last, dot >= 0 ? dot + 1 : 0, typeName.Length());
+			if (last.Length() > 0) {
+				BString first(last);
+				first.Truncate(1).ToUpper();
+				last.Remove(0, 1);
+				label << first << last;
+			}
+		}
+		if (label.IsEmpty())
+			label = typeName;
 	}
 	return label;
 }
