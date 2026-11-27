@@ -117,6 +117,7 @@ namespace BPrivate {
 #undef B_TRANSLATION_CONTEXT
 #define B_TRANSLATION_CONTEXT "FSUtils"
 
+static status_t FSRemoveEntry(BEntry* entry);
 static status_t FSDeleteFolder(BEntry*, CopyLoopControl*, bool updateStatus,
 	bool deleteTopDir = true, bool upateFileNameInStatus = false);
 static status_t MoveEntryToTrash(BEntry*, BPoint*, Undo &undo);
@@ -1307,7 +1308,7 @@ CopyFile(BEntry* srcFile, StatStruct* srcStat, BDirectory* destDir,
 
 			case TrackerCopyLoopControl::kReplace:
 				if (!conflictingEntry.IsDirectory()) {
-					ThrowOnError(conflictingEntry.Remove());
+					ThrowOnError(FSRemoveEntry(&conflictingEntry));
 					break;
 				}
 				// fall through if not a directory
@@ -1626,7 +1627,7 @@ CopyFolder(BEntry* srcEntry, BDirectory* destDir,
 			case TrackerCopyLoopControl::kReplace:
 				if (!isDirectory) {
 					// conflicting with a file or symbolic link, remove entry
-					ThrowOnError(existingEntry.Remove());
+					ThrowOnError(FSRemoveEntry(&existingEntry));
 					break;
 				}
 			// fall through if directory, do not replace.
@@ -2370,7 +2371,7 @@ CheckName(uint32 moveMode, const BEntry* sourceEntry,
 	if (destIsDir)
 		return B_OK;
 
-	status_t status = entry.Remove();
+	status_t status = FSRemoveEntry(&entry);
 	if (status != B_OK) {
 		BString error(B_TRANSLATE("There was a problem trying to replace "
 			"\"%name\". The item might be open or busy."));
@@ -2406,7 +2407,7 @@ FSDeleteFolder(BEntry* dirEntry, CopyLoopControl* loopControl,
 			status = FSDeleteFolder(&entry, loopControl, updateStatus, true,
 				upateFileNameInStatus);
 		else {
-			status = entry.Remove();
+			status = FSRemoveEntry(&entry);
 			if (updateStatus) {
 				loopControl->UpdateStatus(upateFileNameInStatus ? ref.name
 					: "", ref, 1, true);
@@ -2432,9 +2433,26 @@ FSDeleteFolder(BEntry* dirEntry, CopyLoopControl* loopControl,
 		loopControl->UpdateStatus(NULL, ref, 1);
 
 	if (deleteTopDir)
-		return dirEntry->Remove();
+		return FSRemoveEntry(dirEntry);
 
 	return B_OK;
+}
+
+
+/**
+ * Delete a file or an empty folder for good. SEN: what other files keep of it in their relations goes with it (the relations of a file that was moved to the Trash stay
+ * until it is deleted here, when the Trash is emptied, or on a delete on the spot): the id is read before the file is gone, the server is told after it is.
+ */
+static status_t
+FSRemoveEntry(BEntry* entry)
+{
+	BString senId = TrackerSenRelations::SenIdOf(*entry);
+	entry_ref ref;
+	entry->GetRef(&ref);
+	status_t status = entry->Remove();
+	if (status == B_OK)
+		TrackerSenRelations::ForgetDeleted(senId, ref);
+	return status;
 }
 
 
@@ -3110,7 +3128,7 @@ _DeleteTask(BObjectList<entry_ref, true>* list, bool confirm)
 						result = FSDeleteFolder(&entry, &loopControl, true, true, true);
 					} else {
 						loopControl.UpdateStatus(ref->name, *ref, 1, true);
-						result = entry.Remove();
+						result = FSRemoveEntry(&entry);
 					}
 				}
 				entry.Unset();

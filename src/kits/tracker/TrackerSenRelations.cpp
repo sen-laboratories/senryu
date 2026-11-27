@@ -1198,7 +1198,7 @@ TrackerSenRelations::IsProtectedFolder(const BEntry& entry, BString* reason)
 
 
 bool
-TrackerSenRelations::ConfirmDeletion(const BObjectList<entry_ref, true>& refs, std::function<void(const entry_ref&)> showRelations)
+TrackerSenRelations::CanDelete(const BObjectList<entry_ref, true>& refs)
 {
 	// the Default context is never deleted: the whole deletion is refused, and the user is told why
 	for (int32 index = 0; index < refs.CountItems(); index++) {
@@ -1210,9 +1210,17 @@ TrackerSenRelations::ConfirmDeletion(const BObjectList<entry_ref, true>& refs, s
 			return false;
 		}
 	}
+	return true;
+}
+
+
+bool
+TrackerSenRelations::ConfirmDeletion(const BObjectList<entry_ref, true>& refs, std::function<void(const entry_ref&)> showRelations)
+{
+	if (!CanDelete(refs))
+		return false;
 
 	std::vector<entry_ref> related;		// the files that have relations to files that are there
-	std::vector<entry_ref> stale;		// those that only have relations to files that are gone
 	std::vector<entry_ref> referenced;	// meta entities (a context, a topic, a label) that other files refer to
 	int32 referencingFiles = 0;			// how many files refer to them
 
@@ -1236,6 +1244,7 @@ TrackerSenRelations::ConfirmDeletion(const BObjectList<entry_ref, true>& refs, s
 		if (!outgoing && !incoming)
 			continue;
 
+		// (relations to files that are gone are no reason to ask: they are removed with the file, without a word)
 		bool anyThere = incoming;		// (the files that point to it are there)
 		for (const std::string& id : ids) {
 			entry_ref target;
@@ -1244,81 +1253,88 @@ TrackerSenRelations::ConfirmDeletion(const BObjectList<entry_ref, true>& refs, s
 				break;
 			}
 		}
-		(anyThere ? related : stale).push_back(*ref);
+		if (anyThere)
+			related.push_back(*ref);
 	}
 
-	if (!related.empty() || !referenced.empty()) {
-		BString message;
-		if (referenced.empty()) {
-			if (related.size() == 1)
-				message << "This file still has relations.\n\nIf you delete it, the relations are removed, too. Do you want to delete it?";
-			else
-				message << "These files still have relations.\n\nIf you delete them, the relations are removed, too. Do you want to delete them?";
+	if (related.empty() && referenced.empty())
+		return true;
+
+	BString message;
+	if (referenced.empty()) {
+		if (related.size() == 1)
+			message << "This file still has relations.\n\nIf you delete it, the relations are removed, too. Do you want to delete it?";
+		else
+			message << "These files still have relations.\n\nIf you delete them, the relations are removed, too. Do you want to delete them?";
+	} else {
+		// what is said once for everything that is deleted: the relations, and the files that refer to a meta entity
+		bool several = (related.size() + referenced.size()) > 1;
+		if (!related.empty()) {
+			message << (related.size() == 1 ? "This file still has relations. If you delete it, the relations are removed, too." :
+				"These files still have relations. If you delete them, the relations are removed, too.");
+			message << "\n\n";
+		}
+		if (referenced.size() == 1) {
+			BNode node(&referenced[0]);
+			char type[B_MIME_TYPE_LENGTH], description[B_MIME_TYPE_LENGTH];
+			type[0] = description[0] = '\0';
+			BNodeInfo(&node).GetType(type);
+			BMimeType mime(type);
+			mime.GetShortDescription(description);
+			message << "This " << (description[0] != '\0' ? description : "item") << " is referenced by " << referencingFiles
+				<< (referencingFiles == 1 ? " file." : " files.");
 		} else {
-			// what is said once for everything that is deleted: the relations, and the files that refer to a meta entity
-			bool several = (related.size() + referenced.size()) > 1;
-			if (!related.empty()) {
-				message << (related.size() == 1 ? "This file still has relations. If you delete it, the relations are removed, too." :
-					"These files still have relations. If you delete them, the relations are removed, too.");
-				message << "\n\n";
-			}
-			if (referenced.size() == 1) {
-				BNode node(&referenced[0]);
-				char type[B_MIME_TYPE_LENGTH], description[B_MIME_TYPE_LENGTH];
-				type[0] = description[0] = '\0';
-				BNodeInfo(&node).GetType(type);
-				BMimeType mime(type);
-				mime.GetShortDescription(description);
-				message << "This " << (description[0] != '\0' ? description : "item") << " is referenced by " << referencingFiles
-					<< (referencingFiles == 1 ? " file." : " files.");
-			} else {
-				message << "These " << (int32)referenced.size() << " items are referenced by " << referencingFiles << " files in total.";
-			}
-			message << " Do you really want to delete " << (several ? "them?" : "it?");
+			message << "These " << (int32)referenced.size() << " items are referenced by " << referencingFiles << " files in total.";
 		}
-
-		const bool offerShow = showRelations && !related.empty();
-		for (;;) {
-			BAlert* alert;
-			if (offerShow) {
-				alert = new BAlert("", message.String(), "Show in Tracker", "Cancel", "Delete", B_WIDTH_AS_USUAL, B_OFFSET_SPACING, B_WARNING_ALERT);
-				alert->SetShortcut(1, B_ESCAPE);
-			} else {
-				alert = new BAlert("", message.String(), "Cancel", "Delete", NULL, B_WIDTH_AS_USUAL, B_WARNING_ALERT);
-				alert->SetShortcut(0, B_ESCAPE);
-			}
-			int32 button = alert->Go();
-			if (offerShow && button == 0) {
-				// (the windows are opened by the file manager; the question is asked again)
-				for (size_t i = 0; i < related.size() && i < 5; i++)
-					showRelations(related[i]);
-				continue;
-			}
-			if (button != (offerShow ? 2 : 1))
-				return false;
-			break;
-		}
+		message << " Do you really want to delete " << (several ? "them?" : "it?");
 	}
 
-	// the relations go (on both sides); a server that is not there is not waited for
+	const bool offerShow = showRelations && !related.empty();
+	for (;;) {
+		BAlert* alert;
+		if (offerShow) {
+			alert = new BAlert("", message.String(), "Show in Tracker", "Cancel", "Delete", B_WIDTH_AS_USUAL, B_OFFSET_SPACING, B_WARNING_ALERT);
+			alert->SetShortcut(1, B_ESCAPE);
+		} else {
+			alert = new BAlert("", message.String(), "Cancel", "Delete", NULL, B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+			alert->SetShortcut(0, B_ESCAPE);
+		}
+		int32 button = alert->Go();
+		if (offerShow && button == 0) {
+			// (the windows are opened by the file manager; the question is asked again)
+			for (size_t i = 0; i < related.size() && i < 5; i++)
+				showRelations(related[i]);
+			continue;
+		}
+		return button == (offerShow ? 2 : 1);
+	}
+}
+
+
+BString
+TrackerSenRelations::SenIdOf(const BEntry& entry)
+{
+	BNode node(&entry);
+	BString id;
+	if (node.InitCheck() != B_OK || node.ReadAttrString(sen::attr::kId, &id) != B_OK)
+		id.SetTo("");
+	return id;
+}
+
+
+void
+TrackerSenRelations::ForgetDeleted(const BString& senId, const entry_ref& ref)
+{
+	if (senId.IsEmpty())
+		return;
 	BMessenger server(sen::kServerSignature);
 	if (!server.IsValid())
-		return true;
-	std::vector<entry_ref> all(stale);
-	all.insert(all.end(), related.begin(), related.end());
-	for (const entry_ref& meta : referenced) {
-		if (std::find(all.begin(), all.end(), meta) == all.end())
-			all.push_back(meta);
-	}
-	for (const entry_ref& ref : all) {
-		BMessage remove(sen::cmd::kRelationsRemoveAll);
-		remove.AddRef(sen::key::kSourceRef, &ref);
-		BMessage reply;
-		status_t result = server.SendMessage(&remove, &reply, 5000000, 5000000);
-		if (result != B_OK)
-			ERROR("could not remove the relations of %s: %s\n", ref.name, strerror(result));
-	}
-	return true;
+		return;		// (the references stay behind: Check & Repair of the SEN menu finds and removes them)
+	BMessage forget(sen::cmd::kRelationsRemoveReferences);
+	forget.AddString(sen::attr::kId, senId);
+	forget.AddRef(sen::key::kSourceRef, &ref);
+	// (not waited for: the server does it in its own time, and the file is gone already)
+	server.SendMessage(&forget);
 }
 
 

@@ -74,22 +74,30 @@ public:
 	 *  file of a type in the MIME database is named like the type), else its file name. The same as the SEN server gives targets. */
 	static BString	DisplayNameOf(const entry_ref& ref);
 	/**
-	 * Before files are deleted or moved to the Trash: a file that has relations (it lists targets in SEN:TO, which is what a file that is part of a
-	 * relation has: they are bidirectional) is asked about. The user is told that it has relations and decides; if the user agrees, the relations
-	 * of the files are removed (by the SEN server, on both sides) so that there are no dangling links; the files are then deleted as usual.
-	 * Relations that point to files that are gone are removed without asking. Files in the Trash are not asked about (their relations went when they
-	 * were put there).
-	 * The question says that the files have relations (not which: the folder of the relations shows that); with showRelations it has a button that
-	 * shows them (it is called for each file that has some, and the question is asked again).
-	 * @return false if the user cancelled (nothing was changed)
-	 */
-	/**
 	 * Whether this folder must never be deleted, renamed or moved away: the Default context (`~/config/settings/sen/contexts/default`: it stands for every file, and what is made new
 	 * without a context belongs to it) and the folder of the contexts that holds it. @p reason gets what is said to the user.
 	 */
 	static bool		IsProtectedFolder(const BEntry& entry, BString* reason = NULL);
+	/** Whether the files may be deleted or moved to the Trash at all (the Default context may not): if not, the user is told why. */
+	static bool		CanDelete(const BObjectList<entry_ref, true>& refs);
+	/**
+	 * Before files are deleted for good (a delete on the spot, or a file that cannot be moved to the Trash): a file that has relations to files that are there, or that other
+	 * files refer to (a context, a topic, a label), is asked about. The user is told that it has relations and decides; with showRelations the question has a button that shows them (it is
+	 * called for each file that has some, and the question is asked again). Nothing is removed here: the relations go when the file is really deleted (ForgetDeleted), so a user who
+	 * cancels later loses nothing. A file that is moved to the Trash is not asked about: it keeps its relations, they come back with it when it is restored, and they go when the
+	 * Trash is emptied. Files in the Trash are not asked about either (see HasNoRelations).
+	 * @return false if the user cancelled or the deletion is refused (nothing was changed)
+	 */
 	static bool		ConfirmDeletion(const BObjectList<entry_ref, true>& refs,
 						std::function<void(const entry_ref&)> showRelations = nullptr);
+	/** The `SEN:ID` of a file or folder; empty if it has none. Read BEFORE it is deleted: the id is an attribute of the file. */
+	static BString	SenIdOf(const BEntry& entry);
+	/**
+	 * A file that had the SEN:ID @p senId was deleted for good (@p ref is where it was): the server takes away what other files keep of it in their relations (SEN:TO and SEN:META,
+	 * the one-way relations among them), see sen::cmd::kRelationsRemoveReferences. Asynchronous; nothing happens without an id or a server (a server that is not there leaves
+	 * the references behind, which Check & Repair finds).
+	 */
+	static void		ForgetDeleted(const BString& senId, const entry_ref& ref);
 	/** A file that Tracker has made (new from a template, new related) is put into the sticky classifications of SEN (the server does it; asynchronous). */
 	static void		ApplySticky(const entry_ref& ref);
 	static status_t	GetSenIcon(const char* mimeType, const char* iconType,

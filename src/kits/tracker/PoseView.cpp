@@ -6618,14 +6618,17 @@ BPoseView::MoveSelectionOrEntryToTrash(const entry_ref* ref, bool selectNext)
 			entriesToDeleteOnTheSpot, &deviceHasTrash);
 	}
 
-	// SEN: files that have relations: the user is asked, and the relations are removed with the files
+	// SEN: a file that goes to the Trash keeps its relations (they come back when it is restored, and go when the Trash is emptied): nothing is asked. What is deleted
+	// on the spot has them removed with it, and the user is asked about those that have some.
 	{
 		BObjectList<entry_ref, true> everything(entriesToTrash->CountItems() + entriesToDeleteOnTheSpot->CountItems());
 		for (int32 index = 0; index < entriesToTrash->CountItems(); index++)
 			everything.AddItem(new entry_ref(*entriesToTrash->ItemAt(index)));
 		for (int32 index = 0; index < entriesToDeleteOnTheSpot->CountItems(); index++)
 			everything.AddItem(new entry_ref(*entriesToDeleteOnTheSpot->ItemAt(index)));
-		if (!TrackerSenRelations::ConfirmDeletion(everything, ShowRelationsInTracker)) {
+		if (!TrackerSenRelations::CanDelete(everything)
+			|| (entriesToDeleteOnTheSpot->CountItems() > 0
+				&& !TrackerSenRelations::ConfirmDeletion(*entriesToDeleteOnTheSpot, ShowRelationsInTracker))) {
 			delete entriesToTrash;
 			delete entriesToDeleteOnTheSpot;
 			return;
@@ -6734,7 +6737,7 @@ BPoseView::Delete(BObjectList<entry_ref, true>* list, bool selectNext, bool conf
 		return;
 	}
 
-	// SEN: files that have relations: the user is asked, and the relations are removed with the files
+	// SEN: files that are deleted for good and have relations: the user is asked; the relations go with the files (FSUtils)
 	if (!TrackerSenRelations::ConfirmDeletion(*list, ShowRelationsInTracker)) {
 		delete list;
 		return;
