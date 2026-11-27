@@ -948,6 +948,10 @@ TShortcuts::Update(BMenu* menu)
 				UpdateOpenItem(item);
 				break;
 
+			case kOpenSelectionWith:
+				UpdateOpenWithItem(item);
+				break;
+
 			case kOpenParentDir:
 				UpdateOpenParentItem(item);
 				break;

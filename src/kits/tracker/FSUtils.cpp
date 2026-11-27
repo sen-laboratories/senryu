@@ -83,6 +83,7 @@ respective holders. All rights reserved.
 #include "Commands.h"
 #include "FindPanel.h"
 #include "FSUndoRedo.h"
+#include "TrackerSenRelations.h"
 #include "FSUtils.h"
 #include "InfoWindow.h"
 #include "MimeTypes.h"
@@ -626,6 +627,10 @@ ConfirmChangeIfWellKnownDirectory(const BEntry* entry, DestructiveAction action,
 		return true;
 
 	if (FSIsDeskDir(entry) || FSIsPrintersDir(entry) || FSIsRootDir(entry) || FSIsTrashDir(entry))
+		return false;
+
+	// the Default context (and the folder that holds the contexts) is not renamed, moved or trashed: SEN needs it
+	if (TrackerSenRelations::IsProtectedFolder(*entry))
 		return false;
 
 	if ((!DirectoryMatchesOrContains(entry, B_SYSTEM_DIRECTORY)
@@ -3097,6 +3102,9 @@ _DeleteTask(BObjectList<entry_ref, true>* list, bool confirm)
 			if (ref != NULL) {
 				entry.SetTo(ref);
 				result = entry.InitCheck();
+				// (the Default context is never deleted, whatever asked for it: the question is asked before, this is the last guard)
+				if (result == B_OK && TrackerSenRelations::IsProtectedFolder(entry))
+					continue;
 				if (result == B_OK) {
 					if (entry.IsDirectory()) {
 						result = FSDeleteFolder(&entry, &loopControl, true, true, true);

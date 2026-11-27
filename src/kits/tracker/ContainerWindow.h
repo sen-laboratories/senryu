@@ -109,6 +109,9 @@ public:
 	virtual void Init(const BMessage* message = NULL);
 	virtual void InitLayout();
 
+	/** Shift was pressed or released while the menu is open: "Open" and "Open with..." change places (see SetupOpenWithMenu()), as Enrich and Enrich (Overwrite) do. */
+	void UpdateOpenWithLive(BMenu* menu);
+
 	static BRect InitialWindowRect(window_feel);
 
 	virtual void Minimize(bool minimize);
@@ -338,6 +341,8 @@ protected:
 	BMenuItem* fCreateLinkItem;
 	BMenuItem* fOpenWithItem;
 	BMenuItem* fParkedOpenItem;		///< the Open item while "Open with..." is in its place (Shift held, see SetupOpenWithMenu())
+	entry_ref fOpenWithRef;			///< the file that the menu with Open / "Open with..." was set up for (to set it up again while it is open)
+	bool fOpenWithRefSet;
 	bool fOpenAnchorValid;			///< the menu that is built has an Open item (or "Open with..." in its place) that the relation items follow
 	BMenuItem* fOpenRelationsItem;
 	BMenuItem* fOpenSelfRelationsItem;

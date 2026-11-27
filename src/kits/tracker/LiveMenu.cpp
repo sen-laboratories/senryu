@@ -91,6 +91,9 @@ TLiveMixin::UpdateFileMenu(BMenu* menu)
 			}
 		}
 
+		// Open/Open with...: one place, the other item while Shift is held (the items change places, so this is done after the loop)
+		const_cast<BContainerWindow*>(fWindow)->UpdateOpenWithLive(menu);
+
 		menu->Window()->UnlockLooper();
 	}
 }

@@ -83,6 +83,11 @@ public:
 	 * shows them (it is called for each file that has some, and the question is asked again).
 	 * @return false if the user cancelled (nothing was changed)
 	 */
+	/**
+	 * Whether this folder must never be deleted, renamed or moved away: the Default context (`~/config/settings/sen/contexts/default`: it stands for every file, and what is made new
+	 * without a context belongs to it) and the folder of the contexts that holds it. @p reason gets what is said to the user.
+	 */
+	static bool		IsProtectedFolder(const BEntry& entry, BString* reason = NULL);
 	static bool		ConfirmDeletion(const BObjectList<entry_ref, true>& refs,
 						std::function<void(const entry_ref&)> showRelations = nullptr);
 	/** A file that Tracker has made (new from a template, new related) is put into the sticky classifications of SEN (the server does it; asynchronous). */

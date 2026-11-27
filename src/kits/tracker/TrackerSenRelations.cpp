@@ -1173,8 +1173,44 @@ CountIncomingFrom(const entry_ref& ref, const char* list)
 
 
 bool
+TrackerSenRelations::IsProtectedFolder(const BEntry& entry, BString* reason)
+{
+	BPath path;
+	BPath contexts;
+	if (entry.GetPath(&path) != B_OK || find_directory(B_USER_SETTINGS_DIRECTORY, &contexts) != B_OK || contexts.Append("sen") != B_OK
+			|| contexts.Append(sen::config::kContextsDir) != B_OK)
+		return false;
+
+	BPath defaultContext(contexts);
+	defaultContext.Append(sen::config::kContextDefault);
+	if (strcmp(path.Path(), defaultContext.Path()) == 0) {
+		if (reason != NULL)
+			reason->SetTo("The Default context cannot be deleted, renamed or moved: it stands for every file.");
+		return true;
+	}
+	if (strcmp(path.Path(), contexts.Path()) == 0) {
+		if (reason != NULL)
+			reason->SetTo("This folder holds the contexts, among them the Default context, which cannot be deleted. Delete a context itself, not this folder.");
+		return true;
+	}
+	return false;
+}
+
+
+bool
 TrackerSenRelations::ConfirmDeletion(const BObjectList<entry_ref, true>& refs, std::function<void(const entry_ref&)> showRelations)
 {
+	// the Default context is never deleted: the whole deletion is refused, and the user is told why
+	for (int32 index = 0; index < refs.CountItems(); index++) {
+		const entry_ref* ref = refs.ItemAt(index);
+		BString reason;
+		if (ref != NULL && IsProtectedFolder(BEntry(ref), &reason)) {
+			BAlert* alert = new BAlert("", reason.String(), "OK", NULL, NULL, B_WIDTH_AS_USUAL, B_STOP_ALERT);
+			alert->Go();
+			return false;
+		}
+	}
+
 	std::vector<entry_ref> related;		// the files that have relations to files that are there
 	std::vector<entry_ref> stale;		// those that only have relations to files that are gone
 	std::vector<entry_ref> referenced;	// meta entities (a context, a topic, a label) that other files refer to

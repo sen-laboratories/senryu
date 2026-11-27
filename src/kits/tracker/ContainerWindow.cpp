@@ -413,6 +413,7 @@ BContainerWindow::BContainerWindow(LockingList<BWindow>* list, uint32 openFlags,
 	fCreateLinkItem(NULL),
 	fOpenWithItem(NULL),
 	fParkedOpenItem(NULL),
+	fOpenWithRefSet(false),
 	fOpenAnchorValid(false),
 	fOpenRelationsItem(NULL),
 	fOpenSelfRelationsItem(NULL),
@@ -2117,8 +2118,26 @@ BContainerWindow::RestoreOpenItem()
 	// (Open goes back where it was taken out: the menu that has "Open with..." is the one that has its place)
 	if (fParkedOpenItem != NULL) {
 		menu->AddItem(fParkedOpenItem, index);
+		// (it was out of the menu when the items were updated for this selection: its target and whether it is enabled are set now, for Shift released while the menu is open)
+		Shortcuts()->UpdateOpenItem(fParkedOpenItem);
 		fParkedOpenItem = NULL;
 	}
+}
+
+
+void
+BContainerWindow::UpdateOpenWithLive(BMenu* menu)
+{
+	if (menu == NULL || !fOpenAnchorValid || !fOpenWithRefSet)
+		return;
+
+	// "Open with..." is in this menu when Shift was held, "Open" when not: set the menu up again when that is not what the keyboard says now. The item is taken out and put in again in
+	// the same place, so nothing else in the menu moves (BMenu::RemoveItem() looks after the item that is selected).
+	const bool shift = (modifiers() & B_SHIFT_KEY) != 0;
+	const bool shown = fOpenWithItem != NULL && fOpenWithItem->Menu() == menu;
+	if (shift == shown || OpenItemIndex(menu) == B_ERROR)
+		return;
+	SetupOpenWithMenu(menu, &fOpenWithRef);
 }
 
 
@@ -2152,6 +2171,10 @@ BContainerWindow::SetupOpenWithMenu(BMenu* parent, const entry_ref* ref)
 		ref = TargetModel()->EntryRef();
 
 	ASSERT(ref != NULL);
+
+	// (kept for the live update: Shift pressed while the menu is open)
+	fOpenWithRef = *ref;
+	fOpenWithRefSet = true;
 
 	// bail out if we shouldn't have an "Open with..." menu
 	if (!ShouldHaveOpenWithMenu(ref))
